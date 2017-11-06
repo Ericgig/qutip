@@ -227,7 +227,6 @@ from qutip.utilities import *
 from qutip.fileio import *
 from qutip.about import *
 
-
 # Remove -Wstrict-prototypes from cflags
 import distutils.sysconfig
 cfg_vars = distutils.sysconfig.get_config_vars()

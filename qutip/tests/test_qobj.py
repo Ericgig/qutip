@@ -34,7 +34,8 @@
 import scipy.sparse as sp
 import scipy.linalg as la
 import numpy as np
-from numpy.testing import assert_equal, assert_, assert_almost_equal, run_module_suite
+from numpy.testing import (assert_equal, assert_, assert_almost_equal, 
+                            run_module_suite)
 
 from qutip.qobj import Qobj
 from qutip.random_objects import (rand_ket, rand_dm, rand_herm, rand_unitary,
@@ -582,7 +583,11 @@ def test_QobjNorm():
     A = Qobj(x)
     assert_equal(
         np.abs(A.norm('fro') - la.norm(A.full(), 'fro')) < 1e-12, True)
-
+    # operator trace norm
+    a = rand_herm(10,0.25)
+    assert_almost_equal(a.norm(), (a*a.dag()).sqrtm().tr().real)
+    b = rand_herm(10,0.25) - 1j*rand_herm(10,0.25)
+    assert_almost_equal(b.norm(), (b*b.dag()).sqrtm().tr().real)
 
 def test_QobjPermute():
     "Qobj permute"
@@ -969,6 +974,9 @@ def test_dual_channel():
 
 
 def test_call():
+    """
+    Test Qobj: Call
+    """
     # Make test objects.
     psi = rand_ket(3)
     rho = rand_dm_ginibre(3)
@@ -991,6 +999,65 @@ def test_call():
     # Case 4: super(super). Should raise TypeError.
     with expect_exception(TypeError):
         S(S)
+
+def test_matelem():
+    """
+    Test Qobj: Compute matrix elements
+    """
+    for kk in range(10):
+        N = 20
+        H = rand_herm(N,0.2)
+
+        L = rand_ket(N,0.3)
+        Ld = L.dag()
+        R = rand_ket(N,0.3)
+    
+        ans = (Ld*H*R).tr()
+    
+        #bra-ket
+        out1 = H.matrix_element(Ld,R)
+        #ket-ket
+        out2 = H.matrix_element(Ld,R)
+    
+        assert_(abs(ans-out1) < 1e-14)
+        assert_(abs(ans-out2) < 1e-14)
+    
+    
+def test_projection():
+    """
+    Test Qobj: Projection operator
+    """
+    for kk in range(10):
+        N = 5
+        K = tensor(rand_ket(N,0.75),rand_ket(N,0.75))
+        B = K.dag()
+        
+        ans = K*K.dag()
+        
+        out1 = K.proj()
+        out2 = B.proj()
+        
+        assert_(out1==ans)
+        assert_(out2==ans)
+
+
+def test_overlap():
+    """
+    Test Qobj: Overlap (inner product)
+    """
+    for kk in range(10):
+        N = 10
+        A = rand_ket(N,0.75)
+        Ad = A.dag()
+        B = rand_ket(N,0.75)
+        Bd = B.dag()
+        
+        ans = (A.dag()*B).tr()
+        
+        assert_almost_equal(A.overlap(B), ans)
+        assert_almost_equal(Ad.overlap(B), ans)
+        assert_almost_equal(Ad.overlap(Bd), ans)
+        assert_almost_equal(A.overlap(Bd), np.conj(ans))
 
 
 if __name__ == "__main__":

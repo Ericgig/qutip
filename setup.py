@@ -68,7 +68,6 @@ PACKAGES = ['qutip', 'qutip/ui', 'qutip/cy', 'qutip/cy/src',
             'qutip/_mkl', 'qutip/tests', 'qutip/legacy',
             'qutip/cy/openmp', 'qutip/cy/openmp/src']
 PACKAGE_DATA = {
-    '.': ['README.md', 'LICENSE.txt'],
     'qutip': ['configspec.ini'],
     'qutip/tests': ['*.ini'],
     'qutip/cy': ['*.pxi', '*.pxd', '*.pyx'],
@@ -150,7 +149,8 @@ write_version_py()
 cy_exts = ['spmatfuncs', 'stochastic', 'sparse_utils', 'graph_utils', 'interpolate',
         'spmath', 'heom', 'math', 'spconvert', 'ptrace', 'testing', 'brtools',
         'brtools_testing', 'dopri5', 'mcsolve', 'fast_stochastic', 'inter',
-        'fast_ssesolve']
+        'fast_ssesolve', 'td_qobj_cy']
+
 
 # If on Win and Python version >= 3.5 (i.e. Visual studio compile)
 if sys.platform == 'win32' and int(str(sys.version_info[0])+str(sys.version_info[1])) >= 35:
@@ -238,6 +238,7 @@ setup(
     name = NAME,
     version = FULLVERSION,
     packages = PACKAGES,
+    include_package_data=True,
     include_dirs = INCLUDE_DIRS,
     headers = HEADERS,
     ext_modules = cythonize(EXT_MODULES),
