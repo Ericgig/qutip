@@ -731,11 +731,12 @@ def new_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
         sso.homogeneous = False
     else:
         raise Exception("The distribution should be one of "+\
-                        "[None, 'normal', 'poisson']")
+                        "None, 'normal', 'poisson'")
 
     fast = not (any(sso.custom[:3]) or any(sso.td) or
                 sso.distribution == 'poisson')
     fast = False
+    print(sso.td)
     #Set the sso.rhs based on the method
     #sso.rhs is an int for fast (cython) code
     if sso.rhs:
@@ -808,7 +809,7 @@ def new_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
             else:
                 raise Exception("Only homodyne is available")
 
-        elif sso.td:
+        elif any(sso.td):
             raise Exception("Only 'euler-maruyama', 'milstein', 'platen' " +
                             " 'taylor15' and 'taylor15-imp' " +
                             "support time dependant cases")
@@ -1118,6 +1119,7 @@ def _ssesolve_single_trajectory(n, sso):
 
     return states_list, dW, measurements, expect, ss
 
+
 #
 #   Call cython version
 #   Not Imlemented
@@ -1199,512 +1201,43 @@ def _smesolve_fast(sso, options, progress_bar):
     return data
 
 
+###############################################################################
+###                          general python solvers                         ###
+###############################################################################
+# Work with generic d1, d2 , dW...
+# Same solver for smesolve and ssesolve
+# The hamiltonian is included in d1
 #
-#   Hamiltonian deterministic evolution
+# Euler-Maruyama
+# Platen (1)
+
+# Todo:
+#   Platen (1.5)?
+#   predictor-corrector?
+#   runge-kutta?
 #
-def _rhs_deterministic(H, vec_t, t, dt, args, td):
-    """
-    Deterministic contribution to the density matrix /
-    Hamiltonian for time-dependent cases
-    """
-    if td:
-        return spmv(H(t).data, vec_t)
-    else:
-        return spmv(H, vec_t)
-
-def _rhs_rho_deterministic(L, rho_t, t, dt, args, td):
-    """
-    Deterministic contribution to the density matrix change
-    """
-    if td:
-        out = np.zeros(rho_t.shape[0],dtype=complex)
-        L_list = L[0][0]
-        L_td = L[0][1]
-        spmvpy_csr(L_list.data, L_list.indices, L_list.indptr, rho_t, L_td(t, args), out)
-        for n in range(1, len(L)):
-            L_list = L[n][0]
-            L_td = L[n][1]
-            if L[n][2]: #Do we need to square the time-dependent coefficient?
-                spmvpy_csr(L_list.data, L_list.indices, L_list.indptr, rho_t, L_td(t, args)**2, out) #for c_ops
-            else:
-                spmvpy_csr(L_list.data, L_list.indices, L_list.indptr, rho_t, L_td(t, args), out) #for H
-    else:
-        out = spmv(L,rho_t)
-    return out
-
-def _rhs_rho_deterministic_deriv(L, rho_t, t, dt, args, td):
-    """
-    Time derivative for Taylor 1.5 method
-    """
-    out = np.zeros(rho_t.shape[0],dtype=complex)
-    if td:
-        constant_func = lambda x, y: 1.0
-        for n in range (len(L)):
-            if L[n][1] != constant_func: #Do we have a time-dependence?
-                L_list = L[n][0]
-                dL = L[n][1](t + dt,args) - L[n][1](t,args)
-                if L[n][2]: #for с_ops
-                    dL *= 2 * L[n][1](t,args)
-                    spmvpy_csr(L_list.data, L_list.indices, L_list.indptr, rho_t, dL, out)
-                else: #for H
-                    spmvpy_csr(L_list.data, L_list.indices, L_list.indptr, rho_t, dL, out)
-
-    return out
-
-def _L_td_taylor(H, c_ops, sc_ops, td):
-    """
-    Time dependent liouvillian for Taylor-1.5 implicit and explicit solver
-    """
-    if not any(td):
-        L_list = liouvillian(H, c_ops=c_ops).data
-        L_list += np.sum([lindblad_dissipator(sc, data_only=True) for sc in sc_ops], axis=0)
-    else:
-    #L[n][0] - operator
-    #L[n][1] - it's dependence on time
-    #L[n][2] - do we need to square the time-dependent coefficient?
-        L_list = []
-        constant_func = lambda x, y: 1.0
-        for h_spec in H:
-            if isinstance(h_spec, Qobj):
-                h = h_spec
-                h_coeff = constant_func
-            elif isinstance(h_spec, list) and isinstance(h_spec[0], Qobj):
-                h = h_spec[0]
-                h_coeff = h_spec[1]
-            else:
-                raise TypeError("Incorrect specification of time-dependent " +
-                            "Hamiltonian (expected callback function)")
-            if isoper(h):
-                L_list.append([(-1j * (spre(h) - spost(h))).data, h_coeff, False])
-            else:
-                raise TypeError("Incorrect specification of time-dependent " +
-                            "Hamiltonian (expected operator)")
-
-        for c_spec in c_ops:
-            if isinstance(c_spec, Qobj):
-                c = c_spec
-                c_coeff = constant_func
-                c_square = False
-            elif isinstance(c_spec, list) and isinstance(c_spec[0], Qobj):
-                c = c_spec[0]
-                c_coeff = c_spec[1]
-                c_square = True
-            else:
-                raise TypeError("Incorrect specification of time-dependent " +
-                            "collapse operators (expected callback function)")
-            if isoper(c):
-                L_list.append([liouvillian(None, [c], data_only=True), c_coeff, c_square])
-            else:
-                raise TypeError("Incorrect specification of time-dependent " +
-                            "collapse operators (expected operator)")
-
-        for sc_spec in sc_ops:
-            if isinstance(sc_spec, Qobj):
-                sc = sc_spec
-                sc_coeff = constant_func
-            else:
-                raise TypeError("Incorrect specification of stohastic operator")
-            if isoper(sc):
-                L_list.append([lindblad_dissipator(sc, data_only=True), sc_coeff, False])
-            else:
-                raise TypeError("Incorrect specification of stohastic operator")
-
-    return(L_list)
-
+# 3 sections
+#   - solvers
+#   - d1,d2
+#   - functions to preparer the operators for d1 and d2
 #
-#   d1 and d2 functions for common schemes (Master Eq)
-#
-def prep_sc_ops_homodyne_rho(H, c_ops, sc_ops, dt, td, args, times):
-    if not any(td):
-        # No time-dependance
-        L = liouvillian(H, c_ops=c_ops).data * dt
-        A = []
-        for sc in sc_ops:
-            L += lindblad_dissipator(sc, data_only=True) * dt
-            A += [[spre(sc).data + spost(sc.dag()).data]]
-
-    elif not td[1]:
-        # sc_ops do not depend on time
-        L = td_liouvillian(H, c_ops=c_ops, args=args, tlist=times) * dt
-        A = []
-        for sc in sc_ops:
-            L += lindblad_dissipator(sc) * dt
-            A += [[spre(sc).data + spost(sc.dag()).data]]
-
-    else:
-        td[0] = True
-        L = td_liouvillian(H, c_ops=c_ops, args=args, tlist=times) * dt
-        A = []
-        for sc in sc_ops:
-            L += td_lindblad_dissipator(sc, args=args, tlist=times) * dt
-            td_sc = td_Qobj(sc, args=args, tlist=times)
-            A += [[td_sc.apply(spre) + td_sc.dag().apply(spost)]]
-    return L, A
-
-def prep_sc_ops_heterodyne_rho(H, c_ops, sc_ops, dt, td, args, times):
-    if not any(td):
-        # No time-dependance
-        L = liouvillian(H, c_ops=c_ops).data * dt
-        A = []
-        for sc in sc_ops:
-            L += lindblad_dissipator(sc, data_only=True) * dt
-            A += [[ 1.0  / np.sqrt(2) * (spre(sc).data + spost(sc.dag()).data)]]
-            A += [[-1.0j / np.sqrt(2) * (spre(sc).data - spost(sc.dag()).data)]]
-
-    elif not td[1]:
-        # sc_ops do not depend on time
-        L = td_liouvillian(H, c_ops=c_ops, args=args, tlist=times) * dt
-        A = []
-        for sc in sc_ops:
-            L += lindblad_dissipator(sc) * dt
-            A += [[ 1.0  / np.sqrt(2) * (spre(sc).data + spost(sc.dag()).data)]]
-            A += [[-1.0j / np.sqrt(2) * (spre(sc).data - spost(sc.dag()).data)]]
-
-    else:
-        td[0] = True
-        L = td_liouvillian(H, c_ops=c_ops) * dt
-        A = []
-        for sc in sc_ops:
-            L += td_lindblad_dissipator(sc, args=args, tlist=times) * dt
-            td_sc = td_Qobj(sc, args=args, tlist=times)
-            A += [[ 1.0  / np.sqrt(2) * (td_sc.apply(spre) +
-                                         td_sc.dag().apply(spost))]]
-            A += [[-1.0j / np.sqrt(2) * (td_sc.apply(spre) -
-                                         td_sc.dag().apply(spost))]]
-    return L, A
-
-def prep_sc_ops_photocurrent_rho(H, c_ops, sc_ops, dt, td, args, times):
-    if not any(td):
-        # No time-dependance
-        L = liouvillian(H, c_ops=c_ops).data * dt
-        A = []
-        for sc in sc_ops:
-            L += lindblad_dissipator(sc, data_only=True) * dt
-            n = sc.dag() * sc
-            A += [[spre(n).data + spost(n).data,
-                   (spre(sc) * spost(sc.dag())).data,
-                   spre(n).data]]
-
-    elif not td[1]:
-        # sc_ops do not depend on time
-        L = td_liouvillian(H, c_ops=c_ops, args=args, tlist=times) * dt
-        A = []
-        for sc in sc_ops:
-            L += lindblad_dissipator(sc) * dt
-            n = sc.dag() * sc
-            A += [[spre(n).data + spost(n).data,
-                   (spre(sc) * spost(sc.dag())).data,
-                   spre(n).data]]
-
-    else:
-        def _cdc(c):
-            return c*c.dag()
-        def _cdc2(c):
-            return spre(c) * spost(c.dag())
-
-        td[0] = True
-        L = td_liouvillian(H, c_ops=c_ops, args=args, tlist=times) * dt
-        A = []
-        for sc in sc_ops:
-            L += td_lindblad_dissipator(sc, args=args, tlist=times) * dt
-            td_sc = td_Qobj(sc, args=args, tlist=times)
-            n = td_sc.apply(_cdc)._f_norm2()
-            A += [[n.apply(spre) + n.apply(spost),
-                   td_sc.apply(_cdc2)._f_norm2(),
-                   n.apply(spre)]]
-    return L, A
-
-
-def d1_rho(t, rho_vec, sc_ops, args, td):
-    """
-    D1[a] rho = lindblad_dissipator(a) * rho
-    Included in the Liouvilllian
-
-    Homodyne + Heterodyne
-    """
-    return np.zeros(len(rho_vec))#
-
-def d2_rho(t, rho_vec, sc_ops, args, td):
-    """
-    D2[a] rho = a rho + rho a^\dagger - Tr[a rho + rho a^\dagger]
-              = (A_L + Ad_R) rho_vec - E[(A_L + Ad_R) rho_vec]
-
-    Homodyne + Heterodyne
-    """
-    d2 = []
-    if td:
-        sc_t = [sc[0](t).data for sc in sc_ops]
-    else:
-        sc_t = [sc[0] for sc in sc_ops]
-    for sc in sc_t:
-        e1 = cy_expect_rho_vec(sc, rho_vec, 0)
-        d2 += [spmv(sc, rho_vec) - e1 * rho_vec]
-    return np.vstack(d2)
-
-def d2_rho_milstein(t, rho_vec, sc_ops, args, td):
-    """
-    D2[a] rho = a rho + rho a^\dagger - Tr[a rho + rho a^\dagger]
-              = (A_L + Ad_R) rho_vec - E[(A_L + Ad_R) rho_vec]
-
-    Homodyne + Heterodyne
-    """
-    d2 = []
-    if td:
-        sc_t = [sc[0](t).data for sc in sc_ops]
-    else:
-        sc_t = [sc[0] for sc in sc_ops]
-    for sc in sc_t:
-        e1 = cy_expect_rho_vec(sc, rho_vec, 0)
-        d2 += [spmv(sc, rho_vec) - e1 * rho_vec]
-    d2_vec = np.vstack(d2)
-
-    dd2 = []
-    len_sc = len(sc_ops)
-    for sc in sc_t:
-        e1 = cy_expect_rho_vec(sc, rho_vec, 0)
-        for d2 in d2_vec:
-            e2 = cy_expect_rho_vec(sc, d2, 0)
-            dd2 += [spmv(sc, d2) - e2 * rho_vec - e1 * d2]
-    dd2 = np.vstack(dd2)
-    return d2_vec, dd2.reshape((len_sc,len_sc,-1))
-
-def d1_rho_photocurrent(t, rho_vec, A, args, td):
-    d1 = np.zeros(len(rho_vec))
-    if td:
-        sc_t = [sc[0](t).data for sc in A]
-    else:
-        sc_t = [sc[0] for sc in A]
-    for sc in sc_t:
-        e1 = cy_expect_rho_vec(sc[0], rho_vec, 0)
-        d1 += 0.5 * (e1 * rho_vec - spmv(sc[0], rho_vec))
-    return d1
-
-def d2_rho_photocurrent(t, rho_vec, A, args, td):
-    d2 =[]
-    if td:
-        sc_t = [sc[1](t).data for sc in A]
-    else:
-        sc_t = [sc[1] for sc in A]
-    for sc in sc_t:
-        e1 = cy_expect_rho_vec(sc, rho_vec, 0)
-        if e1.real > 1e-15:
-            d2 += [spmv(sc, rho_vec) / e1 - rho_vec]
-        else:
-            d2 += [-rho_vec]
-    return np.vstack(d2)
-
-
-#
-#   d1 and d2 functions for common schemes (Schrodinger)
-#
-def prep_sc_ops_homodyne_psi(H, c_ops, sc_ops, dt, td, args, times):
-    if not td[0]:
-        HH = -1.0j*H.data * dt
-    else:
-        HH = td_Qobj(H, args=args, tlist=times)*-1.0j * dt
-
-    A = []
-    if not td[1]:
-        for sc in sc_ops:
-            A += [[sc.data, (sc + sc.dag()).data, (sc.dag() * sc).data]]
-    else:
-        def _cdc(c):
-            return c.dag()*c
-
-        sc_t = [td_Qobj(sc, args=args, tlist=times) for sc in sc_ops]
-        for sc in sc_t:
-            n = sc.apply(_cdc)._f_norm2()
-            A += [[sc, (sc + sc.dag()), n]]
-    return HH, A
-
-def prep_sc_ops_heterodyne_psi(H, c_ops, sc_ops, dt, td, args, times):
-    if not td[0]:
-        H = -1.0j*H.data * dt
-    else:
-        H = td_Qobj(H, args=args, tlist=times)*-1.0j * dt
-
-    A = []
-    if not td[1]:
-        for sc in sc_ops:
-            A.append([sc.data, sc.dag().data, (sc + sc.dag()).data,
-                     (sc - sc.dag()).data, (sc.dag() * sc).data])
-    else:
-        def _cdc(c):
-            return c.dag()*c
-
-        sc_t = [td_Qobj(sc, args=args, tlist=times) for sc in sc_ops]
-        for sc in sc_t:
-            cd = sc.dag()
-            n = sc.apply(_cdc)._f_norm2()
-            A.append([sc, cd, sc + cd,
-                     sc - cd, n])
-    return H,A
-
-def prep_sc_ops_photocurrent_psi(H, c_ops, sc_ops, dt, td, args, times):
-    if not td[0]:
-        H = H.data * -1.0j * dt
-    else:
-        H = td_Qobj(H, args=args, tlist=times)*-1.0j * dt
-
-    A = []
-    if not td[1]:
-        for sc in sc_ops:
-            A += [[sc.data, (sc.dag() * sc).data]]
-    else:
-        def _cdc(c):
-            return c.dag()*c
-        sc_t = [td_Qobj(sc, args=args, tlist=times) for sc in sc_ops]
-        for sc in sc_t:
-            n = sc.apply(_cdc)._f_norm2()
-            A += [[sc, n]]
-
-    return H,A
-
-
-def d1_psi_homodyne(t, psi, A, args, td):
-    """
-    .. math::
-        D_1(C, \psi) = \\frac{1}{2}(\\langle C + C^\\dagger\\rangle\\C psi -
-        C^\\dagger C\\psi - \\frac{1}{4}\\langle C + C^\\dagger\\rangle^2\\psi)
-    """
-    d1 = np.zeros(len(psi), dtype=complex)
-    if td:
-        sc_t = [[sc[0](t).data, sc[1](t).data, sc[2](t).data] for sc in A]
-    else:
-        sc_t = A
-    for sc in sc_t:
-        e1 = cy_expect_psi(sc[1], psi, 0)
-        d1 += 0.5 * (e1 * spmv(sc[0], psi) -
-                    spmv(sc[2], psi) -
-                    0.25 * e1 ** 2 * psi)
-    return d1
-
-def d2_psi_homodyne(t, psi, A, args, td):
-    """
-    .. math::
-        D_2(\psi, t) = (C - \\frac{1}{2}\\langle C + C^\\dagger\\rangle)\\psi
-    """
-    d2 = []
-    if td:
-        sc_t = [[sc[0](t).data, sc[1](t).data] for sc in A]
-    else:
-        sc_t = A
-    for sc in sc_t:
-        e1 = cy_expect_psi(sc[1], psi, 0)
-        d2 += [spmv(sc[0], psi) - 0.5 * e1 * psi]
-    return np.vstack(d2)
-
-def d1_psi_heterodyne(t, psi, A, args, td):
-    """
-    .. math::
-        D_1(\psi, t) = -\\frac{1}{2}(C^\\dagger C -
-        \\langle C^\\dagger \\rangle C +
-        \\frac{1}{2}\\langle C \\rangle\\langle C^\\dagger \\rangle))\psi
-    """
-    d1 = np.zeros(len(psi), dtype=complex)
-    if td:
-        sc_t = [[sc[0](t).data, sc[1](t).data, sc[4](t).data] for sc in A]
-    else:
-        sc_t = A
-    for sc in sc_t:
-        e_C = cy_expect_psi(sc[0], psi, 0)
-        e_Cd = cy_expect_psi(sc[1], psi, 0)
-        d1 += (-0.5 * spmv(sc[2], psi) +
-                0.5 * e_Cd * spmv(sc[0], psi) -
-                0.25 * e_C * e_Cd * psi)
-    return d1
-
-def d2_psi_heterodyne(t, psi, A, args, td):
-    """
-        X = \\frac{1}{2}(C + C^\\dagger)
-        Y = \\frac{1}{2}(C - C^\\dagger)
-        D_{2,1}(\psi, t) = \\sqrt(1/2) (C - \\langle X \\rangle) \\psi
-        D_{2,2}(\psi, t) = -i\\sqrt(1/2) (C - \\langle Y \\rangle) \\psi
-    """
-    d2 = []
-    if td:
-        sc_t = [[sc[0](t).data, sc[2](t).data, sc[3](t).data] for sc in A]
-    else:
-        sc_t = [[sc[0], sc[2], sc[3]] for sc in A]
-    for sc in sc_t:
-        X = 0.5 * cy_expect_psi(sc[1], psi, 0)
-        Y = 0.5 * cy_expect_psi(sc[2], psi, 0)
-        d2 += [np.sqrt(0.5) * (spmv(sc[0], psi) - X * psi)]
-        d2 += [-1.0j * np.sqrt(0.5) * (spmv(sc[0], psi) - Y * psi)]
-    return np.vstack(d2)
-
-def d1_psi_photocurrent(t, psi, A, args, td):
-    """
-    Note: requires poisson increments
-    .. math::
-        D_1(\psi, t) = - \\frac{1}{2}(C^\dagger C \psi - ||C\psi||^2 \psi)
-    """
-    d1 = np.zeros(len(psi))
-    for sc in A:
-        d1 += (-0.5 * (spmv(A[1], psi)
-                - norm(spmv(A[0], psi)) ** 2 * psi))
-    return d1
-
-def d2_psi_photocurrent(t, psi, A, args, td):
-    """
-    Note: requires poisson increments
-    .. math::
-        D_2(\psi, t) = C\psi / ||C\psi|| - \psi
-    """
-    d2 = []
-    for sc in A:
-        psi_1 = spmv(A[0], psi)
-        n1 = norm(psi_1)
-        if n1 != 0:
-            d2 += [psi_1 / n1 - psi]
-        else:
-            d2 += [- psi]
-    return np.vstack(d2)
-
 
 #
 #   Stochastic schemes
 #
-def _rhs_euler_maruyama(H, vec_t, t, dt, sc_ops, dW, d1, d2, args, td):
+def _solver_euler_maruyama(t, vec_t, dt, dW, sc_ops, d1, d2):
     """
     Euler-Maruyama rhs function for both master eq and schrodinger eq.
 
     dV = -iH*V*dt + d1*dt + d2_i*dW_i
     """
-    dvec_t = _rhs_deterministic(H, vec_t, t, dt, args, td[0])
-    dvec_t += d1(t, vec_t, sc_ops, args, td[1]) * dt
-    d2_vec = d2(t, vec_t, sc_ops, args, td[1])
+
+    dvec_t = d1(t, vec_t, sc_ops) * dt
+    d2_vec = d2(t, vec_t, sc_ops)
     dvec_t += np.dot(dW, d2_vec)
     return vec_t + dvec_t
 
-def _rhs_milstein(H, vec_t, t, dt, sc_ops, dW, d1, d2, args, td):
-    """
-    Milstein rhs function for both master eq and schrodinger eq.
-
-    Slow but should be valid for non-commuting operators since computing
-        both i x j and j x i.
-
-    dV = -iH*V*dt + d1*dt + d2_i*dW_i
-         + 0.5*d2_i(d2_j(V))*(dW_i*dw_j -dt*delta_ij)
-    """
-
-    #Euler part
-    dvec_t = _rhs_deterministic(H, vec_t, t, dt, args, td[0])
-    dvec_t += d1(t, vec_t, sc_ops, args, td[1]) * dt
-    d2_vec, d22_vec = d2(t, vec_t, sc_ops, args, td[1])
-    #d2_vec = d2_[0,:,:]
-    #d22_vec = d2_[1:,:,:]
-    dvec_t += np.dot(dW, d2_vec)
-
-    #Milstein terms
-    for ind, d2v in enumerate(d22_vec):
-        dW2 = dW*dW[ind]*0.5
-        dW2[ind] -= dt*0.5
-        dvec_t += np.dot(dW2, d2v)
-
-    return vec_t + dvec_t
-
-def _rhs_platen(H, vec_t, t, dt, sc_ops, dW, d1, d2, args, td):
+def _solver_platen(t, vec_t, dt, dW, sc_ops, d1, d2):
     """
     Platen rhs function for both master eq and schrodinger eq.
     dV = -iH* (V+Vt)/2 * dt + (d1(V)+d1(Vt))/2 * dt
@@ -1720,26 +1253,262 @@ def _rhs_platen(H, vec_t, t, dt, sc_ops, dW, d1, d2, args, td):
     sqrt_dt = np.sqrt(dt)
 
     #Build Vt, V+, V-
-    dv_H1 = _rhs_deterministic(H, vec_t, t, dt, args, td[0])
-    dv_H1 += d1(t, vec_t, sc_ops, args, td[1]) * dt
-    d2_vec = d2(t, vec_t, sc_ops, args, td[1])
+    dv_H1 = d1(t, vec_t, sc_ops) * dt
+    d2_vec = d2(t, vec_t, sc_ops)
     Vp = vec_t + dv_H1 + np.sum(d2_vec,axis=0)*sqrt_dt
     Vm = vec_t + dv_H1 - np.sum(d2_vec,axis=0)*sqrt_dt
     Vt = vec_t + dv_H1 + np.dot(dW, d2_vec)
 
     # Platen dV
-    dvt_H1 = _rhs_deterministic(H, Vt, t+dt, dt, args, td[0])
-    dvt_H1 += d1(t+dt, Vt, sc_ops, args, td[1]) * dt
+    dvt_H1 = d1(t+dt, Vt, sc_ops) * dt
     dvec_t = 0.50 * (dv_H1 + dvt_H1)
 
-    d2_vp = d2(t+dt, Vp, sc_ops, args, td[1])
-    d2_vm = d2(t+dt, Vm, sc_ops, args, td[1])
+    d2_vp = d2(t+dt, Vp, sc_ops)
+    d2_vm = d2(t+dt, Vm, sc_ops)
     dvec_t += np.dot(dW, 0.25*(2 * d2_vec + d2_vp + d2_vm))
     dW2 = 0.25 * (dW**2 - dt) / sqrt_dt
     dvec_t += np.dot(dW2, (d2_vp - d2_vm))
 
     return vec_t + dvec_t
 
+#
+#   d1,d2
+#
+def d1_psi_homodyne(t, psi, A_ops):
+    """
+    .. math::
+        D_1(C, \psi) = \\frac{1}{2}(\\langle C + C^\\dagger\\rangle\\C psi -
+        C^\\dagger C\\psi - \\frac{1}{4}\\langle C + C^\\dagger\\rangle^2\\psi)
+    """
+    d1 = A_ops[0].rhs(t, psi)
+    """if td:
+        sc_t = [[sc[0](t).data, sc[1](t).data, sc[2](t).data] for sc in A]
+    else:
+        sc_t = A"""
+    for sc in A_ops[1:]:
+        e1 = sc[1].expect(t, psi, 0)
+        d1 += 0.5 * (e1 * sc[0].rhs(t, psi) - sc[2].rhs(t, psi) -
+                    0.25 * e1 ** 2 * psi)
+    return d1
+
+def d2_psi_homodyne(t, psi, A_ops):
+    """
+    .. math::
+        D_2(\psi, t) = (C - \\frac{1}{2}\\langle C + C^\\dagger\\rangle)\\psi
+    """
+    d2 = []
+    """if td:
+        sc_t = [[sc[0](t).data, sc[1](t).data] for sc in A]
+    else:
+        sc_t = A"""
+    for sc in A_ops[1:]:
+        e1 = sc[1].expect(t, psi, 0)
+        d2 += [sc[0].rhs(t, psi) - 0.5 * e1 * psi]
+    return np.vstack(d2)
+
+def d1_psi_photocurrent(t, psi, A_ops):
+    """
+    Note: requires poisson increments
+    .. math::
+        D_1(\psi, t) = - \\frac{1}{2}(C^\dagger C \psi - ||C\psi||^2 \psi)
+    """
+    d1 = A_ops[0].rhs(t, psi)
+    for sc in A_ops[1:]:
+        d1 += (-0.5 * sc[1].rhs(t, psi)
+                - norm(sc[0].rhs(t, psi)) ** 2 * psi))
+    return d1
+
+def d2_psi_photocurrent(t, psi, A_ops):
+    """
+    Note: requires poisson increments
+    .. math::
+        D_2(\psi, t) = C\psi / ||C\psi|| - \psi
+    """
+    d2 = []
+    for sc in A_ops[1:]:
+        psi_1 = sc[0].rhs(t, psi)
+        n1 = norm(psi_1)
+        if n1 > 1e-15: # != 0
+            d2 += [psi_1 / n1 - psi]
+        else:
+            d2 += [- psi]
+    return np.vstack(d2)
+
+def d1_rho(t, rho_vec, A_ops):
+    """
+    D1[a] rho = lindblad_dissipator(a) * rho
+    Included in the Liouvilllian
+
+    Homodyne + Heterodyne
+    """
+    return A_ops[0].rhs(t, rho_vec)
+
+def d2_rho(t, rho_vec, A_ops):
+    """
+    D2[a] rho = a rho + rho a^\dagger - Tr[a rho + rho a^\dagger]
+              = (A_L + Ad_R) rho_vec - E[(A_L + Ad_R) rho_vec]
+
+    Homodyne + Heterodyne
+    """
+    d2 = []
+    for sc in A_ops[1:]:
+        e1 = sc.expect(t, rho_vec, 0)
+        d2 += [sc.rhs(t, rho_vec) - e1 * rho_vec]
+    return np.vstack(d2)
+
+def d1_rho_photocurrent(t, rho_vec, A_ops):
+    d1 = A_ops[0].rhs(t, rho_vec)
+    """if td:
+        sc_t = [sc[0](t).data for sc in A]
+    else:
+        sc_t = [sc[0] for sc in A]"""
+    for sc in A_ops[1:]:
+        e1 = sc.expect(t, rho_vec, 0)
+        d1 += 0.5 * (e1 * rho_vec - sc.rhs(t, rho_vec))
+    return d1
+
+def d2_rho_photocurrent(t, rho_vec, A_ops):
+    d2 =[]
+    """if td:
+        sc_t = [sc[1](t).data for sc in A]
+    else:
+        sc_t = [sc[1] for sc in A]"""
+    for sc in A_ops[1:]:
+        e1 = sc.expect(t, rho_vec, 0)
+        if e1.real > 1e-15:
+            d2 += [sc.rhs(t, rho_vec) / e1 - rho_vec]
+        else:
+            d2 += [-rho_vec]
+    return np.vstack(d2)
+
+#
+#   Preparation of the td_Qobj for the d1, d2
+#
+def prep_sc_ops_homodyne_rho(H, c_ops, sc_ops, dt, td, args, times):
+    L = td_liouvillian(H, c_ops=c_ops, args=args, tlist=times)
+    A = []
+    for sc in sc_ops:
+        L += td_lindblad_dissipator(sc, args=args, tlist=times)
+        td_sc = td_Qobj(sc, args=args, tlist=times)
+        A += [td_sc.apply(spre) + td_sc.dag().apply(spost)]
+    return [L] + A
+
+def prep_sc_ops_photocurrent_rho(H, c_ops, sc_ops, dt, td, args, times):
+    def _cdc(c):
+        return c*c.dag()   # not c.dag() c ?
+    def _cdc2(c):
+        return spre(c) * spost(c.dag())
+
+    L = td_liouvillian(H, c_ops=c_ops, args=args, tlist=times)
+    A = []
+    for sc in sc_ops:
+        L += td_lindblad_dissipator(sc, args=args, tlist=times)
+        td_sc = td_Qobj(sc, args=args, tlist=times)
+        n = td_sc.apply(_cdc)._f_norm2()
+        A += [[n.apply(spre) + n.apply(spost),
+            td_sc.apply(_cdc2)._f_norm2(), n.apply(spre)]]
+    return [L] + A
+
+def prep_sc_ops_homodyne_psi(H, c_ops, sc_ops, dt, td, args, times):
+    def _cdc(c):
+        return c.dag()*c
+
+    H = td_Qobj(H, args=args, tlist=times) * -1.0j
+    A = []
+    sc_t = [td_Qobj(sc, args=args, tlist=times) for sc in sc_ops]
+    for sc in sc_t:
+        n = sc.apply(_cdc)._f_norm2()
+        A += [[sc, (sc + sc.dag()), n]]
+    return [H] + A
+
+def prep_sc_ops_photocurrent_psi(H, c_ops, sc_ops, dt, td, args, times):
+    def _cdc(c):
+        return c.dag()*c
+
+    H = td_Qobj(H, args=args, tlist=times)*-1.0j
+    A = []
+    sc_t = [td_Qobj(sc, args=args, tlist=times) for sc in sc_ops]
+    for sc in sc_t:
+        n = sc.apply(_cdc)._f_norm2()
+        A += [[sc, n]]
+    return [H] + A
+
+
+###############################################################################
+###                         advanced python solvers                         ###
+###############################################################################
+# Solver which use the derivative to obtain better convergence
+# milstein
+# milstein-imp
+# taylor15
+# taylor15-imp
+
+#Ok? Only called by _solver_milstein, move in?
+def d2_rho_milstein(t, rho_vec, A_ops):
+    """
+    D2[a] rho = a rho + rho a^\dagger - Tr[a rho + rho a^\dagger]
+              = (A_L + Ad_R) rho_vec - E[(A_L + Ad_R) rho_vec]
+
+    Homodyne + Heterodyne
+    """
+
+    """if td:
+        sc_t = [sc[0](t).data for sc in sc_ops]
+    else:
+        sc_t = [sc[0] for sc in sc_ops]"""
+
+    """for sc in A_ops[1:]:
+        e1 = sc.expect(t, rho_vec, 0)
+        d2 += [sc.rhs(t, rho_vec) - e1 * rho_vec]
+    d2_vec = np.vstack(d2)"""
+
+    d2 = []
+    dd2 = []
+    len_sc = len(sc_ops) - 1
+    for i, sc in enumerate(A_ops[1:]):
+        e1 = sc.expect(t, rho_vec, 0)
+        d2 += [sc.rhs(t, rho_vec) - e1 * rho_vec]
+        for d2v in d2:
+            e2 = sc.expect(t, d2v, 0)
+            dd2 += [sc.rhs(t, d2v) - e2 * rho_vec - e1 * d2v]
+
+    return np.vstack(d2), np.vstack(dd2)
+
+#Ok?
+def _solver_milstein(H, vec_t, t, dt, sc_ops, dW, d1, d2, args, td):
+    """
+    Milstein rhs function for both master eq and schrodinger eq.
+
+    Slow but should be valid for non-commuting operators since computing
+        both i x j and j x i. Need to be commuting anyway
+
+    dV = -iH*V*dt + d1*dt + d2_i*dW_i
+         + 0.5*d2_i(d2_j(V))*(dW_i*dw_j -dt*delta_ij)
+    """
+    #Euler part
+    dvec_t += d1(t, vec_t, sc_ops) * dt
+    d2_vec, d22_vec = d2(t, vec_t, sc_ops)
+    dvec_t += np.dot(dW, d2_vec)
+    #Milstein terms
+    len_sc = len(sc_ops) - 1
+    dW2 = np.zeros( (len_sc*(len_sc+1)) // 2)
+    i, j = 0, 0
+    for i, dWi in enumerate(dW2):
+        dWi = dW[i]*dW[j]*0.5
+        if i == j:
+            i, j = i + 1, 0
+            dWi -= dt*0.5
+        else:
+            j += 1
+    dvec_t += np.dot(dW2, d2v)
+    return vec_t + dvec_t
+
+    """for i in range(len_sc):
+        for j in range(i+1):
+            dW2 = dW[i]*dW[j]*0.5
+            dW2[i] -= dt*0.5"""
+
+#Ok?
 def _rhs_rho_taylor_15_one(L, rho_t, t, dt, A, ddW, d1, d2, args, td):
     """
     strong order 1.5 Taylor scheme for homodyne detection with 1 stochastic operator
@@ -1756,41 +1525,42 @@ def _rhs_rho_taylor_15_one(L, rho_t, t, dt, A, ddW, d1, d2, args, td):
     Noise[5] = 0.5 * dt
     Noise[6] = 0.5 * (0.3333333333333333 * ddW[0] * ddW[0] - dt) * ddW[0]
 
-    A = A[0] #А[0] - spre(sc_ops) + spost(sc_ops)
+    L = A[0]
+    A = A[1] # : spre(sc_ops) + spost(sc_ops)
 
     # drho = a (rho, t) * dt + b (rho, t) * dW
     # rho_(n+1) = rho_n + adt + bdW + 0.5bb'((dW)^2 - dt) +  - Milstein terms
     # + ba'dZ + ab'(dWdt - dZ) + 0.5[(da/dt) + aa']dt^2 + 0.5bb'bb'(1/3(dW)^2 - dt)dW
 
     # Milstein terms:
-    Liv[0] = _rhs_rho_deterministic(L, rho_t, t, dt, args, td[0]) #a
+    Liv[0] = L.rhs(t, rho_vec)#_rhs_rho_deterministic(L, rho_t, t, dt, args, td[0]) #a
     e0 = cy_expect_rho_vec(A[0], rho_t, 1)
     #Zaxpy doesn't detect numerical overflow
     #Here Phython will complain about the oveflow
     #this helps to detect too large time-step
-    Liv[1] = A[0] * rho_t - e0 * rho_t
+    Liv[1] = A.rhs(t, Liv[0]) - e0 * rho_t# A[0] * rho_t - e0 * rho_t
     #Liv[1] = A[0] * rho_t
     #Liv[1] = zaxpy(rho_t, Liv[1], n, -e0)
-    TrAb = cy_expect_rho_vec(A[0], Liv[1], 1)
+    TrAb = A.expect(t, Liv[1], 1)#cy_expect_rho_vec(A[0], Liv[1], 1)
     #A[0] * Liv[1] - TrAb * rho_t - e0 * Liv[1]:
-    Liv[2] = A[0] * Liv[1]
+    Liv[2] = A.rhs(t, Liv[1]) # A[0] * Liv[1]
     Liv[2] = zaxpy(rho_t, Liv[2], n, -TrAb)
     Liv[2] = zaxpy(Liv[1], Liv[2], n, -e0)
-    TrALb = cy_expect_rho_vec(A[0], Liv[2], 1)
-    TrAa = cy_expect_rho_vec(A[0], Liv[0], 1)
+    TrALb = A.expect(t, Liv[2], 1) #cy_expect_rho_vec(A[0], Liv[2], 1)
+    TrAa = A.expect(t, Liv[0], 1) #cy_expect_rho_vec(A[0], Liv[0], 1)
 
     #New terms:
-    Liv[3] = _rhs_rho_deterministic(L, Liv[1], t, dt, args, td[0])
+    Liv[3] = L.rhs(t, Liv[1])#_rhs_rho_deterministic(L, Liv[1], t, dt, args, td[0])
     #A[0] * Liv[0] - TrAa * rho_t - e0 * Liv[0] - TrAb * Liv[1]:
-    Liv[4] = A[0] * Liv[0]
+    Liv[4] = A.rhs(t, Liv[0])
     Liv[4] = zaxpy(rho_t, Liv[4], n, -TrAa)
     Liv[4] = zaxpy(Liv[0], Liv[4], n, -e0)
     Liv[4] = zaxpy(Liv[1], Liv[4], n, -TrAb)
     #0.5[(da/dt) + aa']dt^2:
-    Liv[5] = _rhs_rho_deterministic_deriv(L, rho_t, t, dt, args, td[0])
-    Liv[5] = zaxpy(_rhs_rho_deterministic(L, Liv[0], t, dt, args, td[0]), Liv[5], n, dt)
+    Liv[5] = L.rhs(t + dt, rho_vec) - Liv[0]#_rhs_rho_deterministic_deriv(L, rho_t, t, dt, args, td[0])
+    Liv[5] = zaxpy(L.rhs(t, Liv[0]), Liv[5], n, dt) #zaxpy(_rhs_rho_deterministic(L, Liv[0], t, dt, args, td[0]), Liv[5], n, dt)
     #A[0] * Liv[2] - TrALb * rho_t - (2 * TrAb) * Liv[1] - e0 * Liv[2]:
-    Liv[6] = A[0] * Liv[2]
+    Liv[6] = A.rhs(t, Liv[2]) #A[0] * Liv[2]
     Liv[6] = zaxpy(rho_t, Liv[6], n, -TrALb)
     Liv[6] = zaxpy(Liv[1], Liv[6], n, -2.0 * TrAb)
     Liv[6] = zaxpy(Liv[2], Liv[6], n, -e0)
@@ -1798,7 +1568,6 @@ def _rhs_rho_taylor_15_one(L, rho_t, t, dt, A, ddW, d1, d2, args, td):
     drho_t = np.dot(Noise,Liv)
 
     return rho_t + drho_t
-
 
 def _rhs_psi_taylor_15_implicit(H, rho_t, t, dt, A, ddW, d1, d2, args, td):
     """
@@ -1873,7 +1642,6 @@ def _rhs_psi_taylor_15_implicit(H, rho_t, t, dt, A, ddW, d1, d2, args, td):
     v, check = sp.linalg.bicgstab(B, drho_t, x0 = xx0, tol=args['tol'])
     return v
 
-
 def _rhs_rho_taylor_15_implicit(L, rho_t, t, dt, A, ddW, d1, d2, args, td):
     """
     strong order 1.5 Taylor implisit scheme for homodyne detection with 1 stochastic operator
@@ -1942,17 +1710,6 @@ def _rhs_rho_taylor_15_implicit(L, rho_t, t, dt, A, ddW, d1, d2, args, td):
 
     return v
 
-
-def _generate_A_ops_taylor(sc_ops, L, dt):
-    """
-    pre-compute superoperator operator combinations that are commonly needed
-    when evaluating the RHS of stochastic master equations
-    for Tayor-1.5 expicit and implicit solver
-    """
-    out = [[spre(sc).data + spost(sc.dag()).data] for sc in sc_ops] #for H[sc_ops]
-
-    return out
-
 def _generate_noise_Taylor_15(N_store, N_substeps, d2_len, n, dt):
     """
     generate noise terms for the strong Taylor 1.5 scheme
@@ -1963,6 +1720,218 @@ def _generate_noise_Taylor_15(N_store, N_substeps, d2_len, n, dt):
     dZ = 0.5 * dt**(3./2) * (U1 + 1./np.sqrt(3) * U2)
 
     return np.dstack((dW, dZ))
+
+
+
+#Computed in _rhs_rho_taylor_15_one
+"""def _rhs_rho_deterministic_deriv(L, rho_t, t, dt, args, td):
+    "" "
+    Time derivative for Taylor 1.5 method
+    "" "
+    out = np.zeros(rho_t.shape[0],dtype=complex)
+    if td:
+        constant_func = lambda x, y: 1.0
+        for n in range (len(L)):
+            if L[n][1] != constant_func: #Do we have a time-dependence?
+                L_list = L[n][0]
+                dL = L[n][1](t + dt,args) - L[n][1](t,args)
+                if L[n][2]: #for с_ops
+                    dL *= 2 * L[n][1](t,args)
+                    spmvpy_csr(L_list.data, L_list.indices, L_list.indptr, rho_t, dL, out)
+                else: #for H
+                    spmvpy_csr(L_list.data, L_list.indices, L_list.indptr, rho_t, dL, out)
+
+    return out"""
+
+#use td object
+"""def _L_td_taylor(H, c_ops, sc_ops, td):
+    "" "
+    Time dependent liouvillian for Taylor-1.5 implicit and explicit solver
+    "" "
+    if not any(td):
+        L_list = liouvillian(H, c_ops=c_ops).data
+        L_list += np.sum([lindblad_dissipator(sc, data_only=True) for sc in sc_ops], axis=0)
+    else:
+    #L[n][0] - operator
+    #L[n][1] - it's dependence on time
+    #L[n][2] - do we need to square the time-dependent coefficient?
+        L_list = []
+        constant_func = lambda x, y: 1.0
+        for h_spec in H:
+            if isinstance(h_spec, Qobj):
+                h = h_spec
+                h_coeff = constant_func
+            elif isinstance(h_spec, list) and isinstance(h_spec[0], Qobj):
+                h = h_spec[0]
+                h_coeff = h_spec[1]
+            else:
+                raise TypeError("Incorrect specification of time-dependent " +
+                            "Hamiltonian (expected callback function)")
+            if isoper(h):
+                L_list.append([(-1j * (spre(h) - spost(h))).data, h_coeff, False])
+            else:
+                raise TypeError("Incorrect specification of time-dependent " +
+                            "Hamiltonian (expected operator)")
+
+        for c_spec in c_ops:
+            if isinstance(c_spec, Qobj):
+                c = c_spec
+                c_coeff = constant_func
+                c_square = False
+            elif isinstance(c_spec, list) and isinstance(c_spec[0], Qobj):
+                c = c_spec[0]
+                c_coeff = c_spec[1]
+                c_square = True
+            else:
+                raise TypeError("Incorrect specification of time-dependent " +
+                            "collapse operators (expected callback function)")
+            if isoper(c):
+                L_list.append([liouvillian(None, [c], data_only=True), c_coeff, c_square])
+            else:
+                raise TypeError("Incorrect specification of time-dependent " +
+                            "collapse operators (expected operator)")
+
+        for sc_spec in sc_ops:
+            if isinstance(sc_spec, Qobj):
+                sc = sc_spec
+                sc_coeff = constant_func
+            else:
+                raise TypeError("Incorrect specification of stohastic operator")
+            if isoper(sc):
+                L_list.append([lindblad_dissipator(sc, data_only=True), sc_coeff, False])
+            else:
+                raise TypeError("Incorrect specification of stohastic operator")
+
+    return(L_list)"""
+
+
+# Same as prep_sc_ops_homodyne_rho
+"""def _generate_A_ops_taylor(sc_ops, L, dt):
+    "" "
+    pre-compute superoperator operator combinations that are commonly needed
+    when evaluating the RHS of stochastic master equations
+    for Tayor-1.5 expicit and implicit solver
+    "" "
+    out = [[spre(sc).data + spost(sc.dag()).data] for sc in sc_ops] #for H[sc_ops]
+
+    return out"""
+
+
+
+
+
+# Old to be moved after adapted
+
+
+#
+#   Hamiltonian deterministic evolution
+#
+
+
+
+
+
+
+
+#
+#   d1 and d2 functions for common schemes (Schrodinger)
+#
+
+def prep_sc_ops_heterodyne_psi(H, c_ops, sc_ops, dt, td, args, times):
+    if not td[0]:
+        H = -1.0j*H.data * dt
+    else:
+        H = td_Qobj(H, args=args, tlist=times)*-1.0j * dt
+
+    A = []
+    if not td[1]:
+        for sc in sc_ops:
+            A.append([sc.data, sc.dag().data, (sc + sc.dag()).data,
+                     (sc - sc.dag()).data, (sc.dag() * sc).data])
+    else:
+        def _cdc(c):
+            return c.dag()*c
+
+        sc_t = [td_Qobj(sc, args=args, tlist=times) for sc in sc_ops]
+        for sc in sc_t:
+            cd = sc.dag()
+            n = sc.apply(_cdc)._f_norm2()
+            A.append([sc, cd, sc + cd,
+                     sc - cd, n])
+    return H,A
+
+def prep_sc_ops_heterodyne_rho(H, c_ops, sc_ops, dt, td, args, times):
+    if not any(td):
+        # No time-dependance
+        L = liouvillian(H, c_ops=c_ops).data * dt
+        A = []
+        for sc in sc_ops:
+            L += lindblad_dissipator(sc, data_only=True) * dt
+            A += [[ 1.0  / np.sqrt(2) * (spre(sc).data + spost(sc.dag()).data)]]
+            A += [[-1.0j / np.sqrt(2) * (spre(sc).data - spost(sc.dag()).data)]]
+
+    elif not td[1]:
+        # sc_ops do not depend on time
+        L = td_liouvillian(H, c_ops=c_ops, args=args, tlist=times) * dt
+        A = []
+        for sc in sc_ops:
+            L += lindblad_dissipator(sc) * dt
+            A += [[ 1.0  / np.sqrt(2) * (spre(sc).data + spost(sc.dag()).data)]]
+            A += [[-1.0j / np.sqrt(2) * (spre(sc).data - spost(sc.dag()).data)]]
+
+    else:
+        td[0] = True
+        L = td_liouvillian(H, c_ops=c_ops) * dt
+        A = []
+        for sc in sc_ops:
+            L += td_lindblad_dissipator(sc, args=args, tlist=times) * dt
+            td_sc = td_Qobj(sc, args=args, tlist=times)
+            A += [[ 1.0  / np.sqrt(2) * (td_sc.apply(spre) +
+                                         td_sc.dag().apply(spost))]]
+            A += [[-1.0j / np.sqrt(2) * (td_sc.apply(spre) -
+                                         td_sc.dag().apply(spost))]]
+    return L, A
+
+def d1_psi_heterodyne(t, psi, A, args, td):
+    """
+    .. math::
+        D_1(\psi, t) = -\\frac{1}{2}(C^\\dagger C -
+        \\langle C^\\dagger \\rangle C +
+        \\frac{1}{2}\\langle C \\rangle\\langle C^\\dagger \\rangle))\psi
+    """
+    d1 = np.zeros(len(psi), dtype=complex)
+    if td:
+        sc_t = [[sc[0](t).data, sc[1](t).data, sc[4](t).data] for sc in A]
+    else:
+        sc_t = A
+    for sc in sc_t:
+        e_C = cy_expect_psi(sc[0], psi, 0)
+        e_Cd = cy_expect_psi(sc[1], psi, 0)
+        d1 += (-0.5 * spmv(sc[2], psi) +
+                0.5 * e_Cd * spmv(sc[0], psi) -
+                0.25 * e_C * e_Cd * psi)
+    return d1
+
+def d2_psi_heterodyne(t, psi, A, args, td):
+    """
+        X = \\frac{1}{2}(C + C^\\dagger)
+        Y = \\frac{1}{2}(C - C^\\dagger)
+        D_{2,1}(\psi, t) = \\sqrt(1/2) (C - \\langle X \\rangle) \\psi
+        D_{2,2}(\psi, t) = -i\\sqrt(1/2) (C - \\langle Y \\rangle) \\psi
+    """
+    d2 = []
+    if td:
+        sc_t = [[sc[0](t).data, sc[2](t).data, sc[3](t).data] for sc in A]
+    else:
+        sc_t = [[sc[0], sc[2], sc[3]] for sc in A]
+    for sc in sc_t:
+        X = 0.5 * cy_expect_psi(sc[1], psi, 0)
+        Y = 0.5 * cy_expect_psi(sc[2], psi, 0)
+        d2 += [np.sqrt(0.5) * (spmv(sc[0], psi) - X * psi)]
+        d2 += [-1.0j * np.sqrt(0.5) * (spmv(sc[0], psi) - Y * psi)]
+    return np.vstack(d2)
+
+
 #
 #   Preparation of operator for the fast version
 #
