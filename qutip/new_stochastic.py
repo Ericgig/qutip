@@ -70,10 +70,15 @@ from qutip.parallel import serial_map
 from qutip.ui.progressbar import TextProgressBar
 from qutip.solver import Options, _solver_safety_check
 from qutip.settings import debug
-from qutip.td_qobj import td_liouvillian, td_Qobj, td_lindblad_dissipator
+from qutip.td_qobj import td_Qobj
 from scipy.sparse.linalg import LinearOperator
 from scipy.linalg.blas import zaxpy
 
+def td_liouvillian(*args):
+    pass
+
+def td_lindblad_dissipator(*args):
+    pass
 
 if debug:
     import qutip.logging_utils
@@ -1314,8 +1319,7 @@ def d1_psi_photocurrent(t, psi, A_ops):
     """
     d1 = A_ops[0].rhs(t, psi)
     for sc in A_ops[1:]:
-        d1 += (-0.5 * sc[1].rhs(t, psi)
-                - norm(sc[0].rhs(t, psi)) ** 2 * psi))
+        d1 += (-0.5 * sc[1].rhs(t, psi) - norm(sc[0].rhs(t, psi)) ** 2 * psi)
     return d1
 
 def d2_psi_photocurrent(t, psi, A_ops):
