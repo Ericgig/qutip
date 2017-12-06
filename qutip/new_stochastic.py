@@ -1212,7 +1212,7 @@ def _smesolve_fast(sso, options, progress_bar):
 # Work with generic d1, d2 , dW...
 # Same solver for smesolve and ssesolve
 # The hamiltonian is included in d1
-#
+
 # Euler-Maruyama
 # Platen (1)
 
@@ -1220,12 +1220,12 @@ def _smesolve_fast(sso, options, progress_bar):
 #   Platen (1.5)?
 #   predictor-corrector?
 #   runge-kutta?
-#
+
 # 3 sections
 #   - solvers
 #   - d1,d2
 #   - functions to preparer the operators for d1 and d2
-#
+
 
 #
 #   Stochastic schemes
