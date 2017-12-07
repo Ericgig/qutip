@@ -359,7 +359,7 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
             dW_factors = []
             for fact in sso.dW_factors:
                 dW_factors += [np.sqrt(2) * fact, np.sqrt(2) * fact]
-        elif len(sso.dW_factors) != len(sso.sops)
+        elif len(sso.dW_factors) != len(sso.sops):
             raise Exception("The len of dW_factors is not the same as sc_ops")
         sso.dw_len = len(sso.sops)
 
@@ -369,7 +369,8 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     else:
         raise Exception("The method must be one of None, homodyne, heterodyne")
     [op.compile() for op in sso.sops]
-
+    sso.cm_ops = [td_Qobj(spre(op)) for op in sso.m_ops]
+    sso.ce_ops = [td_Qobj(spre(op)) for op in sso.e_ops]
 
     if sso.solver in ['euler-maruyama', 'euler', None, 50, 0.5]:
         sso.solver_code = 50
@@ -393,11 +394,8 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
                         "'milstein', 'platen', 'taylor15', "+\
                         "'milstein-imp', 'taylor15-imp', 'pc-euler']")
 
-    sso.cy_solver = sme()
-    sso.cy_solver.set_data(sso.d1, sso.sops)
-    sso.cy_solver.set_solver(sso.solver_code, sso.tol)
-    sso.cy_solver.set_noise(sso.noise_type, sso)
-    res = _smesolve_fast(sso, sso.options, sso.progress_bar)
+
+    res = _smesolve_generic(sso, sso.options, sso.progress_bar)
 
 
     if e_ops_dict:
@@ -405,3 +403,70 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
                       for n, e in enumerate(e_ops_dict.keys())}
 
     return res
+
+
+
+def _smesolve_generic(sso, options, progress_bar):
+    """
+    Internal function. See smesolve.   Not Good yet ------------------------------------------
+    """
+    if debug:
+        logger.debug(inspect.stack()[0][3])
+
+    # Here ?????
+    sso.N_store = len(sso.times)
+    sso.N_substeps = sso.nsubsteps
+    sso.dt = (sso.times[1] - sso.times[0]) / sso.N_substeps
+
+    data = Result()
+    data.solver = "smesolve"
+    data.times = sso.times
+    data.expect = np.zeros((len(sso.e_ops), sso.N_store), dtype=complex)
+    data.ss = np.zeros((len(sso.e_ops), sso.N_store), dtype=complex)
+    data.noise = []
+    data.measurement = []
+
+    sso.cy_solver = sme()
+    sso.cy_solver.set_data(sso.d1, sso.sops)
+    sso.cy_solver.set_solver(sso.solver_code, sso.tol)
+    sso.cy_solver.set_noise(sso.noise_type, sso)
+
+    task = sso.cy_sesolve_single_trajectory
+
+    map_kwargs = {'progress_bar': progress_bar}
+    map_kwargs.update(sso.map_kwargs)
+
+    task_args = (sso,)
+    task_kwargs = {}
+
+    results = sso.map_func(task, list(range(sso.ntraj)),
+                           task_args, task_kwargs, **map_kwargs)
+
+    for result in results:
+        states_list, dW, m, expect, ss = result
+        data.states.append(states_list)
+        data.noise.append(dW)
+        data.measurement.append(m)
+        data.expect += expect
+        data.ss += ss
+
+    # average density matrices
+    if options.average_states and np.any(data.states):
+        data.states = [sum([data.states[mm][n] for mm in range(nt)]).unit()
+                       for n in range(len(data.times))]
+
+    # average
+    data.expect = data.expect / nt
+
+    # standard error
+    if nt > 1:
+        data.se = (data.ss - nt * (data.expect ** 2)) / (nt * (nt - 1))
+    else:
+        data.se = None
+
+    # convert complex data to real if hermitian
+    data.expect = [np.real(data.expect[n, :])
+                   if e.isherm else data.expect[n, :]
+                   for n, e in enumerate(sso.e_ops)]
+
+    return data

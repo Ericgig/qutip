@@ -13,7 +13,7 @@ cimport numpy as np
 cimport cython
 cimport libc.math
 from qutip.cy.td_qobj_cy cimport cy_qobj
-include "parameters.pxi"
+include "/home/eric/anaconda3/lib/python3.6/site-packages/qutip-4.3.0.dev0+db5194c-py3.6-linux-x86_64.egg/qutip/cy/parameters.pxi"
 
 import scipy.sparse as sp
 from scipy.linalg.cython_blas cimport zaxpy
@@ -37,72 +37,119 @@ Solver:
     taylor2.0-imp     203
 """
 
-
-
 cdef class ssolvers:
     cdef int l_vec, N_ops
     cdef int solver#, noise_type
-    #cdef object generate_noise
-    #cdef double[:,:,:] noise
+    cdef int N_substeps
+    cdef double dt
+
+    def __init__(self):
+        self.l_vec = 0
+        self.N_ops = 0
+        self.solver = 0
 
     def set_solver(self, sso):
         self.solver = sso.solver_code
+        self.dt = sso.dt
+        self.N_substeps = sso.N_substeps
         if self.solver % 10 == 3:
-            # implicit solver
             self.set_implicit(sso)
-        """self.noise_type = sso.noise_type
-        if noise_type == 3:
-            self.generate_noise = sso.generate_noise
-        if noise_type == 2:
-            self.noise = sso.noise
-        if noise_type == 1:
-            np.random.seed(sso.noise)
-            self.noise = np.random.random(len(sso.times,sso.nsubsteps,
-                                          sso.dw_len))
-        if noise_type == 0:
-            np.random.seed()
-            self.noise = np.random.random(len(sso.times,sso.nsubsteps,
-                                          sso.dw_len))"""
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def cy_sesolve_single_trajectory(int n, sso):
+        cdef double[::1] times = sso.times
+        cdef complex[::1] rho_t
+        cdef double t
+        cdef int m_idx, t_idx, e_idx
 
+        cdef double [:, :, ::1] noise = self.make_noise(sso)
 
+        rho_t = mat2vec(sso.state0.full()).ravel()
+        dims = sso.state0.dims
 
-    def run(self, double t, double dt, double[::1] noise,
+        expect = np.zeros((len(sso.ce_ops), len(sso.times)), dtype=complex)
+        ss = np.zeros((len(sso.ce_ops), len(sso.times)), dtype=complex)
+        measurements = np.zeros((len(times), len(sso.cm_ops)), dtype=complex)
+        states_list = []
+
+        for t_idx, t in enumerate(times):
+            if sso.ce_ops:
+                for e_idx, e in enumerate(sso.ce_ops):
+                    s = e.expect(t, rho_t, 0)
+                    expect[e_idx, t_idx] = s
+                    ss[e_idx, t_idx] = s ** 2
+
+            if sso.store_states or not sso.ce_ops:
+                states_list.append(Qobj(vec2mat(rho_t), dims=dims))
+
+            if sso.store_measurement:
+                for m_idx, m in enumerate(sso.cm_ops):
+                    m_expt = m.expect(t, rho_t, 0)
+                    measurements[t_idx, m_idx] = m_expt + dW_factor[m_idx] * \
+                        sum(dW[t_idx, :, m_idx]) / (self.dt * self.N_substeps)
+
+            rho_t = self.run(t, self.dt, noise[t_idx, :, :],
+                             rho_t, self.N_substeps)
+
+        if sso.method == 'heterodyne':
+            measurements = measurements.reshape(len(times),len(sso.cm_ops)//2,2)
+
+        return states_list, noise, measurements, expect, ss
+
+    def run(self, double t, double dt, double[:, ::1] noise,
             complex[::1] vec, int N_substeps):
-        cdef complex[::1] out = np.zeros(self.l_vec)
+        cdef complex[::1] out = np.empty(self.l_vec)
         cdef int i
         if self.solver == 50:
             for i in range(N_substeps):
-                self.euler(t, dt, noise, vec, out)
+                self.euler(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
         if self.solver == 100:
             for i in range(N_substeps):
-                self.platen(t, dt, noise, vec, out)
+                self.platen(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
         if self.solver == 101:
             for i in range(N_substeps):
-                self.pred_corr(t, dt, noise, vec, out)
+                self.pred_corr(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
         if self.solver == 102:
             for i in range(N_substeps):
-                self.milstein(t, dt, noise, vec, out)
+                self.milstein(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
         if self.solver == 103:
             for i in range(N_substeps):
-                self.milstein_imp(t, dt, noise, vec, out)
+                self.milstein_imp(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
         return vec
 
+    # Dummy functions
+    cdef void d1(self, double t, complex[::1] v, complex[::1] out):
+        pass
+
+    cdef void d2(self, double t, complex[::1] v, complex[:, ::1] out):
+        pass
+
+    cdef void d2d2p(self, double t, complex[::1] v,
+                    complex[:, ::1] out, complex[:, :, ::1] out2):
+        pass
+
+    cdef void implicit(self, double t,  np.ndarray[complex, ndim=1] dvec,
+                       complex[::1] out, np.ndarray[complex, ndim=1] guess):
+        pass
+
+    def set_implicit(self, sso):
+        pass
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef void euler(self, double t, double dt, double[:] noise,
-                    complex[:] vec, complex[:] out):
+                    complex[::1] vec, complex[::1] out):
         cdef int i, j
         cdef complex[:, ::1] d2 = np.empty((self.N_ops, self.l_vec),
                                            dtype=complex)
@@ -118,7 +165,7 @@ cdef class ssolvers:
     @cython.wraparound(False)
     @cython.cdivision(True)
     cdef void platen(self, double t, double dt, double[:] noise,
-                    complex[:] vec, complex[:] out):
+                    complex[::1] vec, complex[::1] out):
         """
         Platen rhs function for both master eq and schrodinger eq.
         dV = -iH* (V+Vt)/2 * dt + (d1(V)+d1(Vt))/2 * dt
@@ -177,7 +224,7 @@ cdef class ssolvers:
     @cython.boundscheck(False)
     @cython.cdivision(True)
     cdef void pred_corr(self, double t, double dt, double[:] noise,
-                    complex[:] vec, complex[:] out):
+                    complex[::1] vec, complex[::1] out):
 
         cdef int i, j, k
         cdef complex[::1] euler = np.zeros((self.l_vec), dtype=complex)
@@ -218,13 +265,13 @@ cdef class ssolvers:
                 b_corr[j] = d2[i,j] * noise[i]
 
         for j in range(self.l_vec):
-            out[j] = (a_pred[j] + a_corr[j] + b_pred[i,j] + b_corr[i,j]) * 0.5
+            out[j] = (a_pred[j] + a_corr[j] + b_pred[i] + b_corr[i]) * 0.5
 
     @cython.wraparound(False)
     @cython.boundscheck(False)
     @cython.cdivision(True)
     cdef void milstein(self, double t, double dt, double[:] noise,
-                    complex[:] vec, complex[:] out):
+                    complex[::1] vec, complex[::1] out):
         """
         Milstein rhs function for both master eq and schrodinger eq.
 
@@ -262,7 +309,7 @@ cdef class ssolvers:
     @cython.boundscheck(False)
     @cython.cdivision(True)
     cdef void milstein_imp(self, double t, double dt, double[:] noise,
-                           complex[:] vec, complex[:] out):
+                           complex[::1] vec, complex[::1] out):
         """
         Milstein rhs function for both master eq and schrodinger eq.
 
@@ -305,93 +352,74 @@ cdef class ssolvers:
                 for k in range(self.l_vec):
                     dvec[k] += dd2[i,j,k] * dw
 
-        self.implicit(dvec, out, guess)
+        self.implicit(t+dt, dvec, out, guess)
 
-
-"""cdef class sse(ssolvers):
-    pass"""
 
 cdef class sme(ssolvers):
-      cdef cy_qobj L
-      cdef object imp
-      cdef cy_qobj** c_ops
-      #cdef cy_qobj c_op
-      cdef int N_root
-      cdef double tol
+    cdef cy_qobj L
+    cdef object imp
+    cdef object c_ops
+    cdef int N_root
+    cdef double tol
 
-      def __init__(self):
-          self.N_ops = 0
-          self.c_ops = <cy_qobj**> PyDataMem_NEW(0 * sizeof(cy_qobj*))
+    def set_data(self, L, c_ops):
+        self.l_vec = L.cte.shape[0]
+        self.N_ops = len(c_ops)
+        self.L = L.compiled_Qobj
+        self.c_ops = []
+        for i, op in enumerate(c_ops):
+            self.c_ops.append(op.compiled_Qobj)
 
-      def __del__(self):
-          for i in range(self.N_ops):
-              PyDataMem_FREE(self.c_ops[i])
-          PyDataMem_FREE(self.c_ops)
+    def set_implicit(self, sso):
+        self.tol = sso.tol
+        self.imp = 1 - sso.LH * (sso.dt * 0.5)
+        self.imp.compile()
 
-      def set_data(self, L, c_ops):
-          self.l_vec = L.cte.shape[0]
-          self.N_ops = len(c_ops)
-          self.L = L.compiled_Qobj
-          PyDataMem_FREE(self.c_ops)
-          self.c_ops = <cy_qobj**> PyDataMem_NEW(self.N_ops * sizeof(cy_qobj*))
-          for i, op in enumerate(c_ops):
-              self.c_ops[i] = <cy_qobj*> op.compiled_Qobj
+    cdef void d1(self, double t, complex[::1] rho, complex[::1] out):
+        self.L._rhs_mat(t, &rho[0], &out[0])
 
-      def set_implicit(self, sso):
-          self.tol = sso.tol
-          self.imp = 1 - sso.LH * (dt *0.5)
-          self.imp.compile()
+    cdef void d2(self, double t, complex[::1] rho, complex[:, ::1] out):
+        cdef int i, k
+        cdef cy_qobj c_op
+        cdef complex expect
+        for i in range(self.N_ops):
+            c_op = self.c_ops[i]
+            c_op._rhs_mat(t, &rho[0], &out[i,0])
+            expect = 0.
+            for k in range(self.N_root):
+                expect += out[i, k*(self.N_root+1)]
+            for k in range(self.l_vec):
+                out[i,k] -= expect * rho[k]
 
-      cdef void d1(self, double t, complex[::1] rho, complex[::1] out):
-          self.L.rhs_mat(t, rho, out)
+    cdef void d2d2p(self, double t, complex[::1] rho,
+                    complex[:, ::1] d2_out, complex[:, :, ::1] dd2_out):
+        cdef int i, j, k
+        cdef cy_qobj c_op
+        cdef complex[::1] expect = np.zeros((self.N_ops,), dtype=complex)
+        cdef complex expect2
+        for i in range(self.N_ops):
+            c_op = self.c_ops[i]
+            c_op._rhs_mat(t, &rho[0], &d2_out[i,0])
+            for k in range(self.N_root):
+                expect[i] += d2_out[i, k*(self.N_root+1)]
+            for k in range(self.l_vec):
+                d2_out[i,k] -= expect[i] * rho[k]
 
-      cdef void d2(self, double t, complex[::1] rho, complex[:, ::1] out):
-          cdef int i, k
-          cdef complex[::1] expect = np.zeros((self.N_ops,), dtype=complex)
-          cdef complex expect
-          for i in range(self.N_ops):
-              self.c_ops[i].rhs_mat(t, &rho[0], &out[i,0])
-              expect = 0.
-              for k in range(self.N_root):
-                  expect += out[i, k*(self.N_root+1)]
-              for k in range(self.l_vec):
-                  out[i,k] -= expect * rho[k]
+        for i in range(self.N_ops):
+            for j in range(i, self.N_ops):
+                expect2 = 0.
+                c_op = self.c_ops[i]
+                c_op._rhs_mat(t, &d2_out[j,0], &dd2_out[i,j,0])
+                for k in range(self.N_root):
+                    expect2 += dd2_out[i, j, k*(self.N_root+1)]
+                for k in range(self.l_vec):
+                    dd2_out[i, j, k] -= expect2 * rho[k]
+                    dd2_out[i, j, k] -= expect[i] * d2_out[j,0]
 
-      cdef void d2d2p(self, double t, complex[::1] rho,
-                      complex[:, ::1] d2_out, complex[:, :, ::1] dd2_out):
-          cdef int i, j, k
-          cdef complex[::1] expect = np.zeros((self.N_ops,), dtype=complex)
-          cdef complex expect2
-          for i in range(self.N_ops):
-              self.c_ops[i].rhs_mat(t, &rho[0], &d2_out[i,0])
-              for k in range(self.N_root):
-                  expect[i] += d2_out[i, k*(self.N_root+1)]
-              for k in range(self.l_vec):
-                  d2_out[i,k] -= expect * rho[k]
-
-          for i in range(self.N_ops):
-              for j in range(i, self.N_ops):
-                  expect2 = 0.
-                  self.c_ops[i].rhs_mat(t, &d2_out[j,0], &dd2_out[i,j,0])
-                  for k in range(self.N_root):
-                      expect2 += dd2_out[i, j, k*(self.N_root+1)]
-                  for k in range(self.l_vec):
-                      dd2_out[i, j, k] -= expect2 * rho[k]
-                      dd2_out[i, j, k] -= expect[i] * d2_out[j,0]
-
-      cdef void implicit(self, double t,  np.ndarray[complex, ndim=1] dvec,
-                                          complex[::1] out
-                                          np.ndarray[complex, ndim=1] guess):
-          # np.ndarray to memoryview is OK but not the reverse
-          # scipy function only take np array, not memoryview
-          out, check = sp.linalg.bicgstab(self.imp(t, data=1),
-                                          dvec, x0 = guess, tol=self.tol)
-      """cdef void d2_united(self, double t, complex[::1] rho, complex[:, ::1] out):
-          self.c_op.rhs_mat(t, &rho, &out[0])
-          for i in range(self.N_ops):
-              j = i*l_vec
-              expect = 0.
-              for k in range(N_root):
-                  expect += out[j+k*(N_root+1)]
-              for k in range(l_vec):
-                  out[j+k] += expect * rho[k]"""
+    cdef void implicit(self, double t,  np.ndarray[complex, ndim=1] dvec,
+                                        complex[::1] out,
+                                        np.ndarray[complex, ndim=1] guess):
+        # np.ndarray to memoryview is OK but not the reverse
+        # scipy function only take np array, not memoryview
+        out, check = sp.linalg.bicgstab(self.imp(t, data=1),
+                                        dvec, x0 = guess, tol=self.tol)

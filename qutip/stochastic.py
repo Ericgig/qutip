@@ -1324,7 +1324,6 @@ def _smesolve_single_trajectory(n, sso):
         rho_prev = np.copy(rho_t)
 
         for j in range(N_substeps):
-
             if sso.noise is None and not sso.homogeneous:
                 for a_idx, A in enumerate(A_ops):
                     dw_expect = cy_expect_rho_vec(A[4], rho_t, 1) * dt
