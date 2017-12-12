@@ -6,14 +6,16 @@
 #from qutip.superoperator import mat2vec, vec2mat
 #from qutip.cy.spmatfuncs import cy_expect_psi_csr, cy_expect_rho_vec
 #from qutip.qobj import Qobj
-
+import time
 
 import numpy as np
 cimport numpy as np
 cimport cython
 cimport libc.math
 from qutip.cy.td_qobj_cy cimport cy_qobj
-include "/home/eric/anaconda3/lib/python3.6/site-packages/qutip-4.3.0.dev0+db5194c-py3.6-linux-x86_64.egg/qutip/cy/parameters.pxi"
+from qutip.qobj import Qobj
+from qutip.superoperator import vec2mat
+include "parameters.pxi"
 
 import scipy.sparse as sp
 from scipy.linalg.cython_blas cimport zaxpy
@@ -40,8 +42,13 @@ Solver:
 cdef class ssolvers:
     cdef int l_vec, N_ops
     cdef int solver#, noise_type
-    cdef int N_substeps
+    cdef int N_step, N_substeps, N_dw
     cdef double dt
+    cdef int noise_type
+    cdef double[:,:,:,::1] custom_noise
+    cdef double[::1] dW_factor
+    cdef unsigned int[::1] seed
+    cdef object generate_noise
 
     def __init__(self):
         self.l_vec = 0
@@ -51,43 +58,61 @@ cdef class ssolvers:
     def set_solver(self, sso):
         self.solver = sso.solver_code
         self.dt = sso.dt
-        self.N_substeps = sso.N_substeps
+        self.N_substeps = sso.nsubsteps
         if self.solver % 10 == 3:
             self.set_implicit(sso)
+        self.N_step = len(sso.times)
+        self.N_dw = len(sso.sops)
+        self.noise_type = sso.noise_type
+        self.dW_factor = np.array(sso.dW_factors,dtype=np.float64)
+        if self.noise_type == 2:
+            self.generate_noise = sso.generate_noise
+        elif self.noise_type == 1:
+            self.custom_noise = sso.noise
+        elif self.noise_type == 0:
+            self.seed = sso.noise
+
+    cdef double[:, :, ::1] make_noise(self, int n):
+        if self.noise_type == 0:
+            np.random.seed(self.seed[n])
+            return np.random.randn(self.N_step, self.N_substeps, self.N_dw) *\
+                                   np.sqrt(self.dt)
+        elif self.noise_type == 1:
+            return self.custom_noise[n,:,:,:]
+        elif self.noise_type == 2:
+            return self.generate_noise((self.N_step, self.N_substeps, self.N_dw),
+                                        self.dt, n)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    def cy_sesolve_single_trajectory(int n, sso):
+    def cy_sesolve_single_trajectory(self, int n, sso):
         cdef double[::1] times = sso.times
         cdef complex[::1] rho_t
         cdef double t
         cdef int m_idx, t_idx, e_idx
 
-        cdef double [:, :, ::1] noise = self.make_noise(sso)
+        cdef double[:, :, ::1] noise = self.make_noise(n)
 
-        rho_t = mat2vec(sso.state0.full()).ravel()
+        rho_t = sso.rho0.copy()
         dims = sso.state0.dims
 
         expect = np.zeros((len(sso.ce_ops), len(sso.times)), dtype=complex)
         ss = np.zeros((len(sso.ce_ops), len(sso.times)), dtype=complex)
         measurements = np.zeros((len(times), len(sso.cm_ops)), dtype=complex)
         states_list = []
-
         for t_idx, t in enumerate(times):
             if sso.ce_ops:
                 for e_idx, e in enumerate(sso.ce_ops):
-                    s = e.expect(t, rho_t, 0)
+                    s = e.compiled_Qobj.expect(t, rho_t, 0)
                     expect[e_idx, t_idx] = s
                     ss[e_idx, t_idx] = s ** 2
-
             if sso.store_states or not sso.ce_ops:
                 states_list.append(Qobj(vec2mat(rho_t), dims=dims))
-
             if sso.store_measurement:
                 for m_idx, m in enumerate(sso.cm_ops):
-                    m_expt = m.expect(t, rho_t, 0)
-                    measurements[t_idx, m_idx] = m_expt + dW_factor[m_idx] * \
-                        sum(dW[t_idx, :, m_idx]) / (self.dt * self.N_substeps)
+                    m_expt = m.compiled_Qobj.expect(t, rho_t, 0)
+                    measurements[t_idx, m_idx] = m_expt + self.dW_factor[m_idx] * \
+                        sum(noise[t_idx, :, m_idx]) / (self.dt * self.N_substeps)
 
             rho_t = self.run(t, self.dt, noise[t_idx, :, :],
                              rho_t, self.N_substeps)
@@ -97,9 +122,9 @@ cdef class ssolvers:
 
         return states_list, noise, measurements, expect, ss
 
-    def run(self, double t, double dt, double[:, ::1] noise,
-            complex[::1] vec, int N_substeps):
-        cdef complex[::1] out = np.empty(self.l_vec)
+    cdef complex[::1] run(self, double t, double dt, double[:, ::1] noise,
+                          complex[::1] vec, int N_substeps):
+        cdef complex[::1] out = np.zeros(self.l_vec, dtype=complex)
         cdef int i
         if self.solver == 50:
             for i in range(N_substeps):
@@ -151,10 +176,10 @@ cdef class ssolvers:
     cdef void euler(self, double t, double dt, double[:] noise,
                     complex[::1] vec, complex[::1] out):
         cdef int i, j
-        cdef complex[:, ::1] d2 = np.empty((self.N_ops, self.l_vec),
+        cdef complex[:, ::1] d2 = np.zeros((self.N_ops, self.l_vec),
                                            dtype=complex)
         for j in range(self.l_vec):
-            out[j] = 0.
+            out[j] = vec[j]
         self.d1(t, vec, out)
         self.d2(t, vec, d2)
         for i in range(self.N_ops):
@@ -195,6 +220,7 @@ cdef class ssolvers:
                                             dtype=complex)
         self.d1(t, vec, d1)
         for j in range(self.l_vec):
+          d1[j] += vec[j]
           Vp[j] = d1[j]
           Vm[j] = d1[j]
           Vt[j] = d1[j]
@@ -207,9 +233,10 @@ cdef class ssolvers:
             Vm[j] -= d2[i,j] * sqrt_dt
             Vt[j] += d2[i,j] * noise[i]
 
+        d1 = np.zeros(self.l_vec, dtype=complex)
         self.d1(t, Vt, d1)
         for j in range(self.l_vec):
-          out[j] += 0.5* d1[j]
+          out[j] += 0.5* (d1[j] + vec[j])
 
         self.d2(t, Vp, d2p)
         self.d2(t, Vm, d2m)
@@ -225,16 +252,15 @@ cdef class ssolvers:
     @cython.cdivision(True)
     cdef void pred_corr(self, double t, double dt, double[:] noise,
                     complex[::1] vec, complex[::1] out):
-
         cdef int i, j, k
         cdef complex[::1] euler = np.zeros((self.l_vec), dtype=complex)
         cdef complex[::1] a_pred = np.zeros((self.l_vec), dtype=complex)
         cdef complex[::1] b_pred = np.zeros((self.l_vec), dtype=complex)
         cdef complex[::1] a_corr = np.zeros((self.l_vec), dtype=complex)
         cdef complex[::1] b_corr = np.zeros((self.l_vec), dtype=complex)
-        cdef complex[:, ::1] d2 = np.empty((self.N_ops, self.l_vec),
+        cdef complex[:, ::1] d2 = np.zeros((self.N_ops, self.l_vec),
                                            dtype=complex)
-        cdef complex[:, :, ::1] dd2 = np.empty((self.N_ops, self.N_ops,
+        cdef complex[:, :, ::1] dd2 = np.zeros((self.N_ops, self.N_ops,
                                                 self.l_vec), dtype=complex)
 
         self.d1(t, vec, a_pred)
@@ -245,27 +271,29 @@ cdef class ssolvers:
                 b_pred[j] = d2[i,j] * noise[i]
 
         for j in range(self.l_vec):
-            euler[j] = a_pred[j] + b_pred[j]
+            euler[j] = a_pred[j] + b_pred[j] + vec[j]
 
         for i in range(self.N_ops):
             for j in range(self.N_ops):
                 for k in range(self.l_vec):
-                    a_pred[k] -= 0.5 * dd2[i,j,k]
+                    a_pred[k] -= 0.5 * dd2[i,j,k] * dt*0
 
+        d2 = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+        dd2 = np.zeros((self.N_ops, self.N_ops, self.l_vec), dtype=complex)
         self.d1(t, euler, a_corr)
         self.d2d2p(t, euler, d2, dd2)
 
         for i in range(self.N_ops):
             for j in range(self.N_ops):
                 for k in range(self.l_vec):
-                    a_corr[k] -= 0.5 * dd2[i,j,k]
+                    a_corr[k] -= 0.5 * dd2[i,j,k] * dt*0
 
         for i in range(self.N_ops):
             for j in range(self.l_vec):
                 b_corr[j] = d2[i,j] * noise[i]
 
         for j in range(self.l_vec):
-            out[j] = (a_pred[j] + a_corr[j] + b_pred[i] + b_corr[i]) * 0.5
+            out[j] = vec[j] + (a_pred[j] + a_corr[j] + b_pred[i] + b_corr[i]*0) * 0.5
 
     @cython.wraparound(False)
     @cython.boundscheck(False)
@@ -279,16 +307,16 @@ cdef class ssolvers:
             both i x j and j x i. Need to be commuting anyway
 
         dV = -iH*V*dt + d1*dt + d2_i*dW_i
-             + 0.5*d2_i(d2_j(V))*(dW_i*dw_j -dt*delta_ij)
+             + 0.5*d2_i' d2_j*(dW_i*dw_j -dt*delta_ij)
         """
         cdef int i, j, k
         cdef double dw
-        cdef complex[:, ::1] d2 = np.empty((self.N_ops, self.l_vec),
+        cdef complex[:, ::1] d2 = np.zeros((self.N_ops, self.l_vec),
                                            dtype=complex)
-        cdef complex[:, :, ::1] dd2 = np.empty((self.N_ops, self.N_ops,
+        cdef complex[:, :, ::1] dd2 = np.zeros((self.N_ops, self.N_ops,
                                                 self.l_vec), dtype=complex)
         for j in range(self.l_vec):
-            out[j] = 0.
+            out[j] = vec[j]
         self.d1(t, vec, out)
         self.d2d2p(t, vec, d2, dd2)
 
@@ -297,13 +325,13 @@ cdef class ssolvers:
                 out[j] += d2[i,j] * noise[i]
 
         for i in range(self.N_ops):
-            for j in range(self.N_ops):
+            for j in range(i,self.N_ops):
                 if (i == j):
                     dw = (noise[i] * noise[i] - dt) * 0.5
                 else:
-                    dw = (noise[i] * noise[j]) * 0.5
+                    dw = (noise[i] * noise[j]) #* 0.5
                 for k in range(self.l_vec):
-                    out[k] += dd2[i,j,k] * dw
+                    out[k] += dd2[i,j,k] * dw *0
 
     @cython.wraparound(False)
     @cython.boundscheck(False)
@@ -340,7 +368,7 @@ cdef class ssolvers:
                 dvec[j] += d2[i,j] * noise[i]
 
         for j in range(self.l_vec):
-            dvec[j] += a[j]
+            dvec[j] += a[j] + vec[j]
             guess[j] = dvec[j] + a[j]
 
         for i in range(self.N_ops):
@@ -367,6 +395,7 @@ cdef class sme(ssolvers):
         self.N_ops = len(c_ops)
         self.L = L.compiled_Qobj
         self.c_ops = []
+        self.N_root = np.sqrt(self.l_vec)
         for i, op in enumerate(c_ops):
             self.c_ops.append(op.compiled_Qobj)
 

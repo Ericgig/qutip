@@ -38,27 +38,28 @@
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.linalg.blas import get_blas_funcs
-try:
-    norm = get_blas_funcs("znrm2", dtype=np.float64)
-except:
-    from scipy.linalg import norm
-
-from numpy.random import RandomState
-
+from qutip.cy.stochastic_solver import sme
 from qutip.qobj import Qobj, isket, isoper, issuper
 from qutip.states import ket2dm
 from qutip.solver import Result
+from qutip.td_qobj import td_Qobj
 from qutip.superoperator import (spre, spost, mat2vec, vec2mat,
                                  liouvillian, lindblad_dissipator)
-
+from qutip.solver import Options, _solver_safety_check
 from qutip.parallel import serial_map
 from qutip.ui.progressbar import TextProgressBar
-from qutip.solver import Options, _solver_safety_check
 from qutip.settings import debug
-from qutip.td_qobj import td_Qobj
-from scipy.sparse.linalg import LinearOperator
-from scipy.linalg.blas import zaxpy
+
+#from scipy.linalg.blas import get_blas_funcs
+#try:
+#    norm = get_blas_funcs("znrm2", dtype=np.float64)
+#except:
+#    from scipy.linalg import norm
+
+#from numpy.random import RandomState
+#
+#from scipy.sparse.linalg import LinearOperator
+#from scipy.linalg.blas import zaxpy
 
 class StochasticSolverOptions:
     """Class of options for stochastic solvers such as
@@ -196,14 +197,13 @@ class StochasticSolverOptions:
         Optional progress bar class instance.
 
     """
-    def __init__(self, H=None, state0=None, times=None, c_ops=[], sc_ops=[],
-                 e_ops=[], m_ops=None, args=None, ntraj=1, nsubsteps=1,
-                 d1=None, d2=None, d2_len=1, dW_factors=None, rhs=None,
-                 generate_A_ops=None, generate_noise=None, homogeneous=True,
-                 solver=None, method=None, distribution='normal',
-                 store_measurement=False, noise=None, normalize=True,
-                 options=None, progress_bar=None, map_func=None,
-                 map_kwargs=None):
+    def __init__(self, H=None, c_ops=[], sc_ops=[], state0=None,
+                 e_ops=[], m_ops=None, store_measurement=False, dW_factors=None,
+                 solver="euler", method="homodyne", normalize=1,
+                 times=None, nsubsteps=1, ntraj=1, tol=None,
+                 generate_noise=None, noise=None,
+                 progress_bar=None, map_func=None, map_kwargs=None,
+                 args={}, options=None):
 
         if options is None:
             options = Options()
@@ -211,43 +211,95 @@ class StochasticSolverOptions:
         if progress_bar is None:
             progress_bar = TextProgressBar()
 
-        self.H = H
-        self.c_ops = c_ops
-        self.sc_ops = sc_ops
+        # System
+        # Cast to td_Qobj so the code has only one version for both the
+        # constant and time-dependent case.
+        self.H = td_Qobj(H, args=args, tlist=times, raw_str=True)
+        self.sc_ops = [td_Qobj(op, args=args, tlist=times,
+                                 raw_str=True) for op in sc_ops]
+        self.c_ops = [td_Qobj(op, args=args, tlist=times,
+                                raw_str=True) for op in c_ops]
+        self.state0 = state0
+        self.rho0 = mat2vec(state0.full()).ravel()
+        #print(self.rho0.shape)
 
+        # Observation
         self.e_ops = e_ops
         self.m_ops = m_ops
-
-        self.state0 = state0
-        self.times = times
-
-        self.d2_len = d2_len
-        self.dW_factors = dW_factors
-
-        self.ntraj = ntraj
-        self.nsubsteps = nsubsteps
-        self.solver = solver
-        self.method = method
-
-        self.distribution = distribution
-        self.homogeneous = homogeneous
-
-        self.options = options
-        self.progress_bar = progress_bar
         self.store_measurement = store_measurement
         self.store_states = options.store_states
-        self.noise = noise
-        self.args = args
+        self.dW_factors = dW_factors
+
+        # Solver
+        self.solver = solver
+        self.method = method
         self.normalize = normalize
+        self.times = times
+        self.nsubsteps = nsubsteps
+        self.dt = (times[1] - times[0]) / self.nsubsteps
+        self.ntraj = ntraj
+        if tol is not None:
+            self.tol = tol
+        elif "tol" in args:
+            self.tol = args["tol"]
+        else:
+            self.tol = 1e-7
 
-        self.generate_noise = generate_noise
+        # Noise
+        if generate_noise is not None:
+            self.noise_type = 2
+            self.generate_noise = generate_noise
 
+        elif noise is not None:
+            if isinstance(noise, int):
+                # noise contain a seed
+                np.random.seed(noise)
+                noise = np.random.randint(0, 2**32, ntraj)
+            noise = np.array(noise)
+            if len(noise.shape) == 1:
+                if noise.shape[0] < ntraj:
+                    raise Exception("'noise' does not have enought seeds" +
+                                    "len(noise) >= ntraj")
+                # numpy seed must be between 0 and 2**32-1
+                # 'u4': unsigned 32bit int
+                self.noise = noise.astype("u4")
+                self.noise_type = 0
+
+            elif len(noise.shape) == 4:
+                # taylor case not included
+                dw_len = (" * 2" if method == "heterodyne" else "")
+                dw_len_str = (" * 2" if method == "heterodyne" else "")
+                if noise.shape[0] < ntraj:
+                    raise Exception("'noise' does not have the right shape" +
+                                    "shape[0] >= ntraj")
+                if noise.shape[1] < len(times):
+                    raise Exception("'noise' does not have the right shape" +
+                                    "shape[1] >= len(times)")
+                if noise.shape[2] < nsubsteps:
+                    raise Exception("'noise' does not have the right shape" +
+                                    "shape[2] >= nsubsteps")
+                if noise.shape[3] < len(self.sc_ops) * dw_len:
+                    raise Exception("'noise' does not have the right shape" +
+                                    "shape[3] >= len(self.sc_ops)" + dw_len_str)
+                self.noise_type = 1
+                self.noise = noise
+
+        else:
+            self.noise = np.random.randint(0, 2**32, ntraj).astype("u4")
+            self.noise_type = 0
+
+        # Map
+        self.progress_bar = progress_bar
         if self.ntraj > 1 and map_func:
             self.map_func = map_func
         else:
             self.map_func = serial_map
-
         self.map_kwargs = map_kwargs if map_kwargs is not None else {}
+
+        # Other
+        self.options = options
+        self.args = args
+
 
 def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
                  _safe_mode=True, debug=False, args={}, **kwargs):
@@ -313,64 +365,55 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
         pass ###----------------------------------------------------------------------------------------------------------
 
     sso = StochasticSolverOptions(H=H, state0=rho0, times=times, c_ops=c_ops,
-                                  sc_ops=sc_ops, e_ops=e_ops, **kwargs)
+                                  sc_ops=sc_ops, e_ops=e_ops, args= args,
+                                  **kwargs)
 
     sso.me = True
-    sso.args = args
-    if "tol" in args:
-        sso.tol = args["tol"]
-    else:
-        sso.tol = 1e-7
-    sso.dt = (times[1] - times[0]) / sso.nsubsteps
 
-    if sso.generate_noise is not None:
-        sso.noise_type = 2
-    elif sso.noise is not None:
-        sso.noise_type = 1
-    else:
-        sso.noise_type = 0
-
-    sso.H_td = td_Qobj(H, args=args, tlist=times, raw_str=True)
-    sso.sc_ops_td = [td_Qobj(op, args=args, tlist=times,
-                             raw_str=True) for op in sc_ops]
-    sso.c_ops_td = [td_Qobj(op, args=args, tlist=times,
-                            raw_str=True) for op in c_ops]
-    sso.LH = liouvillian(sso.H_td, c_ops = sso.sc_ops_td + sso.c_ops_td)
-    sso.d1 = 1 + sso.LH * dt
+    sso.LH = liouvillian(sso.H, c_ops = sso.sc_ops + sso.c_ops) * sso.dt
+    #sso.d1 = 1 + sso.LH * sso.dt
     if sso.method == 'homodyne' or sso.method is None:
-        sso.m_ops = [spre(op + op.dag()) for op in sc_ops_td]
-        sso.sops = [spre(op) + spost(op.dag) for op in sso.sc_ops_td]
+        if sso.m_ops is None:
+            sso.m_ops = [op + op.dag() for op in sc_ops]
+        sso.sops = [spre(op) + spost(op.dag()) for op in sso.sc_ops]
         if not isinstance(sso.dW_factors, list):
             sso.dW_factors = [1] * len(sso.sops)
         elif len(sso.dW_factors) != len(sso.sops):
             raise Exception("The len of dW_factors is not the same as sc_ops")
-        sso.dw_len = len(sso.sops)
 
     elif sso.method == 'heterodyne':
-        sso.m_ops = []
+        if sso.m_ops is None:
+            m_ops = []
         sso.sops = []
-        for c in sso.sc_ops_td:
-            sso.m_ops += [spre(c + c.dag()), -1j * spre(c - c.dag()) ]
+        for c in sso.sc_ops:
+            if sso.m_ops is None:
+                m_ops += [c + c.dag(), -1j * c - c.dag() ]
             sso.sops += [(spre(c) + spost(c.dag())) / np.sqrt(2),
                          (spre(c) - spost(c.dag())) * -1j / np.sqrt(2)]
+        sso.m_ops = m_ops
         if not isinstance(sso.dW_factors, list):
             sso.dW_factors = [np.sqrt(2)] * len(sso.sops)
-        elif len(sso.dW_factors) == len(sso.sc_ops_td):
+        elif len(sso.dW_factors) == len(sso.sc_ops):
             dW_factors = []
             for fact in sso.dW_factors:
                 dW_factors += [np.sqrt(2) * fact, np.sqrt(2) * fact]
+            sso.dW_factors = dW_factors
         elif len(sso.dW_factors) != len(sso.sops):
             raise Exception("The len of dW_factors is not the same as sc_ops")
-        sso.dw_len = len(sso.sops)
 
     elif sso.method == "photocurrent":
         raise NotImplementedError("Not yet")
 
     else:
         raise Exception("The method must be one of None, homodyne, heterodyne")
-    [op.compile() for op in sso.sops]
-    sso.cm_ops = [td_Qobj(spre(op)) for op in sso.m_ops]
+
     sso.ce_ops = [td_Qobj(spre(op)) for op in sso.e_ops]
+    sso.cm_ops = [td_Qobj(spre(op)) for op in sso.m_ops]
+
+    sso.LH.compile()
+    [op.compile() for op in sso.sops]
+    [op.compile() for op in sso.cm_ops]
+    [op.compile() for op in sso.ce_ops]
 
     if sso.solver in ['euler-maruyama', 'euler', None, 50, 0.5]:
         sso.solver_code = 50
@@ -387,24 +430,19 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     elif sso.solver in ['milstein-imp', 103]:
         sso.solver_code = 103
 
-
     if sso.solver_code is None:
         raise Exception("The solver should be one of "+\
                         "[None, 'euler-maruyama', "+\
                         "'milstein', 'platen', 'taylor15', "+\
                         "'milstein-imp', 'taylor15-imp', 'pc-euler']")
 
-
     res = _smesolve_generic(sso, sso.options, sso.progress_bar)
-
 
     if e_ops_dict:
         res.expect = {e: res.expect[n]
                       for n, e in enumerate(e_ops_dict.keys())}
 
     return res
-
-
 
 def _smesolve_generic(sso, options, progress_bar):
     """
@@ -413,27 +451,24 @@ def _smesolve_generic(sso, options, progress_bar):
     if debug:
         logger.debug(inspect.stack()[0][3])
 
-    # Here ?????
-    sso.N_store = len(sso.times)
-    sso.N_substeps = sso.nsubsteps
-    sso.dt = (sso.times[1] - sso.times[0]) / sso.N_substeps
-
     data = Result()
     data.solver = "smesolve"
     data.times = sso.times
-    data.expect = np.zeros((len(sso.e_ops), sso.N_store), dtype=complex)
-    data.ss = np.zeros((len(sso.e_ops), sso.N_store), dtype=complex)
+    data.expect = np.zeros((len(sso.e_ops), len(sso.times)), dtype=complex)
+    data.ss = np.zeros((len(sso.e_ops), len(sso.times)), dtype=complex)
     data.noise = []
     data.measurement = []
 
-    sso.cy_solver = sme()
-    sso.cy_solver.set_data(sso.d1, sso.sops)
-    sso.cy_solver.set_solver(sso.solver_code, sso.tol)
-    sso.cy_solver.set_noise(sso.noise_type, sso)
+    ssolver = sme()
+    #print(sso.d1.rhs(0,sso.rho0))
+    ssolver.set_data(sso.LH, sso.sops)
+    ssolver.set_solver(sso)
 
-    task = sso.cy_sesolve_single_trajectory
+    nt = sso.ntraj
 
-    map_kwargs = {'progress_bar': progress_bar}
+    task = ssolver.cy_sesolve_single_trajectory
+
+    map_kwargs = {'progress_bar': sso.progress_bar}
     map_kwargs.update(sso.map_kwargs)
 
     task_args = (sso,)
