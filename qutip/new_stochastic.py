@@ -541,7 +541,7 @@ def new_ssesolve(H, psi0, times, sc_ops=[], e_ops=[],
     for ops in sc_ops:
         if not isinstance(ops, Qobj):
             sso.td[1] = True
-    print(sso.td)
+    #print(sso.td)
 
     if not sso.custom[1]:
         make_d1d2_se(sso)
@@ -741,7 +741,7 @@ def new_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     fast = not (any(sso.custom[:3]) or any(sso.td) or
                 sso.distribution == 'poisson')
     fast = False
-    print(sso.td)
+    #print(sso.td)
     #Set the sso.rhs based on the method
     #sso.rhs is an int for fast (cython) code
     if sso.rhs:

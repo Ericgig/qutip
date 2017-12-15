@@ -38,7 +38,7 @@
 
 import numpy as np
 import scipy.sparse as sp
-from qutip.cy.stochastic_solver import sme
+from qutip.cy.stochastic_solver import sme, sse
 from qutip.qobj import Qobj, isket, isoper, issuper
 from qutip.states import ket2dm
 from qutip.solver import Result
@@ -267,7 +267,7 @@ class StochasticSolverOptions:
 
             elif len(noise.shape) == 4:
                 # taylor case not included
-                dw_len = (" * 2" if method == "heterodyne" else "")
+                dw_len = (2 if method == "heterodyne" else 1)
                 dw_len_str = (" * 2" if method == "heterodyne" else "")
                 if noise.shape[0] < ntraj:
                     raise Exception("'noise' does not have the right shape" +
@@ -299,6 +299,31 @@ class StochasticSolverOptions:
         # Other
         self.options = options
         self.args = args
+
+
+        if self.solver in ['euler-maruyama', 'euler', None, 50, 0.5]:
+            self.solver_code = 50
+        elif self.solver in ['platen', 'platen1', 'platen1.0', 100, 1.0]:
+            self.solver_code = 100
+        elif self.solver in ['pred-corr', 'predictor-corrector', 'pc-euler', 101]:
+            self.solver_code = 101
+        elif self.solver in ['milstein', 102]:
+            self.solver_code = 102
+        elif self.solver in ['milstein-imp', 103]:
+            self.solver_code = 103
+        elif self.solver in [104]:
+            self.solver_code = 104
+        elif self.solver in ['platen1.5', 150, 1.5]:
+            self.solver_code = 150
+        elif self.solver in ['taylor15', 152]:
+            self.solver_code = 152
+        elif self.solver in ['taylor15-imp', 153]:
+            self.solver_code = 153
+        if self.solver_code is None:
+            raise Exception("The solver should be one of "+\
+                            "[None, 'euler-maruyama', "+\
+                            "'platen', 'pc-euler' 'milstein', 'milstein-imp', "+\
+                            "'taylor15', 'taylor15-imp']")
 
 
 def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
@@ -350,7 +375,8 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     """
 
     if debug:
-        logger.debug(inspect.stack()[0][3])
+        pass
+        #logger.debug(inspect.stack()[0][3])
 
     if isket(rho0):
         rho0 = ket2dm(rho0)
@@ -369,6 +395,10 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
                                   **kwargs)
 
     sso.me = True
+    if debug:
+        sso.debug = debug
+    else:
+        sso.debug = [0.5,0.5,1.]
 
     sso.LH = liouvillian(sso.H, c_ops = sso.sc_ops + sso.c_ops) * sso.dt
     #sso.d1 = 1 + sso.LH * sso.dt
@@ -415,26 +445,129 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     [op.compile() for op in sso.cm_ops]
     [op.compile() for op in sso.ce_ops]
 
-    if sso.solver in ['euler-maruyama', 'euler', None, 50, 0.5]:
-        sso.solver_code = 50
+    res = _smesolve_generic(sso, sso.options, sso.progress_bar)
 
-    elif sso.solver in ['platen', 'platen1', 'platen1.0', 100, 1.0]:
-        sso.solver_code = 100
+    if e_ops_dict:
+        res.expect = {e: res.expect[n]
+                      for n, e in enumerate(e_ops_dict.keys())}
 
-    elif sso.solver in ['pred-corr', 'predictor-corrector', 'pc-euler', 101]:
-        sso.solver_code = 101
+    return res
 
-    elif sso.solver in ['milstein', 102]:
-        sso.solver_code = 102
+def another_ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
+                 _safe_mode=True, debug=False, args={}, **kwargs):
+    """
+    Solve stochastic master equation. Dispatch to specific solvers
+    depending on the value of the `solver` keyword argument.
 
-    elif sso.solver in ['milstein-imp', 103]:
-        sso.solver_code = 103
+    Parameters
+    ----------
 
-    if sso.solver_code is None:
-        raise Exception("The solver should be one of "+\
-                        "[None, 'euler-maruyama', "+\
-                        "'milstein', 'platen', 'taylor15', "+\
-                        "'milstein-imp', 'taylor15-imp', 'pc-euler']")
+    H : :class:`qutip.Qobj`
+        System Hamiltonian.
+
+    rho0 : :class:`qutip.Qobj`
+        Initial density matrix or state vector (ket).
+
+    times : *list* / *array*
+        List of times for :math:`t`. Must be uniformly spaced.
+
+    c_ops : list of :class:`qutip.Qobj`
+        Deterministic collapse operator which will contribute with a standard
+        Lindblad type of dissipation.
+
+    sc_ops : list of :class:`qutip.Qobj`
+        List of stochastic collapse operators. Each stochastic collapse
+        operator will give a deterministic and stochastic contribution
+        to the eqaution of motion according to how the d1 and d2 functions
+        are defined.
+
+    e_ops : list of :class:`qutip.Qobj` / callback function single
+        single operator or list of operators for which to evaluate
+        expectation values.
+
+    kwargs : *dictionary*
+        Optional keyword arguments. See
+        :class:`qutip.stochastic.StochasticSolverOptions`.
+
+    Returns
+    -------
+
+    output: :class:`qutip.solver.SolverResult`
+
+        An instance of the class :class:`qutip.solver.SolverResult`.
+
+    TODO
+    ----
+        Add checks for commuting jump operators in Milstein method.
+    """
+
+    if debug:
+        pass
+        #logger.debug(inspect.stack()[0][3])
+
+    if isinstance(e_ops, dict):
+        e_ops_dict = e_ops
+        e_ops = [e for e in e_ops.values()]
+    else:
+        e_ops_dict = None
+
+    if _safe_mode:
+        pass ###----------------------------------------------------------------------------------------------------------
+
+    sso = StochasticSolverOptions(H=H, state0=rho0, times=times, sc_ops=sc_ops,
+                                  e_ops=e_ops, args= args, **kwargs)
+
+    sso.me = False
+    if debug:
+        sso.debug = debug
+    else:
+        sso.debug = [1, 1, 1.]
+
+    sso.LH = sso.H * (-1j*sso.dt )
+    if sso.method == 'homodyne' or sso.method is None:
+        if sso.m_ops is None:
+            sso.m_ops = [op + op.dag() for op in sc_ops]
+        sso.sops = [[op, -op.norm() * sso.dt/2, op + op.dag()] for op in sso.sc_ops]
+        if not isinstance(sso.dW_factors, list):
+            sso.dW_factors = [1] * len(sso.sops)
+        elif len(sso.dW_factors) != len(sso.sops):
+            raise Exception("The len of dW_factors is not the same as sc_ops")
+
+    elif sso.method == 'heterodyne':
+        if sso.m_ops is None:
+            m_ops = []
+        sso.sops = []
+        for c in sso.sc_ops:
+            if sso.m_ops is None:
+                m_ops += [c + c.dag(), -1j * c - c.dag() ]
+            c1 = (spre(c) + spost(c.dag())) / np.sqrt(2)
+            c2 = (spre(c) - spost(c.dag())) * (-1j / np.sqrt(2))
+            sso.sops += [[c1, -c1.norm() * sso.dt/2, c1 + c1.dag()],
+                         [c2, -c2.norm() * sso.dt/2, c2 + c2.dag()]]
+        sso.m_ops = m_ops
+        if not isinstance(sso.dW_factors, list):
+            sso.dW_factors = [np.sqrt(2)] * len(sso.sops)
+        elif len(sso.dW_factors) == len(sso.sc_ops):
+            dW_factors = []
+            for fact in sso.dW_factors:
+                dW_factors += [np.sqrt(2) * fact, np.sqrt(2) * fact]
+            sso.dW_factors = dW_factors
+        elif len(sso.dW_factors) != len(sso.sops):
+            raise Exception("The len of dW_factors is not the same as sc_ops")
+
+    elif sso.method == "photocurrent":
+        raise NotImplementedError("Not yet")
+
+    else:
+        raise Exception("The method must be one of None, homodyne, heterodyne")
+
+    sso.ce_ops = [td_Qobj(op) for op in sso.e_ops]
+    sso.cm_ops = [td_Qobj(op) for op in sso.m_ops]
+
+    sso.LH.compile()
+    [[op.compile() for op in ops] for ops in sso.sops]
+    [op.compile() for op in sso.cm_ops]
+    [op.compile() for op in sso.ce_ops]
 
     res = _smesolve_generic(sso, sso.options, sso.progress_bar)
 
@@ -459,18 +592,17 @@ def _smesolve_generic(sso, options, progress_bar):
     data.noise = []
     data.measurement = []
 
-    ssolver = sme()
-    #print(sso.d1.rhs(0,sso.rho0))
+    if sso.me:
+        ssolver = sme()
+    else:
+        ssolver = sse()
     ssolver.set_data(sso.LH, sso.sops)
     ssolver.set_solver(sso)
 
     nt = sso.ntraj
-
     task = ssolver.cy_sesolve_single_trajectory
-
     map_kwargs = {'progress_bar': sso.progress_bar}
     map_kwargs.update(sso.map_kwargs)
-
     task_args = (sso,)
     task_kwargs = {}
 
