@@ -398,7 +398,7 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     if debug:
         sso.debug = debug
     else:
-        sso.debug = [0.5,0.5,1.]
+        sso.debug = [1.,1.,1.,1.]
 
     sso.LH = liouvillian(sso.H, c_ops = sso.sc_ops + sso.c_ops) * sso.dt
     #sso.d1 = 1 + sso.LH * sso.dt
@@ -521,7 +521,7 @@ def another_ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
     if debug:
         sso.debug = debug
     else:
-        sso.debug = [1, 1, 1.]
+        sso.debug = [1, 1, 1, 1]
 
     sso.LH = sso.H * (-1j*sso.dt )
     if sso.method == 'homodyne' or sso.method is None:

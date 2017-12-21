@@ -62,7 +62,7 @@ def cy_smesolve_fast_single_trajectory(int n, object sso):
     sc_len = len(A_ops)
 
     rho_t = mat2vec(sso.state0.full()).ravel()
-    
+
 
     dims = sso.state0.dims
 
@@ -109,24 +109,24 @@ def cy_smesolve_fast_single_trajectory(int n, object sso):
 
         if sso.rhs == 10:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_euler_homodyne_fast(rho_t, 
+                rho_t = _rhs_rho_euler_homodyne_fast(rho_t,
                         A_data, A_ind, A_ptr, A_size, dW[:, t_idx, j, 0])
         elif sso.rhs == 20:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_milstein_homodyne_single_fast(rho_t, 
+                rho_t = _rhs_rho_milstein_homodyne_single_fast(rho_t,
                         A_data, A_ind, A_ptr, A_size, dW[:, t_idx, j, 0])
         elif sso.rhs == 21:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_milstein_homodyne_two_fast(rho_t, 
+                rho_t = _rhs_rho_milstein_homodyne_two_fast(rho_t,
                         A_data, A_ind, A_ptr, A_size, dW[:, t_idx, j, 0])
         elif sso.rhs == 22:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_milstein_homodyne_fast(rho_t, 
+                rho_t = _rhs_rho_milstein_homodyne_fast(rho_t,
                         A_data, A_ind, A_ptr, A_size, sc_len, dW[:, t_idx, j, 0])
         elif sso.rhs == 25:
             for j in range(N_substeps):
                 rho_t = _rhs_rho_milstein_implicit(rho_t, A_data, A_ind, A_ptr,
-                        Ae, AL_data, AL_ind, AL_ptr, 
+                        Ae, AL_data, AL_ind, AL_ptr,
                         dt, dW[:, t_idx, j, 0], tol)
         elif sso.rhs == 30:
             for j in range(N_substeps):
@@ -135,33 +135,33 @@ def cy_smesolve_fast_single_trajectory(int n, object sso):
         elif sso.rhs == 35:
             for j in range(N_substeps):
                 rho_t = _rhs_rho_taylor_15_implicit(rho_t, A_data, A_ind, A_ptr,
-                        Ae, AL_data, AL_ind, AL_ptr, 
+                        Ae, AL_data, AL_ind, AL_ptr,
                         dt, dW[:, t_idx, j, 0], tol)
         elif sso.rhs == 40:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_pred_corr_homodyne_single(rho_t, 
+                rho_t = _rhs_rho_pred_corr_homodyne_single(rho_t,
                         A_data, A_ind, A_ptr, A_size, dt, dW[:, t_idx, j, 0])
 
         elif sso.rhs == 110:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_euler_homodyne_fast_2(rho_t, 
+                rho_t = _rhs_rho_euler_homodyne_fast_2(rho_t,
                         A_data, A_ind, A_ptr, A_size, dW[:, t_idx, j, 0])
         elif sso.rhs == 120:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_milstein_homodyne_single_fast_2(rho_t, 
+                rho_t = _rhs_rho_milstein_homodyne_single_fast_2(rho_t,
                         A_data, A_ind, A_ptr, A_size, dW[:, t_idx, j, 0])
         elif sso.rhs == 121:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_milstein_homodyne_two_fast_2(rho_t, 
+                rho_t = _rhs_rho_milstein_homodyne_two_fast_2(rho_t,
                         A_data, A_ind, A_ptr, A_size, dW[:, t_idx, j, 0])
         elif sso.rhs == 122:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_milstein_homodyne_fast_2(rho_t, 
+                rho_t = _rhs_rho_milstein_homodyne_fast_2(rho_t,
                         A_data, A_ind, A_ptr, A_size, sc_len, dW[:, t_idx, j, 0])
         elif sso.rhs == 125:
             for j in range(N_substeps):
                 rho_t = _rhs_rho_milstein_implicit(rho_t, A_data, A_ind, A_ptr,
-                        Ae, AL_data, AL_ind, AL_ptr, 
+                        Ae, AL_data, AL_ind, AL_ptr,
                         dt, dW[:, t_idx, j, 0], tol)
         elif sso.rhs == 130:
             for j in range(N_substeps):
@@ -170,11 +170,11 @@ def cy_smesolve_fast_single_trajectory(int n, object sso):
         elif sso.rhs == 135:
             for j in range(N_substeps):
                 rho_t = _rhs_rho_taylor_15_implicit(rho_t, A_data, A_ind, A_ptr,
-                        Ae, AL_data, AL_ind, AL_ptr, 
+                        Ae, AL_data, AL_ind, AL_ptr,
                         dt, dW[:, t_idx, j, 0], tol)
         elif sso.rhs == 140:
             for j in range(N_substeps):
-                rho_t = _rhs_rho_pred_corr_homodyne_single_2(rho_t, 
+                rho_t = _rhs_rho_pred_corr_homodyne_single_2(rho_t,
                         A_data, A_ind, A_ptr, A_size, dt, dW[:, t_idx, j, 0])
 
 
@@ -197,8 +197,8 @@ def cy_smesolve_fast_single_trajectory(int n, object sso):
 
 @cython.wraparound(False)
 @cython.boundscheck(False)
-def dot(np.ndarray[double, ndim=1] V, 
-         np.ndarray[double, ndim=2]dV, 
+def dot(np.ndarray[double, ndim=1] V,
+         np.ndarray[double, ndim=2]dV,
          np.ndarray[double, ndim=1]dW):
     cdef int i,j,i_max, j_max
     i_max = dV.shape[0]
@@ -255,7 +255,7 @@ cdef _rhs_rho_euler_homodyne_fast(np.ndarray[complex, ndim=1] rho_t,
         for i in range(A_size):
             e[j] += d_vec[j,(A_size+1)*i]
 
-    cdef double f = 1.0 
+    cdef double f = 1.0
     for i in range(n_sc_A):
         f -= np.real(e[i])*dW[i]
 
@@ -293,7 +293,7 @@ cdef _rhs_rho_milstein_homodyne_single_fast(np.ndarray[complex, ndim=1] rho_t,
     for i in range(n_sc_A):
         f -= e[i] * dW[i]
     dW[0] -= 2.0 * e[0] * dW[1]
-    
+
     for i in range(l_rho):
         rho_t[i] *= f
         rho_t[i] += d_vec[n_sc_A,i]
@@ -456,11 +456,11 @@ cdef _rhs_rho_milstein_homodyne_fast_2(np.ndarray[complex, ndim=1] rho_t,
 # -----------------------------------------------------------------------------
 # Taylor15 rhs functions for the stochastic master equation
 #
-cdef _rhs_rho_taylor_15_one(np.ndarray[complex, ndim=1] rho_t, 
+cdef _rhs_rho_taylor_15_one(np.ndarray[complex, ndim=1] rho_t,
                             complex[::1] A_data,
-                            int[::1] A_ind, int[::1] A_ptr, 
+                            int[::1] A_ind, int[::1] A_ptr,
                             complex[::1] AL_data,
-                            int[::1] AL_ind, int[::1] AL_ptr, 
+                            int[::1] AL_ind, int[::1] AL_ptr,
                             double dt, np.ndarray[double, ndim=1] dW):
     """
     strong order 1.5 Tylor scheme for homodyne detection with 1 stochastic operator
@@ -475,16 +475,25 @@ cdef _rhs_rho_taylor_15_one(np.ndarray[complex, ndim=1] rho_t,
     cdef double TrALb = cy_expect_rho_vec_csr(A_data, A_ind, A_ptr, Lb, 1)
     cdef double TrAa = cy_expect_rho_vec_csr(A_data, A_ind, A_ptr, a, 1)
 
+    #print(dt,dW[0],dW[2])
+    #print(rho_t[0],rho_t[1],rho_t[2],rho_t[3])
+    cdef np.ndarray[complex, ndim=1] drho_t1
+
     cdef np.ndarray[complex, ndim=1] drho_t = a * dt
+    #print(drho_t[0],drho_t[1],drho_t[2],drho_t[3])
     drho_t += b * dW[0]
     drho_t += Lb * dW[1] # Milstein term
 
-    # new terms: 
+    # new terms:
     drho_t += spmv_csr(AL_data, AL_ind, AL_ptr, b) * dW[2]
+    drho_t1 = spmv_csr(AL_data, AL_ind, AL_ptr, b)
+    #print(b[0],b[1],b[2],b[3])
+    #print(drho_t1[0],drho_t1[1],drho_t1[2],drho_t1[3])
+    #print(" ")
     drho_t += (spmv_csr(A_data, A_ind, A_ptr, a) - TrAa * rho_t - e0 * a - TrAb * b) * dW[3]
     drho_t += spmv_csr(AL_data, AL_ind, AL_ptr, a) * (0.5 * dt*dt)
-    drho_t += (spmv_csr(A_data, A_ind, A_ptr, Lb) - TrALb * rho_t - (2 * TrAb) * b - e0 * Lb) * dW[4] 
-        
+    drho_t += (spmv_csr(A_data, A_ind, A_ptr, Lb) - TrALb * rho_t - (2 * TrAb) * b - e0 * Lb) * dW[4]
+
     return rho_t + drho_t
 
 #include _rhs_rho_Taylor_15_two#
@@ -492,17 +501,17 @@ cdef _rhs_rho_taylor_15_one(np.ndarray[complex, ndim=1] rho_t,
 # -----------------------------------------------------------------------------
 # Implicit rhs functions for the stochastic master equation
 #
-cdef _rhs_rho_milstein_implicit(np.ndarray[complex, ndim=1] rho_t, 
-                                complex[::1] A_data, int[::1] A_ind, 
+cdef _rhs_rho_milstein_implicit(np.ndarray[complex, ndim=1] rho_t,
+                                complex[::1] A_data, int[::1] A_ind,
                                 int[::1] A_ptr, object Ae,
-                                complex[::1] AL_data, int[::1] AL_ind, 
-                                int[::1] AL_ptr, double dt, 
+                                complex[::1] AL_data, int[::1] AL_ind,
+                                int[::1] AL_ptr, double dt,
                                 np.ndarray[double, ndim=1] dW, double tol):
     """
     Drift implicit Milstein (theta = 1/2, eta = 0)
-    Wang, X., Gan, S., & Wang, D. (2012). 
-    A family of fully implicit Milstein methods for stiff stochastic differential 
-    equations with multiplicative noise. 
+    Wang, X., Gan, S., & Wang, D. (2012).
+    A family of fully implicit Milstein methods for stiff stochastic differential
+    equations with multiplicative noise.
     BIT Numerical Mathematics, 52(3), 741–772.
     """
 
@@ -512,28 +521,28 @@ cdef _rhs_rho_milstein_implicit(np.ndarray[complex, ndim=1] rho_t,
     cdef np.ndarray[complex, ndim=1] b = spmv_csr(A_data, A_ind, A_ptr, rho_t) - e0 * rho_t
     cdef double TrAb = cy_expect_rho_vec_csr(A_data, A_ind, A_ptr, b, 1)
 
-    cdef np.ndarray[complex, ndim=1] drho_t = b * dW[0] 
+    cdef np.ndarray[complex, ndim=1] drho_t = b * dW[0]
     drho_t += a
     drho_t += (spmv_csr(A_data, A_ind, A_ptr, b)  - TrAb * rho_t - e0 * b) * dW[1] # Milstein term
     drho_t += rho_t
-    
+
     cdef np.ndarray[complex, ndim=1] v
     v, check = sp.linalg.bicgstab(Ae, drho_t, x0 = drho_t + a, tol=tol)
 
     return v
-    
-cdef _rhs_rho_taylor_15_implicit(np.ndarray[complex, ndim=1] rho_t, 
-                                complex[::1] A_data, int[::1] A_ind, 
+
+cdef _rhs_rho_taylor_15_implicit(np.ndarray[complex, ndim=1] rho_t,
+                                complex[::1] A_data, int[::1] A_ind,
                                 int[::1] A_ptr, object Ae,
-                                complex[::1] AL_data, int[::1] AL_ind, 
-                                int[::1] AL_ptr, double dt, 
+                                complex[::1] AL_data, int[::1] AL_ind,
+                                int[::1] AL_ptr, double dt,
                                 np.ndarray[double, ndim=1] dW, double tol):
     """
     Drift implicit Taylor 1.5 (alpha = 1/2, beta = doesn't matter)
     Chaptert 12.2 Eq. (2.18) in Numerical Solution of Stochastic Differential Equations
     By Peter E. Kloeden, Eckhard Platen
     """
-    
+
     #reusable operators and traces
     cdef np.ndarray[complex, ndim=1] a = spmv_csr(AL_data, AL_ind, AL_ptr, rho_t)
     cdef double e0 = cy_expect_rho_vec_csr(A_data, A_ind, A_ptr, rho_t, 1)
@@ -543,12 +552,12 @@ cdef _rhs_rho_taylor_15_implicit(np.ndarray[complex, ndim=1] rho_t,
     cdef double TrALb = cy_expect_rho_vec_csr(A_data, A_ind, A_ptr, Lb, 1)
     cdef double TrAa = cy_expect_rho_vec_csr(A_data, A_ind, A_ptr, a, 1)
 
-    cdef np.ndarray[complex, ndim=1] drho_t = b * dW[0] 
+    cdef np.ndarray[complex, ndim=1] drho_t = b * dW[0]
     drho_t += Lb * dW[1] # Milstein term
     cdef np.ndarray[complex, ndim=1] xx0 = (drho_t + a * dt) + rho_t #starting vector for the linear solver (Milstein prediction)
     drho_t += (0.5 * dt) * a
 
-    # new terms: 
+    # new terms:
     drho_t += spmv_csr(AL_data, AL_ind, AL_ptr, b) * (dW[2] - 0.5*dW[0]*dt)
     drho_t += (spmv_csr(A_data, A_ind, A_ptr, a) - TrAa * rho_t - e0 * a - TrAb * b) * dW[3]
 
@@ -574,7 +583,7 @@ cdef _rhs_rho_pred_corr_homodyne_single(np.ndarray[complex, ndim=1] rho_t,
     """
     1/2 predictor-corrector scheme for homodyne detection with 1 stochastic operator
     """
-    
+
     cdef int i, n_sc_A, l_rho
     l_rho = len(rho_t)
 
@@ -636,10 +645,10 @@ cdef _rhs_rho_pred_corr_homodyne_single_2(np.ndarray[complex, ndim=1] rho_t,
     """
     1/2 predictor-corrector scheme for homodyne detection with 1 stochastic operator
     """
-    
+
     #predictor
     cdef np.ndarray[complex, ndim=2] d_vec = spmv_csr(A_data, A_ind, A_ptr, rho_t).reshape(-1, len(rho_t))
-    cdef np.ndarray[double, ndim=1] e = np.real( 
+    cdef np.ndarray[double, ndim=1] e = np.real(
         d_vec[:-1].reshape(-1, A_size, A_size).trace(axis1=1, axis2=2))
 
     cdef np.ndarray[complex, ndim=1] a_pred = np.copy(d_vec[-1])
@@ -651,7 +660,7 @@ cdef _rhs_rho_pred_corr_homodyne_single_2(np.ndarray[complex, ndim=1] rho_t,
     pred_rho_t += rho_t
 
     a_pred -= ((d_vec[1] - e[1] * rho_t) - (2.0 * e[0]) * b_pred) * (0.5 * dt)
-    
+
     #corrector
     d_vec = spmv_csr(A_data, A_ind, A_ptr, pred_rho_t).reshape(-1, len(rho_t))
     e = np.real(
@@ -675,7 +684,7 @@ cdef _rhs_rho_pred_corr_homodyne_single_2(np.ndarray[complex, ndim=1] rho_t,
     return corr_rho_t
 
 
-cdef _generate_noise_Milstein(int sc_len, int N_store, 
+cdef _generate_noise_Milstein(int sc_len, int N_store,
                 int N_substeps, int d2_len, double dt):
     """
     generate noise terms for the fast Milstein scheme
@@ -696,7 +705,7 @@ cdef _generate_noise_Milstein(int sc_len, int N_store,
 
     return noise
 
-cdef _generate_noise_Taylor_15(int sc_len, int N_store, 
+cdef _generate_noise_Taylor_15(int sc_len, int N_store,
                 int N_substeps, int d2_len, double dt):
     """
     generate noise terms for the strong Taylor 1.5 scheme
@@ -708,9 +717,9 @@ cdef _generate_noise_Taylor_15(int sc_len, int N_store,
     cdef np.ndarray[double, ndim=4] noise
     if sc_len == 1:
         noise = np.vstack([ dW, 0.5 * (dW * dW - dt), dZ, dW * dt - dZ, 0.5 * (1./3. * dW**2 - dt) * dW ])
-    
+
     elif sc_len == 2:
-        noise = np.vstack([ dW, 0.5 * (dW**2 - dt), dZ, dW * dt - dZ, 0.5 * (1./3. * dW**2 - dt) * dW] 
+        noise = np.vstack([ dW, 0.5 * (dW**2 - dt), dZ, dW * dt - dZ, 0.5 * (1./3. * dW**2 - dt) * dW]
                     + [[dW[n] * dW[m] for (n, m) in np.ndindex(sc_len, sc_len) if n < m]]  # Milstein
                     + [[0.5 * dW[n] * (dW[m]**2 - dt) for (n, m) in np.ndindex(sc_len, sc_len) if n != m]])
 

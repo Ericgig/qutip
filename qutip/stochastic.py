@@ -526,7 +526,7 @@ def smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
             raise Exception("Must define both d1 and d2 or none of them")
     if sso.generate_noise:
         sso.custom[2] = True
-    if sso.noise:
+    if sso.noise is not None:
         sso.custom[3] = True
 
 
@@ -2490,10 +2490,15 @@ def _rhs_rho_taylor_15_one_py(L, rho_t, t, A, dt, ddW, d1, d2, args):
     drho_t += Lb * dW[1] # Milstein term
 
     # new terms:
+    print(drho_t,dW)
     drho_t += A[-1] * b * dW[2]
+    print(drho_t)
     drho_t += (A[0] * a - TrAa * rho_t - e0 * a - TrAb * b) * dW[3]
+    print(drho_t)
     drho_t += A[-1] * a * (0.5 * dt*dt)
+    print(drho_t)
     drho_t += (A[0] * Lb - TrALb * rho_t - (2 * TrAb) * b - e0 * Lb) * dW[4]
+    print(drho_t)
 
     return rho_t + drho_t
 
