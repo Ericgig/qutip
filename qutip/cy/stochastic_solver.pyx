@@ -552,7 +552,7 @@ cdef class ssolvers:
         By Peter E. Kloeden, Eckhard Platen
         """
 
-        cdef int i, j
+        cdef int i, j, k
         cdef double sqrt_dt = np.sqrt(dt)
         cdef double sqrt_dt_inv = 1./sqrt_dt
         cdef double ddz, ddw, ddd
@@ -588,6 +588,14 @@ cdef class ssolvers:
         self.d1(t, vec, d1)
         self.d2(t, vec, d2)
 
+        # Euler part
+        for j in range(self.l_vec):
+            out[j] = d1[j] + vec[j]
+
+        for i in range(self.N_ops):
+            axpy(dw[i], d2[i,:], out)
+
+        # ~Milstein part
         axpy(1., vec, V)
         axpy(1./self.N_ops, d1, V)
         for i in range(self.N_ops):
@@ -596,7 +604,13 @@ cdef class ssolvers:
             axpy(1., V, v2m[i,:])
             axpy(-sqrt_dt, d2[i,:], v2m[i,:])
 
-        d2 = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+        for i in range(self.N_ops):
+            self.d2(t, v2p[i,:], d2p)
+            self.d2(t, v2m[i,:], d2m)
+            ddw = (dw[i]*dw[i]-dt)*0.25/sqrt_dt
+            axpy( ddw, d2p[i,:], out)
+            axpy(-ddw, d2m[i,:], out)
+
         for i in range(self.N_ops):
             self.d2(t, v2p[i,:], d2p)
             for j in range(self.N_ops):
@@ -605,14 +619,11 @@ cdef class ssolvers:
                 axpy(1., v2p[i,:], p2m[i,j,:])
                 axpy(-sqrt_dt, d2p[j,:], p2m[i,j,:])
 
-        for j in range(self.l_vec):
-            out[j] = d1[j] + vec[j]
-
-        axpy(0.5*(2-self.N_ops), d1, out)
+        axpy(-0.5*(self.N_ops*self.debug[1]), d1, out)
+        #axpy(0.5*(2-self.N_ops*self.debug[1]), d1, out)
         for i in range(self.N_ops):
-            ddz = dz[i]*0.5/sqrt_dt/dt
-            ddw = (dw[i]*dw[i]-dt)*0.25/sqrt_dt
-            ddd = 0.25*(dw[i]*dw[i]/3-dt)*dw[i]/dt
+            ddz = dz[i]*0.5/sqrt_dt               *self.debug[0]
+            ddd = 0.25*(dw[i]*dw[i]/3-dt)*dw[i]   *self.debug[2]
             self.d1(t, v2p[i,:], d1p)
             self.d1(t, v2m[i,:], d1m)
             self.d2(t, v2p[i,:], d2p)
@@ -620,30 +631,34 @@ cdef class ssolvers:
             self.d2(t, p2p[i,i,:], d2pp)
             self.d2(t, p2m[i,i,:], d2mm)
 
-            axpy(dw[i], d2[i,:], out)
             axpy( ddz, d1p, out)
             axpy(-ddz, d1m, out)
-            axpy(0.25, d1p, out)
-            axpy(0.25, d1m, out)
-            axpy( ddw, d2p[i,:], out)
-            axpy(-ddw, d2m[i,:], out)
+            axpy(0.25*self.debug[1], d1p, out)
+            axpy(0.25*self.debug[1], d1m, out)
+
+            axpy( ddd, d2pp[i,:], out)
+            axpy(-ddd, d2mm[i,:], out)
             axpy(-ddd, d2p[i,:], out)
             axpy( ddd, d2m[i,:], out)
-            axpy( ddd, d2pp[i,:], out)
-            axpy(-ddd, d2pp[i,:], out)
+
             for j in range(self.N_ops):
-                ddw = 0.5*(dw[j]*dt-dz[j])/dt
+                ddw = 0.5*(dw[j]-dz[j])*self.debug[3]
+                #print(ddw)
                 axpy(ddw, d2p[j,:], out)
                 axpy(-2*ddw, d2[j,:], out)
                 axpy(ddw, d2m[j,:], out)
+                V = d2p[j,:]
+                axpy(-2, d2[j,:], V)
+                axpy(1, d2m[j,:], V)
+                print(V[0],V[1],V[2],V[3])
 
             for j in range(i+1,self.N_ops):
-                ddw = 0.5*(dw[i]*dw[j])/sqrt_dt
+                ddw = 0.5*(dw[i]*dw[j])/sqrt_dt*0
                 axpy(ddw, d2p[j,:], out)
                 axpy(-ddw, d2m[j,:], out)
 
             for j in range(i+1,self.N_ops):
-                ddw = 0.25*(dw[i]*dw[i]-dt)*dw[j]/dt
+                ddw = 0.25*(dw[i]*dw[i]-dt)*dw[j]/dt*0
                 self.d2(t, p2p[i,j,:], d2pp)
                 self.d2(t, p2m[i,j,:], d2mm)
                 axpy(ddw, d2pp[j,:], out)
@@ -652,7 +667,7 @@ cdef class ssolvers:
                 axpy(ddw, d2m[j,:], out)
 
                 for k in range(j+1,self.N_ops):
-                    ddw = 0.5*dw[i]*dw[j]*dw[k]/dt
+                    ddw = 0.5*dw[i]*dw[j]*dw[k]/dt*0
                     axpy(ddw, d2pp[k,:], out)
                     axpy(-ddw, d2mm[k,:], out)
                     axpy(-ddw, d2p[k,:], out)
@@ -824,7 +839,10 @@ cdef class sse(ssolvers):
         axpy(-dde_bb*0.5, vec, dbbb)
         axpy(0.5 *dt, dbbb, out[4,:])
 
-        #aa'+bba"/2 =? da/dt + a da/drho
+        #aa'+bba"/2 =? da/dt + a da/drho + bba"
+        #self.L._rhs_mat(t + dt, &vec[0], &out[5,0])
+        self.d1(t + dt, vec, out[5,:])
+        axpy(-1.0, out[0,:], out[5,:])
         self.L._rhs_mat(t, &out[0,0], &out[5,0])
         cdc_op._rhs_mat(t, &out[0,0], &out[5,0])  # <==== In H
         temp = np.zeros(self.l_vec, dtype=complex)
@@ -962,6 +980,8 @@ cdef class sme(ssolvers):
         axpy(-trAa, rho, out[4,:])
         axpy(-trAb*self.dt, out[1,:], out[4,:])  # L contain dt
         #aa'+ba"/2 =? da/dt + a da/drho
+        self.L._rhs_mat(t+self.dt, &rho[0], &out[5,0])
+        axpy(-1, out[0,:], out[5,:])
         self.L._rhs_mat(t, &out[0,0], &out[5,0])
         #b(bb"+b'b')
         c_op._rhs_mat(t, &out[2,0], &out[6,0])

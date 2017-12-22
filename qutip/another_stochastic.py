@@ -300,7 +300,6 @@ class StochasticSolverOptions:
         self.options = options
         self.args = args
 
-
         if self.solver in ['euler-maruyama', 'euler', None, 50, 0.5]:
             self.solver_code = 50
         elif self.solver in ['platen', 'platen1', 'platen1.0', 100, 1.0]:
@@ -311,18 +310,18 @@ class StochasticSolverOptions:
             self.solver_code = 102
         elif self.solver in ['milstein-imp', 103]:
             self.solver_code = 103
-        elif self.solver in [104]:
+        elif self.solver in ['pred-corr-td', 'pc-euler-td', 104]:
             self.solver_code = 104
-        elif self.solver in ['platen1.5', 150, 1.5]:
+        elif self.solver in ['platen15', 150, 1.5]:
             self.solver_code = 150
         elif self.solver in ['taylor15', 152]:
             self.solver_code = 152
         elif self.solver in ['taylor15-imp', 153]:
             self.solver_code = 153
-        if self.solver_code is None:
+        else:
             raise Exception("The solver should be one of "+\
-                            "[None, 'euler-maruyama', "+\
-                            "'platen', 'pc-euler' 'milstein', 'milstein-imp', "+\
+                            "[None, 'euler-maruyama', 'platen', 'pc-euler', "+\
+                            "'pc-euler-td', 'milstein', 'milstein-imp', "+\
                             "'taylor15', 'taylor15-imp']")
 
 
