@@ -26,7 +26,7 @@ from scipy.linalg.cython_blas cimport dznrm2 as raw_dznrm2
 
 cdef int ONE = 1
 
-cpdef void axpy(complex a,complex[::1] x,complex[::1] y):
+cpdef void axpy(complex a, complex[::1] x, complex[::1] y):
     cdef int l = x.shape[0]
     zaxpy(&l, &a, <complex*>&x[0], &ONE, <complex*>&y[0], &ONE)
 
@@ -201,11 +201,13 @@ cdef class ssolvers:
                 out, vec = vec, out
 
         elif self.solver == 150:
+            #print(150)
             for i in range(N_substeps):
                 self.platen15(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
         elif self.solver == 152:
+            #print(152)
             for i in range(N_substeps):
                 self.taylor15_1(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
@@ -510,6 +512,8 @@ cdef class ssolvers:
         axpy(0.5 * self.debug[2], dvec[5,:], out)
         axpy(0.5 * self.debug[3] * (0.3333333333333333 * dw * dw - dt) * dw,
              dvec[6,:], out)
+        #for i in [2,6,4]:
+        #  print(dvec[i,0],dvec[i,1],dvec[i,2],dvec[i,3])
 
     @cython.wraparound(False)
     @cython.boundscheck(False)
@@ -551,7 +555,6 @@ cdef class ssolvers:
         Numerical Solution of Stochastic Differential Equations
         By Peter E. Kloeden, Eckhard Platen
         """
-
         cdef int i, j, k
         cdef double sqrt_dt = np.sqrt(dt)
         cdef double sqrt_dt_inv = 1./sqrt_dt
@@ -588,12 +591,18 @@ cdef class ssolvers:
         self.d1(t, vec, d1)
         self.d2(t, vec, d2)
 
+        cdef complex[::1] temp = np.zeros(self.l_vec, dtype=complex)
+
         # Euler part
         for j in range(self.l_vec):
             out[j] = d1[j] + vec[j]
 
+        #print(d1[0],d1[1],d1[2],d1[3])
+
         for i in range(self.N_ops):
             axpy(dw[i], d2[i,:], out)
+
+            #print(d2[i,0],d2[i,1],d2[i,2],d2[i,3])
 
         # ~Milstein part
         axpy(1., vec, V)
@@ -611,7 +620,13 @@ cdef class ssolvers:
             axpy( ddw, d2p[i,:], out)
             axpy(-ddw, d2m[i,:], out)
 
+            axpy( 0.5/sqrt_dt, d2p[i,:], temp)
+            axpy(-0.5/sqrt_dt, d2m[i,:], temp)
+            #print(temp[0],temp[1],temp[2],temp[3])
+            temp = np.zeros(self.l_vec, dtype=complex)
+
         for i in range(self.N_ops):
+            d2p = np.zeros((self.N_ops, self.l_vec), dtype=complex)
             self.d2(t, v2p[i,:], d2p)
             for j in range(self.N_ops):
                 axpy(1., v2p[i,:], p2p[i,j,:])
@@ -623,7 +638,13 @@ cdef class ssolvers:
         #axpy(0.5*(2-self.N_ops*self.debug[1]), d1, out)
         for i in range(self.N_ops):
             ddz = dz[i]*0.5/sqrt_dt               *self.debug[0]
-            ddd = 0.25*(dw[i]*dw[i]/3-dt)*dw[i]   *self.debug[2]
+            ddd = 0.25*(dw[i]*dw[i]/3-dt)*dw[i]/dt   *self.debug[2]
+            d1p = np.zeros((self.l_vec), dtype=complex)
+            d1m = np.zeros((self.l_vec), dtype=complex)
+            d2m = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+            d2p = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+            d2pp = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+            d2mm = np.zeros((self.N_ops, self.l_vec), dtype=complex)
             self.d1(t, v2p[i,:], d1p)
             self.d1(t, v2m[i,:], d1m)
             self.d2(t, v2p[i,:], d2p)
@@ -631,15 +652,34 @@ cdef class ssolvers:
             self.d2(t, p2p[i,i,:], d2pp)
             self.d2(t, p2m[i,i,:], d2mm)
 
+            axpy(0.25, d1p, out)
+            axpy(0.25, d1m, out)
+
+            """axpy(0.5 , d1p, temp)
+            axpy(0.5 , d1m, temp)
+            axpy(-1.0 , d1, temp)
+            print(temp[0],temp[1],temp[2],temp[3])
+            temp = np.zeros(self.l_vec, dtype=complex)"""
+
             axpy( ddz, d1p, out)
             axpy(-ddz, d1m, out)
-            axpy(0.25*self.debug[1], d1p, out)
-            axpy(0.25*self.debug[1], d1m, out)
+
+            """axpy(0.5/sqrt_dt, d1p, temp)
+            axpy(-0.5/sqrt_dt, d1m, temp)
+            print(temp[0],temp[1],temp[2],temp[3])
+            temp = np.zeros(self.l_vec, dtype=complex)"""
 
             axpy( ddd, d2pp[i,:], out)
             axpy(-ddd, d2mm[i,:], out)
             axpy(-ddd, d2p[i,:], out)
             axpy( ddd, d2m[i,:], out)
+
+            """axpy( 0.5/dt, d2pp[i,:], temp)
+            axpy(-0.5/dt, d2mm[i,:], temp)
+            axpy(-0.5/dt, d2p[i,:], temp)
+            axpy( 0.5/dt, d2m[i,:], temp)
+            print(temp[0],temp[1],temp[2],temp[3])
+            temp = np.zeros(self.l_vec, dtype=complex)"""
 
             for j in range(self.N_ops):
                 ddw = 0.5*(dw[j]-dz[j])*self.debug[3]
@@ -647,10 +687,12 @@ cdef class ssolvers:
                 axpy(ddw, d2p[j,:], out)
                 axpy(-2*ddw, d2[j,:], out)
                 axpy(ddw, d2m[j,:], out)
-                V = d2p[j,:]
-                axpy(-2, d2[j,:], V)
-                axpy(1, d2m[j,:], V)
-                print(V[0],V[1],V[2],V[3])
+
+                """axpy(0.5, d2p[j,:], temp)
+                axpy(-1, d2[j,:], temp)
+                axpy(0.5, d2m[j,:], temp)
+                print(temp[0],temp[1],temp[2],temp[3])
+                temp = np.zeros(self.l_vec, dtype=complex)"""
 
             for j in range(i+1,self.N_ops):
                 ddw = 0.5*(dw[i]*dw[j])/sqrt_dt*0
