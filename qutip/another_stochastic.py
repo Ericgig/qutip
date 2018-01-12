@@ -312,12 +312,18 @@ class StochasticSolverOptions:
             self.solver_code = 103
         elif self.solver in ['pred-corr-td', 'pc-euler-td', 104]:
             self.solver_code = 104
+        elif self.solver in [105]:
+            self.solver_code = 105
         elif self.solver in ['platen15', 150, 1.5]:
             self.solver_code = 150
+        elif self.solver in [151]:
+            self.solver_code = 151
         elif self.solver in ['taylor15', 152]:
             self.solver_code = 152
         elif self.solver in ['taylor15-imp', 153]:
             self.solver_code = 153
+        elif self.solver in [154]:
+            self.solver_code = 154
         else:
             raise Exception("The solver should be one of "+\
                             "[None, 'euler-maruyama', 'platen', 'pc-euler', "+\
@@ -403,7 +409,7 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     #sso.d1 = 1 + sso.LH * sso.dt
     if sso.method == 'homodyne' or sso.method is None:
         if sso.m_ops is None:
-            sso.m_ops = [op + op.dag() for op in sc_ops]
+            sso.m_ops = [op + op.dag() for op in sso.sc_ops]
         sso.sops = [spre(op) + spost(op.dag()) for op in sso.sc_ops]
         if not isinstance(sso.dW_factors, list):
             sso.dW_factors = [1] * len(sso.sops)
@@ -525,7 +531,7 @@ def another_ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
     sso.LH = sso.H * (-1j*sso.dt )
     if sso.method == 'homodyne' or sso.method is None:
         if sso.m_ops is None:
-            sso.m_ops = [op + op.dag() for op in sc_ops]
+            sso.m_ops = [op + op.dag() for op in sso.sc_ops]
         sso.sops = [[op, -op.norm() * sso.dt/2, op + op.dag()] for op in sso.sc_ops]
         if not isinstance(sso.dW_factors, list):
             sso.dW_factors = [1] * len(sso.sops)

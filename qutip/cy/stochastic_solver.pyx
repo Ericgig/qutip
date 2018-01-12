@@ -83,7 +83,6 @@ cdef class ssolvers:
     cdef unsigned int[::1] seed
     cdef object generate_noise
 
-
     cdef object debug
 
     def __init__(self):
@@ -96,12 +95,12 @@ cdef class ssolvers:
         self.solver = sso.solver_code
         self.dt = sso.dt
         self.N_substeps = sso.nsubsteps
-        if self.solver in [103, 153]:
+        if self.solver in [103, 153, 154]:
             self.set_implicit(sso)
         self.normalize = sso.normalize and not sso.me
         self.N_step = len(sso.times)
         self.N_dw = len(sso.sops)
-        if self.solver in [152, 153]:
+        if self.solver in [150, 151, 152, 153, 154]:
             self.N_dw *= 2
         self.noise_type = sso.noise_type
         self.dW_factor = np.array(sso.dW_factors,dtype=np.float64)
@@ -200,14 +199,22 @@ cdef class ssolvers:
                 self.pred_corr_a(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
+        elif self.solver == 105:
+            for i in range(N_substeps):
+                self.platen_m(t + i*dt, dt, noise[i, :], vec, out)
+                out, vec = vec, out
+
         elif self.solver == 150:
-            #print(150)
             for i in range(N_substeps):
                 self.platen15(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
+        elif self.solver == 151:
+            for i in range(N_substeps):
+                self.taylor15(t + i*dt, dt, noise[i, :], vec, out)
+                out, vec = vec, out
+
         elif self.solver == 152:
-            #print(152)
             for i in range(N_substeps):
                 self.taylor15_1(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
@@ -215,6 +222,11 @@ cdef class ssolvers:
         elif self.solver == 153:
             for i in range(N_substeps):
                 self.taylor15_1_imp(t + i*dt, dt, noise[i, :], vec, out)
+                out, vec = vec, out
+
+        elif self.solver == 154:
+            for i in range(N_substeps):
+                self.taylor15_imp(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
         if self.normalize:
@@ -238,6 +250,13 @@ cdef class ssolvers:
 
     cdef void taylor_15_1(self, double t, complex[::1] rho,
                            complex[:, ::1] out):
+        pass
+
+    cdef void derivatives(self, double t, int deg, complex[::1] rho,
+                              complex[::1] a, complex[:, ::1] b,
+                              complex[:, :, ::1] Lb, complex[:,::1] La,
+                              complex[:, ::1] L0b, complex[:, :, :, ::1] LLb,
+                              complex[::1] L0a):
         pass
 
     def set_implicit(self, sso):
@@ -264,15 +283,13 @@ cdef class ssolvers:
     cdef void platen(self, double t, double dt, double[:] noise,
                     complex[::1] vec, complex[::1] out):
         """
-        Platen rhs function for both master eq and schrodinger eq.
-        dV = -iH* (V+Vt)/2 * dt + (d1(V)+d1(Vt))/2 * dt
-             + (2*d2_i(V)+d2_i(V+)+d2_i(V-))/4 * dW_i
-             + (d2_i(V+)-d2_i(V-))/4 * (dW_i**2 -dt) * dt**(-.5)
+        # Platen rhs function for both master eq and schrodinger eq.
+        # dV = -iH* (V+Vt)/2 * dt + (d1(V)+d1(Vt))/2 * dt
+        #      + (2*d2_i(V)+d2_i(V+)+d2_i(V-))/4 * dW_i
+        #      + (d2_i(V+)-d2_i(V-))/4 * (dW_i**2 -dt) * dt**(-.5)
 
-        Vt = V -iH*V*dt + d1*dt + d2_i*dW_i
-        V+/- = V -iH*V*dt + d1*dt +/- d2_i*dt**.5
-
-        Not validated for time-dependent operators
+        # Vt = V -iH*V*dt + d1*dt + d2_i*dW_i
+        # V+/- = V -iH*V*dt + d1*dt +/- d2_i*dt**.5
         """
 
         cdef int i, j
@@ -319,6 +336,76 @@ cdef class ssolvers:
             out[j] += dw * (d2[i,j] *2 + d2p[i,j] + d2m[i,j])
             out[j] += dw2 * (d2p[i,j] - d2m[i,j])
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.cdivision(True)
+    cdef void platen_m(self, double t, double dt, double[:] noise,
+                       complex[::1] vec, complex[::1] out):
+        """
+        Platen rhs function for both master eq and schrodinger eq.
+        dV = -iH* (V+Vt)/2 * dt + (d1(V)+d1(Vt))/2 * dt
+             + (2*d2_i(V)+d2_i(V+)+d2_i(V-))/4 * dW_i
+             + (d2_i(V+)-d2_i(V-))/4 * (dW_i**2 -dt) * dt**(-.5)
+
+        Vt = V -iH*V*dt + d1*dt + d2_i*dW_i
+        V+/- = V -iH*V*dt + d1*dt +/- d2_i*dt**.5
+        """
+
+        cdef int i, j, k
+        cdef double sqrt_dt = np.sqrt(dt)
+        cdef double sqrt_dt_inv = 0.25/sqrt_dt
+        cdef double dw, dw2
+
+        cdef complex[::1] d1 = np.zeros(self.l_vec, dtype=complex)
+        cdef complex[::1] Vt = np.empty(self.l_vec, dtype=complex)
+        cdef complex[:, ::1] d2 = np.zeros((self.N_ops, self.l_vec),
+                                            dtype=complex)
+        cdef complex[:, ::1] Vm = np.zeros((self.N_ops, self.l_vec),
+                                            dtype=complex)
+        cdef complex[:, ::1] Vp = np.zeros((self.N_ops, self.l_vec),
+                                            dtype=complex)
+        cdef complex[:, ::1] d2p
+        cdef complex[:, ::1] d2m
+
+        self.d1(t, vec, d1)
+        self.d2(t, vec, d2)
+        for j in range(self.l_vec):
+            # out[j] = vec[j] + d1[j]
+            # d1[j] += vec[j]
+            d1[j] += vec[j]
+            Vt[j] = d1[j]
+            out[j] = 0.5* d1[j]
+
+        for i in range(self.N_ops):
+          for j in range(self.l_vec):
+            Vp[i,j] += d1[j]
+            Vm[i,j] += d1[j]
+            Vp[i,j] += d2[i,j] * sqrt_dt
+            Vm[i,j] -= d2[i,j] * sqrt_dt
+            Vt[j] += d2[i,j] * noise[i]
+
+        d1 = np.zeros(self.l_vec, dtype=complex)
+        self.d1(t, Vt, d1)  #  t+dt
+        for j in range(self.l_vec):
+          out[j] += 0.5* (d1[j] + vec[j])
+
+        for i in range(self.N_ops):
+          for j in range(self.l_vec):
+            out[j] += d2[i,j] * noise[i]
+
+        for i in range(self.N_ops):
+          d2p = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+          d2m = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+          self.d2(t, Vp[i,:], d2p)
+          self.d2(t, Vm[i,:], d2m)
+          for j in range(self.N_ops):
+            if i == j:
+              dw2 = sqrt_dt_inv * (noise[i]*noise[i] - dt)
+            else:
+              dw2 = sqrt_dt_inv * noise[i] * noise[j]
+            for k in range(self.l_vec):
+              out[k] += dw2 * (d2p[j,k] - d2m[j,k])
+
     @cython.wraparound(False)
     @cython.boundscheck(False)
     @cython.cdivision(True)
@@ -346,19 +433,18 @@ cdef class ssolvers:
             euler[j] = a_pred[j] + b_pred[j] + vec[j]
 
         for i in range(self.N_ops):
-            for j in range(self.N_ops):
-                for k in range(self.l_vec):
-                    a_pred[k] -= dd2[i,j,k] * dt_2
+            for k in range(self.l_vec):
+                a_pred[k] -= dd2[i,i,k] * dt_2
 
         d2 = np.zeros((self.N_ops, self.l_vec), dtype=complex)
-        self.d2(t, euler, d2)
+        self.d2(t + dt, euler, d2)
 
         for i in range(self.N_ops):
             for j in range(self.l_vec):
                 b_corr[j] = d2[i,j] * noise[i]
 
         for j in range(self.l_vec):
-            out[j] = vec[j] + a_pred[j] + ( b_pred[j] + b_corr[j]) * 0.5
+            out[j] = vec[j] + a_pred[j] + (b_pred[j] + b_corr[j]) * 0.5
 
     @cython.wraparound(False)
     @cython.boundscheck(False)
@@ -388,19 +474,17 @@ cdef class ssolvers:
             euler[j] = a_pred[j] + b_pred[j] + vec[j]
 
         for i in range(self.N_ops):
-            for j in range(self.N_ops):
-                for k in range(self.l_vec):
-                    a_pred[k] -= dd2[i,j,k] * dt_2
+            for k in range(self.l_vec):
+                a_pred[k] -= dd2[i,i,k] * dt_2
 
         d2 = np.zeros((self.N_ops, self.l_vec), dtype=complex)
         dd2 = np.zeros((self.N_ops, self.N_ops, self.l_vec), dtype=complex)
-        self.d1(t, euler, a_corr)
-        self.d2d2p(t, euler, d2, dd2)
+        self.d1(t+dt, euler, a_corr)
+        self.d2d2p(t+dt, euler, d2, dd2)
 
         for i in range(self.N_ops):
-            for j in range(self.N_ops):
-                for k in range(self.l_vec):
-                    a_corr[k] -= dd2[i,j,k] * dt_2
+            for k in range(self.l_vec):
+                a_corr[k] -= dd2[i,i,k] * dt_2
 
         for i in range(self.N_ops):
             for j in range(self.l_vec):
@@ -444,7 +528,7 @@ cdef class ssolvers:
                 if (i == j):
                     dw = (noise[i] * noise[i] - dt) * 0.5
                 else:
-                    dw = (noise[i] * noise[j]) #* 0.5
+                    dw = (noise[i] * noise[j])
                 for k in range(self.l_vec):
                     out[k] += dd2[i,j,k] * dw
 
@@ -507,13 +591,57 @@ cdef class ssolvers:
             out[i] = vec[i] + dvec[0,i]
         axpy(dw, dvec[1,:], out)
         axpy(0.5*(dw*dw-dt), dvec[2,:], out)
-        axpy(dz * self.debug[0], dvec[3,:], out)
-        axpy(dw-dz * self.debug[1], dvec[4,:], out)
-        axpy(0.5 * self.debug[2], dvec[5,:], out)
-        axpy(0.5 * self.debug[3] * (0.3333333333333333 * dw * dw - dt) * dw,
+        axpy(dz, dvec[3,:], out)
+        axpy(dw-dz , dvec[4,:], out)
+        axpy(0.5, dvec[5,:], out)
+        axpy(0.5 * (0.3333333333333333 * dw * dw - dt) * dw,
              dvec[6,:], out)
-        #for i in [2,6,4]:
-        #  print(dvec[i,0],dvec[i,1],dvec[i,2],dvec[i,3])
+
+    @cython.wraparound(False)
+    @cython.boundscheck(False)
+    @cython.cdivision(True)
+    cdef void taylor15(self, double t, double dt, double[:] noise,
+                           complex[::1] vec, complex[::1] out):
+        cdef complex[::1] a = np.zeros((self.l_vec), dtype=complex)
+        cdef complex[:, ::1] b = np.zeros((self.N_ops, self.l_vec),
+                                           dtype=complex)
+        cdef complex[:, :, ::1] Lb = np.zeros((self.N_ops, self.N_ops,
+                                               self.l_vec), dtype=complex)
+        cdef complex[:, ::1] L0b = np.zeros((self.N_ops,
+                                             self.l_vec), dtype=complex)
+        cdef complex[:,::1] La = np.zeros((self.N_ops,
+                                           self.l_vec), dtype=complex)
+        cdef complex[:, :, :, ::1] LLb = np.zeros((self.N_ops, self.N_ops,
+                                        self.N_ops, self.l_vec), dtype=complex)
+        cdef complex[::1] L0a = np.zeros((self.l_vec), dtype=complex)
+        self.derivatives(t, 2, vec, a, b, Lb, La, L0b, LLb, L0a)
+
+        cdef int i,j,k
+        cdef double[::1] dz, dw
+        dw = np.zeros(self.N_ops)
+        dz = np.zeros(self.N_ops)
+        # The dt of dz is included in the d1 part (Ldt) and the noise (dt**.5)
+        for i in range(self.N_ops):
+            dw[i] = noise[i]
+            dz[i] = 0.5 *(noise[i] + 1./np.sqrt(3) * noise[i+self.N_ops])
+
+        for i in range(self.l_vec):
+            out[i] = a[i] + vec[i]
+        axpy(0.5, L0a, out)
+
+        for i in range(self.N_ops):
+            axpy(dw[i], b[i,:], out)
+            axpy(0.5*(dw[i]*dw[i]-dt), Lb[i,i,:], out)
+            axpy(dz[i], La[i,:], out)
+            axpy(dw[i]-dz[i] , L0b[i,:], out)
+            axpy(0.5 * (0.3333333333333333 * dw[i] * dw[i] - dt) * dw[i],
+                        LLb[i,i,i,:], out)
+            for j in range(i+1,self.N_ops):
+                axpy((dw[i]*dw[j]), Lb[i,j,:], out)
+                axpy(0.5*self.debug[0]*(dw[j]*dw[j]-dt)*dw[i], LLb[i,j,j,:], out)
+                axpy(0.5*self.debug[0]*(dw[i]*dw[i]-dt)*dw[j], LLb[i,i,j,:], out)
+                for k in range(j+1,self.N_ops):
+                    axpy(dw[i]*dw[j]*dw[k], LLb[i,j,k,:], out)
 
     @cython.wraparound(False)
     @cython.boundscheck(False)
@@ -521,6 +649,8 @@ cdef class ssolvers:
     cdef void taylor15_1_imp(self, double t, double dt, double[:] noise,
                            complex[::1] vec, complex[::1] out):
         cdef int i
+        cdef np.ndarray[complex, ndim=1] d1 = np.zeros(self.l_vec,
+                                                       dtype=complex)
         cdef np.ndarray[complex, ndim=1] guess = np.zeros((self.l_vec, ),
                                                           dtype=complex)
         cdef np.ndarray[complex, ndim=1] vec_t = np.zeros((self.l_vec, ),
@@ -536,12 +666,69 @@ cdef class ssolvers:
             vec_t[i] = vec[i] + dvec[0,i]*0.5
         axpy(dw, dvec[1,:], vec_t)
         axpy(0.5*(dw*dw-dt), dvec[2,:], vec_t)
-        axpy(dz-dw*0.5* self.debug[0], dvec[3,:], vec_t)
-        axpy(dw-dz* self.debug[1], dvec[4,:], vec_t)
-        axpy(0.5 * (0.3333333333333333 * dw * dw - dt) * dw * self.debug[2],
+        axpy(dz-0.5*dw, dvec[3,:], vec_t)
+        #self.d1(t, dvec[1,:], d1)
+        #axpy(-0.5*dw, d1, vec_t)
+        axpy(dw-dz, dvec[4,:], vec_t)
+        axpy(0.5 * (0.3333333333333333 * dw * dw - dt) * dw,
              dvec[6,:], vec_t)
         for i in range(self.l_vec):
             guess[i] = vec_t[i] + dvec[0,i]*0.5
+
+        self.implicit(t+dt, vec_t, out, guess)
+
+    @cython.wraparound(False)
+    @cython.boundscheck(False)
+    @cython.cdivision(True)
+    cdef void taylor15_imp(self, double t, double dt, double[:] noise,
+                           complex[::1] vec, complex[::1] out):
+        cdef complex[::1] a = np.zeros((self.l_vec), dtype=complex)
+        cdef complex[:, ::1] b = np.zeros((self.N_ops, self.l_vec),
+                                           dtype=complex)
+        cdef complex[:, :, ::1] Lb = np.zeros((self.N_ops, self.N_ops,
+                                               self.l_vec), dtype=complex)
+        cdef complex[:, ::1] L0b = np.zeros((self.N_ops,
+                                             self.l_vec), dtype=complex)
+        cdef complex[:,::1] La = np.zeros((self.N_ops,
+                                           self.l_vec), dtype=complex)
+        cdef complex[:, :, :, ::1] LLb = np.zeros((self.N_ops, self.N_ops,
+                                        self.N_ops, self.l_vec), dtype=complex)
+        cdef complex[::1] L0a = np.zeros((self.l_vec), dtype=complex)
+        cdef np.ndarray[complex, ndim=1] guess = np.zeros((self.l_vec, ),
+                   dtype=complex)
+        cdef np.ndarray[complex, ndim=1] vec_t = np.zeros((self.l_vec, ),
+                  dtype=complex)
+        self.derivatives(t, 2, vec, a, b, Lb, La, L0b, LLb, L0a)
+
+        cdef int i,j,k
+        cdef double[::1] dz, dw
+        dw = np.zeros(self.N_ops)
+        dz = np.zeros(self.N_ops)
+        # The dt of dz is included in the d1 part (Ldt) and the noise (dt**.5)
+        for i in range(self.N_ops):
+            dw[i] = noise[i]
+            dz[i] = 0.5 *(noise[i] + 1./np.sqrt(3) * noise[i+self.N_ops])
+
+        for i in range(self.l_vec):
+            vec_t[i] = a[i]*0.5 + vec[i]
+        #axpy(0.5, L0a, vec_t)
+
+        for i in range(self.N_ops):
+            axpy(dw[i], b[i,:], vec_t)
+            axpy(0.5*(dw[i]*dw[i]-dt), Lb[i,i,:], vec_t)
+            axpy(dz[i]-dw[i]*0.5, La[i,:], vec_t)
+            axpy(dw[i]-dz[i] , L0b[i,:], vec_t)
+            axpy(0.5 * (0.3333333333333333 * dw[i] * dw[i] - dt) * dw[i],
+                        LLb[i,i,i,:], vec_t)
+            for j in range(i+1,self.N_ops):
+                axpy((dw[i]*dw[j]), Lb[i,j,:], vec_t)
+                axpy(0.5*self.debug[0]*(dw[j]*dw[j]-dt)*dw[i], LLb[i,j,j,:], vec_t)
+                axpy(0.5*self.debug[0]*(dw[i]*dw[i]-dt)*dw[j], LLb[i,i,j,:], vec_t)
+                for k in range(j+1,self.N_ops):
+                    axpy(dw[i]*dw[j]*dw[k], LLb[i,j,k,:], vec_t)
+
+        for i in range(self.l_vec):
+            guess[i] = vec_t[i] + a[i]*0.5
 
         self.implicit(t+dt, vec_t, out, guess)
 
@@ -572,6 +759,8 @@ cdef class ssolvers:
         cdef complex[::1] V = np.zeros(self.l_vec, dtype=complex)
         cdef complex[:, ::1] d2 = np.zeros((self.N_ops, self.l_vec),
                                             dtype=complex)
+        cdef complex[:, ::1] dd2 = np.zeros((self.N_ops, self.l_vec),
+                                            dtype=complex)
         cdef complex[:, ::1] d2p = np.zeros((self.N_ops, self.l_vec),
                                             dtype=complex)
         cdef complex[:, ::1] d2m = np.zeros((self.N_ops, self.l_vec),
@@ -588,8 +777,15 @@ cdef class ssolvers:
                                                 self.l_vec), dtype=complex)
         cdef complex[:, : ,::1] p2m = np.zeros((self.N_ops, self.N_ops,
                                                 self.l_vec), dtype=complex)
+
+
+        cdef complex[:, :, ::1] ddd2 = np.zeros((self.N_ops, self.N_ops,
+                                                  self.l_vec), dtype=complex)
+        self.d2d2p(t, vec, d2, ddd2)
+
         self.d1(t, vec, d1)
-        self.d2(t, vec, d2)
+        #self.d2(t, vec, d2)
+        self.d2(t + dt, vec, dd2)
 
         cdef complex[::1] temp = np.zeros(self.l_vec, dtype=complex)
 
@@ -597,12 +793,8 @@ cdef class ssolvers:
         for j in range(self.l_vec):
             out[j] = d1[j] + vec[j]
 
-        #print(d1[0],d1[1],d1[2],d1[3])
-
         for i in range(self.N_ops):
             axpy(dw[i], d2[i,:], out)
-
-            #print(d2[i,0],d2[i,1],d2[i,2],d2[i,3])
 
         # ~Milstein part
         axpy(1., vec, V)
@@ -614,106 +806,93 @@ cdef class ssolvers:
             axpy(-sqrt_dt, d2[i,:], v2m[i,:])
 
         for i in range(self.N_ops):
+            d2p = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+            d2m = np.zeros((self.N_ops, self.l_vec), dtype=complex)
             self.d2(t, v2p[i,:], d2p)
             self.d2(t, v2m[i,:], d2m)
-            ddw = (dw[i]*dw[i]-dt)*0.25/sqrt_dt
+            ddw = (dw[i]*dw[i]-dt)*0.25/sqrt_dt  # 1.0
             axpy( ddw, d2p[i,:], out)
             axpy(-ddw, d2m[i,:], out)
-
-            axpy( 0.5/sqrt_dt, d2p[i,:], temp)
-            axpy(-0.5/sqrt_dt, d2m[i,:], temp)
-            #print(temp[0],temp[1],temp[2],temp[3])
-            temp = np.zeros(self.l_vec, dtype=complex)
 
         for i in range(self.N_ops):
             d2p = np.zeros((self.N_ops, self.l_vec), dtype=complex)
             self.d2(t, v2p[i,:], d2p)
             for j in range(self.N_ops):
-                axpy(1., v2p[i,:], p2p[i,j,:])
-                axpy(sqrt_dt, d2p[j,:], p2p[i,j,:])
-                axpy(1., v2p[i,:], p2m[i,j,:])
+                axpy(      1., v2p[i,:], p2p[i,j,:])
+                axpy( sqrt_dt, d2p[j,:], p2p[i,j,:])
+                axpy(      1., v2p[i,:], p2m[i,j,:])
                 axpy(-sqrt_dt, d2p[j,:], p2m[i,j,:])
 
-        axpy(-0.5*(self.N_ops*self.debug[1]), d1, out)
-        #axpy(0.5*(2-self.N_ops*self.debug[1]), d1, out)
+        axpy(-0.5*(self.N_ops)*self.debug[1], d1, out)
         for i in range(self.N_ops):
-            ddz = dz[i]*0.5/sqrt_dt               *self.debug[0]
-            ddd = 0.25*(dw[i]*dw[i]/3-dt)*dw[i]/dt   *self.debug[2]
+            ddz = dz[i]*0.5/sqrt_dt  # 1.5
+            ddd = 0.25*(dw[i]*dw[i]/3-dt)*dw[i]/dt  # 1.5
             d1p = np.zeros((self.l_vec), dtype=complex)
             d1m = np.zeros((self.l_vec), dtype=complex)
             d2m = np.zeros((self.N_ops, self.l_vec), dtype=complex)
             d2p = np.zeros((self.N_ops, self.l_vec), dtype=complex)
             d2pp = np.zeros((self.N_ops, self.l_vec), dtype=complex)
             d2mm = np.zeros((self.N_ops, self.l_vec), dtype=complex)
-            self.d1(t, v2p[i,:], d1p)
-            self.d1(t, v2m[i,:], d1m)
+            self.d1(t + dt/self.N_ops, v2p[i,:], d1p)
+            self.d1(t + dt/self.N_ops, v2m[i,:], d1m)
             self.d2(t, v2p[i,:], d2p)
             self.d2(t, v2m[i,:], d2m)
             self.d2(t, p2p[i,i,:], d2pp)
             self.d2(t, p2m[i,i,:], d2mm)
 
-            axpy(0.25, d1p, out)
-            axpy(0.25, d1m, out)
-
-            """axpy(0.5 , d1p, temp)
-            axpy(0.5 , d1m, temp)
-            axpy(-1.0 , d1, temp)
-            print(temp[0],temp[1],temp[2],temp[3])
-            temp = np.zeros(self.l_vec, dtype=complex)"""
+            axpy(0.25*self.debug[1], d1p, out)
+            axpy(0.25*self.debug[1], d1m, out)
 
             axpy( ddz, d1p, out)
             axpy(-ddz, d1m, out)
 
-            """axpy(0.5/sqrt_dt, d1p, temp)
-            axpy(-0.5/sqrt_dt, d1m, temp)
-            print(temp[0],temp[1],temp[2],temp[3])
-            temp = np.zeros(self.l_vec, dtype=complex)"""
+            axpy((dw[i]-dz[i])*self.debug[0], dd2[i,:], out)
+            axpy((dz[i]-dw[i])*self.debug[0], d2[i,:], out)
 
             axpy( ddd, d2pp[i,:], out)
             axpy(-ddd, d2mm[i,:], out)
             axpy(-ddd, d2p[i,:], out)
             axpy( ddd, d2m[i,:], out)
 
-            """axpy( 0.5/dt, d2pp[i,:], temp)
-            axpy(-0.5/dt, d2mm[i,:], temp)
-            axpy(-0.5/dt, d2p[i,:], temp)
-            axpy( 0.5/dt, d2m[i,:], temp)
-            print(temp[0],temp[1],temp[2],temp[3])
-            temp = np.zeros(self.l_vec, dtype=complex)"""
-
             for j in range(self.N_ops):
-                ddw = 0.5*(dw[j]-dz[j])*self.debug[3]
-                #print(ddw)
+                ddw = 0.5*(dw[j]-dz[j]) # 1.5
                 axpy(ddw, d2p[j,:], out)
                 axpy(-2*ddw, d2[j,:], out)
                 axpy(ddw, d2m[j,:], out)
 
-                """axpy(0.5, d2p[j,:], temp)
-                axpy(-1, d2[j,:], temp)
-                axpy(0.5, d2m[j,:], temp)
-                print(temp[0],temp[1],temp[2],temp[3])
-                temp = np.zeros(self.l_vec, dtype=complex)"""
-
             for j in range(i+1,self.N_ops):
-                ddw = 0.5*(dw[i]*dw[j])/sqrt_dt*0
-                axpy(ddw, d2p[j,:], out)
+                ddw = 0.5*(dw[i]*dw[j])/sqrt_dt # 1.0
+                axpy( ddw, d2p[j,:], out)
                 axpy(-ddw, d2m[j,:], out)
 
             for j in range(i+1,self.N_ops):
-                ddw = 0.25*(dw[i]*dw[i]-dt)*dw[j]/dt*0
-                self.d2(t, p2p[i,j,:], d2pp)
-                self.d2(t, p2m[i,j,:], d2mm)
-                axpy(ddw, d2pp[j,:], out)
+                ddw = 0.25*(dw[j]*dw[j]-dt)*dw[i]/dt*self.debug[2] # 1.5
+                d2pp = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+                d2mm = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+                self.d2(t, p2p[j,i,:], d2pp)
+                self.d2(t, p2m[j,i,:], d2mm)
+                axpy( ddw, d2pp[j,:], out)
                 axpy(-ddw, d2mm[j,:], out)
                 axpy(-ddw, d2p[j,:], out)
-                axpy(ddw, d2m[j,:], out)
+                axpy( ddw, d2m[j,:], out)
 
                 for k in range(j+1,self.N_ops):
-                    ddw = 0.5*dw[i]*dw[j]*dw[k]/dt*0
-                    axpy(ddw, d2pp[k,:], out)
+                    ddw = 0.5*dw[i]*dw[j]*dw[k]/dt*self.debug[2] # 1.5
+                    axpy( ddw, d2pp[k,:], out)
                     axpy(-ddw, d2mm[k,:], out)
                     axpy(-ddw, d2p[k,:], out)
-                    axpy(ddw, d2m[k,:], out)
+                    axpy( ddw, d2m[k,:], out)
+
+            for j in range(i):
+                ddw = 0.25*(dw[j]*dw[j]-dt)*dw[i]/dt*self.debug[2] # 1.5
+                d2pp = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+                d2mm = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+                self.d2(t, p2p[j,i,:], d2pp)
+                self.d2(t, p2m[j,i,:], d2mm)
+                axpy( ddw, d2pp[j,:], out)
+                axpy(-ddw, d2mm[j,:], out)
+                axpy(-ddw, d2p[j,:], out)
+                axpy( ddw, d2m[j,:], out)
 
 
 cdef class sse(ssolvers):
@@ -858,7 +1037,11 @@ cdef class sse(ssolvers):
         axpy(-e_real, out[1,:], out[2,:])
         axpy(-de_b*0.5, vec, out[2,:])
 
-        #ba'
+        """#ba' + db/dt
+        c_op._rhs_mat(t + self.dt, &vec[0], &out[3,0])
+        e = dotc(vec,out[3,:])
+        axpy(-real(e), vec, out[3,:])
+        axpy(-1., out[1,:], out[3,:])
         self.L._rhs_mat(t, &out[1,0], &out[3,0])
         cdc_op._rhs_mat(t, &out[1,0], &out[3,0])  # <==== In H
         axpy(-0.5 * e_real * e_real * dt, out[1,:], out[3,:])
@@ -880,8 +1063,39 @@ cdef class sse(ssolvers):
         axpy(-de_b, out[1,:], dbbb)
         axpy(-dde_bb*0.5, vec, dbbb)
         axpy(0.5 *dt, dbbb, out[4,:])
+        """
 
-        #aa'+bba"/2 =? da/dt + a da/drho + bba"
+        #ba'
+        self.L._rhs_mat(t, &out[1,0], &out[3,0])
+        cdc_op._rhs_mat(t, &out[1,0], &out[3,0])  # <==== In H
+        axpy(-0.5 * e_real * e_real * dt, out[1,:], out[3,:])
+        axpy(-0.5 * e_real * de_b * dt, vec, out[3,:])
+        axpy(e_real * dt, Cb, out[3,:])
+        axpy(0.5 * de_b * dt, Cvec, out[3,:])
+
+        #ab' + db/dt + bbb"/2
+        c_op._rhs_mat(t, &out[0,0], &out[4,0])
+        for k in range(self.l_vec):
+            temp[k] = conj(out[0,k])
+            temp2[k] = 0.
+        c_op._rhs_mat(t, &temp[0], &temp2[0])
+        de_a = dotc(vec, out[4,:]) + dot(out[0,:], Cvec) + \
+               conj(dotc(out[0,:], Cvec) + dotc(vec, temp2))
+        axpy(-e_real, out[0,:], out[4,:])
+        axpy(-de_a*0.5, vec, out[4,:])
+
+        temp = np.zeros(self.l_vec, dtype=complex)
+        c_op._rhs_mat(t + self.dt, &vec[0], &temp[0])
+        e = dotc(vec,temp)
+        axpy(1., temp, out[4,:])
+        axpy(-real(e), vec, out[4,:])
+        axpy(-1., out[1,:], out[4,:])
+
+        axpy(-de_b, out[1,:], dbbb)
+        axpy(-dde_bb*0.5, vec, dbbb)
+        axpy(0.5 *dt, dbbb, out[4,:])
+
+        #da/dt + aa' + bba"
         #self.L._rhs_mat(t + dt, &vec[0], &out[5,0])
         self.d1(t + dt, vec, out[5,:])
         axpy(-1.0, out[0,:], out[5,:])
@@ -911,6 +1125,167 @@ cdef class sse(ssolvers):
         axpy(-de_bb*0.5, vec, out[6,:])
 
         axpy(1.0, dbbb, out[6,:])
+
+    cdef void derivatives(self, double t, int deg, complex[::1] rho,
+                          complex[::1] a, complex[:, ::1] b,
+                          complex[:, :, ::1] Lb, complex[:,::1] La,
+                          complex[:, ::1] L0b, complex[:, :, :, ::1] LLb,
+                          complex[::1] L0a):
+        """
+        combinaisons of a and b derivative for m sc_ops up to order dt**1.5
+        dY ~ a dt + bi dwi
+                                         deg   use        noise
+        b[i.:]       bi                   >=0   d2 euler   dwi
+        a[:]         a                    >=0   d1 euler   dt
+        Lb[i,i,:]    bi'bi                >=1   milstein   (dwi^2-dt)/2
+        Lb[i,j,:]    bj'bi                >=1   milstein   dwi*dwj
+
+        L0b[i,:]     ab' +db/dt +bbb"/2   >=2   taylor15   dwidt-dzi
+        La[i,:]      ba'                  >=2   taylor15   dzi
+        LLb[i,i,i,:] bi(bibi"+bi'bi')     >=2   taylor15   (dwi^2/3-dt)dwi/2
+        LLb[i,j,j,:] bi(bjbj"+bj'bj')     >=2   taylor15   (dwj^2-dt)dwj/2
+        LLb[i,j,k,:] bi(bjbk"+bj'bk')     >=2   taylor15   dwi*dwj*dwk
+        L0a[:]       aa' +da/dt +bba"/2    2    taylor15   dt^2/2
+        """
+        cdef int i, j, k
+        cdef double dt = self.dt
+        cdef cy_qobj c_op, cdc_op
+        cdef complex e, de_b, de_bb, de_a, dde_bb
+        cdef complex[::1] e_real = np.zeros((self.N_ops), dtype=complex)
+
+        cdef complex[:, ::1] Cvec = np.zeros((self.N_ops, self.l_vec), dtype=complex)
+        cdef complex[:, :, ::1] Cb = np.zeros((self.N_ops, self.N_ops, self.l_vec), dtype=complex)
+        cdef complex[::1] temp = np.zeros(self.l_vec, dtype=complex)
+        cdef complex[::1] temp2 = np.zeros(self.l_vec, dtype=complex)
+        cdef complex[::1] dbbb = np.zeros(self.l_vec, dtype=complex)  #b"bb
+
+        # a b
+        self.L._rhs_mat(t, &vec[0], &a[0])
+        for i in range(self.N_ops):
+            c_op = self.c_ops[i]
+            cdc_op = self.cdc_ops[i]
+            c_op._rhs_mat(t, &vec[0], &Cvec[i,0])
+            e = dotc(vec,Cvec[i,:])
+            e_real[i] = real(e)
+            axpy(1., Cvec[i,:], b[i,:])
+            axpy(-e_real[i], vec, b[i,:])
+
+            cdc_op._rhs_mat(t, &vec[0], &a[0])  # <==== In H
+            axpy(-0.5 * e_real[i] * e_real[i] * dt, vec, a[:])
+            axpy(e_real[i] * dt, Cvec, a[:])
+
+        #Lb bb'
+        for i in range(self.N_ops):
+          c_op = self.c_ops[i]
+          for j in range(i,self.N_ops):
+            c_op._rhs_mat(t, &b[j,0], &Cb[i,j,0])
+            for k in range(self.l_vec):
+                temp[k] = conj(b[j,k])  #                   i <-> j????
+            c_op._rhs_mat(t, &temp[0], &temp2[0])
+            de_b = dotc(vec, Cb[i,j,:]) + dot(b[i,:], Cvec[j,:]) + \ #                   i <-> j????
+                   conj(dotc(b[i,:], Cvec[j,:]) + dotc(vec, temp2))  #                   i <-> j????
+            axpy(1., Cb[i,j,:], Lb[i,j,:])
+            axpy(-e_real[i], b[j,:], Lb[i,j,:])
+            axpy(-de_b*0.5, vec, Lb[i,j,:])
+
+            dde_bb = 2*(dot(b[i,:], Cb[i,j,0]) +  conj(dotc(out[i,:], temp2)))#                   i <-> j????
+
+
+        #L0b La LLb
+        for i in range(self.N_ops):
+
+
+        """#ba' + db/dt
+        c_op._rhs_mat(t + self.dt, &vec[0], &out[3,0])
+        e = dotc(vec,out[3,:])
+        axpy(-real(e), vec, out[3,:])
+        axpy(-1., out[1,:], out[3,:])
+        self.L._rhs_mat(t, &out[1,0], &out[3,0])
+        cdc_op._rhs_mat(t, &out[1,0], &out[3,0])  # <==== In H
+        axpy(-0.5 * e_real * e_real * dt, out[1,:], out[3,:])
+        axpy(-0.5 * e_real * de_b * dt, vec, out[3,:])
+        axpy(e_real * dt, Cb, out[3,:])
+        axpy(0.5 * de_b * dt, Cvec, out[3,:])
+
+        #ab' + bbb"/2
+        c_op._rhs_mat(t, &out[0,0], &out[4,0])
+        for k in range(self.l_vec):
+            temp[k] = conj(out[0,k])
+            temp2[k] = 0.
+        c_op._rhs_mat(t, &temp[0], &temp2[0])
+        de_a = dotc(vec, out[4,:]) + dot(out[0,:], Cvec) + \
+               conj(dotc(out[0,:], Cvec) + dotc(vec, temp2))
+        axpy(-e_real, out[0,:], out[4,:])
+        axpy(-de_a*0.5, vec, out[4,:])
+
+        axpy(-de_b, out[1,:], dbbb)
+        axpy(-dde_bb*0.5, vec, dbbb)
+        axpy(0.5 *dt, dbbb, out[4,:])
+        """
+
+        #ba'
+        self.L._rhs_mat(t, &out[1,0], &out[3,0])
+        cdc_op._rhs_mat(t, &out[1,0], &out[3,0])  # <==== In H
+        axpy(-0.5 * e_real * e_real * dt, out[1,:], out[3,:])
+        axpy(-0.5 * e_real * de_b * dt, vec, out[3,:])
+        axpy(e_real * dt, Cb, out[3,:])
+        axpy(0.5 * de_b * dt, Cvec, out[3,:])
+
+        #ab' + db/dt + bbb"/2
+        c_op._rhs_mat(t, &out[0,0], &out[4,0])
+        for k in range(self.l_vec):
+            temp[k] = conj(out[0,k])
+            temp2[k] = 0.
+        c_op._rhs_mat(t, &temp[0], &temp2[0])
+        de_a = dotc(vec, out[4,:]) + dot(out[0,:], Cvec) + \
+               conj(dotc(out[0,:], Cvec) + dotc(vec, temp2))
+        axpy(-e_real, out[0,:], out[4,:])
+        axpy(-de_a*0.5, vec, out[4,:])
+
+        temp = np.zeros(self.l_vec, dtype=complex)
+        c_op._rhs_mat(t + self.dt, &vec[0], &temp[0])
+        e = dotc(vec,temp)
+        axpy(1., temp, out[4,:])
+        axpy(-real(e), vec, out[4,:])
+        axpy(-1., out[1,:], out[4,:])
+
+        axpy(-de_b, out[1,:], dbbb)
+        axpy(-dde_bb*0.5, vec, dbbb)
+        axpy(0.5 *dt, dbbb, out[4,:])
+
+        #da/dt + aa' + bba"
+        #self.L._rhs_mat(t + dt, &vec[0], &out[5,0])
+        self.d1(t + dt, vec, out[5,:])
+        axpy(-1.0, out[0,:], out[5,:])
+        self.L._rhs_mat(t, &out[0,0], &out[5,0])
+        cdc_op._rhs_mat(t, &out[0,0], &out[5,0])  # <==== In H
+        temp = np.zeros(self.l_vec, dtype=complex)
+        c_op._rhs_mat(t, &out[0,0], &temp[0])
+        axpy(-0.5 * e_real * e_real * dt, out[0,:], out[5,:])
+        axpy(-0.5 * e_real * de_a * dt, vec, out[5,:])
+        axpy(e_real * dt, temp, out[5,:])
+        axpy(0.5 * de_a * dt, Cvec, out[5,:])
+
+        axpy(-0.125 * (2*e_real * dde_bb + de_b * de_b) * dt* dt, vec, out[5,:])
+        axpy(-0.5 * e_real * de_b * dt* dt, out[1,:], out[5,:])
+        axpy(0.25 * dde_bb * dt* dt, Cvec, out[5,:])
+        axpy(0.5*de_b * dt* dt, Cb, out[5,:])
+
+        #b(bb"+b'b')
+        c_op._rhs_mat(t, &out[2,0], &out[6,0])
+        for k in range(self.l_vec):
+            temp[k] = conj(out[2,k])
+            temp2[k] = 0.
+        c_op._rhs_mat(t, &temp[0], &temp2[0])
+        de_bb = dotc(vec, out[6,:]) + dot(out[2,:], Cvec) + \
+                conj(dotc(out[2,:], Cvec) + dotc(vec, temp2))
+        axpy(-e_real, out[2,:], out[6,:])
+        axpy(-de_bb*0.5, vec, out[6,:])
+
+        axpy(1.0, dbbb, out[6,:])
+
+
+
 
     cdef void implicit(self, double t,  np.ndarray[complex, ndim=1] dvec,
                                         complex[::1] out,
@@ -945,14 +1320,15 @@ cdef class sme(ssolvers):
         self.imp = 1 - sso.LH * 0.5
         self.imp.compile()
 
-    cdef void d1(self, double t, complex[::1] rho, complex[::1] out):
-        self.L._rhs_mat(t, &rho[0], &out[0])
-
     cdef complex expect(self, complex[::1] rho):
         cdef complex e = 0.
+        cdef int k
         for k in range(self.N_root):
             e += rho[k*(self.N_root+1)]
         return e
+
+    cdef void d1(self, double t, complex[::1] rho, complex[::1] out):
+        self.L._rhs_mat(t, &rho[0], &out[0])
 
     cdef void d2(self, double t, complex[::1] rho, complex[:, ::1] out):
         cdef int i, k
@@ -1000,7 +1376,8 @@ cdef class sme(ssolvers):
 
         cdef int i, j, k
         cdef cy_qobj c_op
-        cdef complex trAp, trAa, trAb, trAbb
+        cdef complex trAp, trApp, trAa, trAb, trAbb
+        cdef complex[::1] temp = np.zeros((self.l_vec, ), dtype=complex)
         c_op = self.c_ops[0]
         # a
         self.L._rhs_mat(t, &rho[0], &out[0,0])
@@ -1013,15 +1390,20 @@ cdef class sme(ssolvers):
         trAb = self.expect(out[2,:])
         axpy(-trAp, out[1,:], out[2,:])
         axpy(-trAb, rho, out[2,:])
-        #ba'
+        #ba' + db/dt
         self.L._rhs_mat(t, &out[1,0], &out[3,0])
-        #ab' + bbb"/2
-        c_op._rhs_mat(t, &out[0,0], &out[4,0])
-        trAa = self.expect(out[4,:])
+        #ab' + bbb"/2 + db/dt
+        c_op._rhs_mat(t + self.dt, &rho[0], &out[4,0])
+        trApp = self.expect(out[4,:])
+        axpy(-trApp, rho, out[4,:])
+        axpy(-1, out[1,:], out[4,:])
+        c_op._rhs_mat(t, &out[0,0], &temp[0])
+        trAa = self.expect(temp)
+        axpy(1., temp, out[4,:])
         axpy(-trAp, out[0,:], out[4,:])
         axpy(-trAa, rho, out[4,:])
         axpy(-trAb*self.dt, out[1,:], out[4,:])  # L contain dt
-        #aa'+ba"/2 =? da/dt + a da/drho
+        #da/dt + aa'+ba"/2
         self.L._rhs_mat(t+self.dt, &rho[0], &out[5,0])
         axpy(-1, out[0,:], out[5,:])
         self.L._rhs_mat(t, &out[0,0], &out[5,0])
@@ -1031,6 +1413,102 @@ cdef class sme(ssolvers):
         axpy(-trAp, out[2,:], out[6,:])
         axpy(-trAbb, rho, out[6,:])
         axpy(-trAb*2, out[1,:], out[6,:])
+
+    cdef void derivatives(self, double t, int deg, complex[::1] rho,
+                          complex[::1] a, complex[:, ::1] b,
+                          complex[:, :, ::1] Lb, complex[:,::1] La,
+                          complex[:, ::1] L0b, complex[:, :, :, ::1] LLb,
+                          complex[::1] L0a):
+        """
+        combinaisons of a and b derivative for m sc_ops up to order dt**1.5
+        dY ~ a dt + bi dwi
+                                         deg   use        noise
+        b[i.:]       bi                   >=0   d2 euler   dwi
+        a[:]         a                    >=0   d1 euler   dt
+        Lb[i,i,:]    bi'bi                >=1   milstein   (dwi^2-dt)/2
+        Lb[i,j,:]    bj'bi                >=1   milstein   dwi*dwj
+
+        L0b[i,:]     ab' +db/dt +bbb"/2   >=2   taylor15   dwidt-dzi
+        La[i,:]      ba'                  >=2   taylor15   dzi
+        LLb[i,i,i,:] bi(bibi"+bi'bi')     >=2   taylor15   (dwi^2/3-dt)dwi/2
+        LLb[i,j,j,:] bi(bjbj"+bj'bj')     >=2   taylor15   (dwj^2-dt)dwj/2
+        LLb[i,j,k,:] bi(bjbk"+bj'bk')     >=2   taylor15   dwi*dwj*dwk
+        L0a[:]       aa' +da/dt +bba"/2    2    taylor15   dt^2/2
+        """
+        cdef int i, j, k
+        cdef cy_qobj c_op
+        cdef cy_qobj c_opj
+        cdef complex trApp, trAbb, trAa
+        cdef complex[::1] trAp = np.zeros((self.N_ops, ), dtype=complex)
+        cdef complex[:, ::1] trAb = np.zeros((self.N_ops, self.N_ops), dtype=complex)
+        cdef complex[::1] temp = np.zeros((self.l_vec, ), dtype=complex)
+
+        # a
+        self.L._rhs_mat(t, &rho[0], &a[0])
+
+        # b
+        for i in range(self.N_ops):
+            c_op = self.c_ops[i]
+            # bi
+            c_op._rhs_mat(t, &rho[0], &b[i,0])
+            trAp[i] = self.expect(b[i,:])
+            axpy(-trAp[i], rho, b[i,:])
+
+        # Libj = bibj', i<=j
+        # sc_ops must commute (Libj = Ljbi)
+        if deg >= 1:
+          for i in range(self.N_ops):
+            c_op = self.c_ops[i]
+            for j in range(i, self.N_ops):
+                c_op._rhs_mat(t, &b[j,0], &Lb[i,j,0])
+                trAb[i,j] = self.expect(Lb[i,j,:])
+                axpy(-trAp[j], b[i,:], Lb[i,j,:])
+                axpy(-trAb[i,j], rho, Lb[i,j,:])
+
+        # L0b La LLb
+        if deg >= 2:
+          for i in range(self.N_ops):
+            c_op = self.c_ops[i]
+            # Lia = bia'
+            self.L._rhs_mat(t, &b[i,0], &La[i,0])
+
+            # L0bi = abi' + dbi/dt + Sum_j bjbjbi"/2
+            # db/dt
+            c_op._rhs_mat(t + self.dt, &rho[0], &L0b[i,0])
+            trApp = self.expect(L0b[i,:])
+            axpy(-trApp, rho, L0b[i,:])
+            axpy(-1, b[i,:], L0b[i,:])
+            # ab'
+            temp = np.zeros((self.l_vec, ), dtype=complex)
+            c_op._rhs_mat(t, &a[0], &temp[0])
+            trAa = self.expect(temp)
+            axpy(1., temp, L0b[i,:])
+            axpy(-trAp[i], a[:], L0b[i,:])
+            axpy(-trAa, rho, L0b[i,:])
+            # bbb" : trAb[i,j] only defined for j>=i
+            for j in range(i):
+                axpy(-trAb[j,i]*self.dt, b[j,:], L0b[i,:])  # L contain dt
+            for j in range(i,self.N_ops):
+                axpy(-trAb[i,j]*self.dt, b[j,:], L0b[i,:])  # L contain dt
+
+            # LLb
+            # LiLjbk = bi(bj'bk'+bjbk"), i<=j<=k
+            # sc_ops must commute (LiLjbk = LjLibk = LkLjbi)
+            for j in range(i,self.N_ops):
+              for k in range(j,self.N_ops):
+                c_op._rhs_mat(t, &Lb[j,k,0], &LLb[i,j,k,0])
+                trAbb = self.expect(LLb[i,j,k,:])
+                axpy(-trAp[i], Lb[j,k,:], LLb[i,j,k,:])
+                axpy(-trAbb, rho, LLb[i,j,k,:])
+                axpy(-trAb[i,k], b[j,:], LLb[i,j,k,:])
+                axpy(-trAb[i,j], b[k,:], LLb[i,j,k,:])
+
+        # L0a = a'a + da/dt + bba"/2  (a" = 0)
+        if deg == 2:
+            self.L._rhs_mat(t, &a[0], &L0a[0])
+            self.L._rhs_mat(t+self.dt, &rho[0], &L0a[0])
+            axpy(-1, a, L0a)
+
 
     cdef void implicit(self, double t,  np.ndarray[complex, ndim=1] dvec,
                                         complex[::1] out,
