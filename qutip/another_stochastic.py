@@ -203,7 +203,15 @@ class StochasticSolverOptions:
                  times=None, nsubsteps=1, ntraj=1, tol=None,
                  generate_noise=None, noise=None,
                  progress_bar=None, map_func=None, map_kwargs=None,
-                 args={}, options=None):
+                 args={}, options=None,
+                 check=False, debug=[]):
+
+        if debug:
+            self.debug = debug
+        else:
+            self.debug = [1.,1.,1.,1.]
+
+        self.checks = check
 
         if options is None:
             options = Options()
@@ -332,7 +340,7 @@ class StochasticSolverOptions:
 
 
 def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
-                 _safe_mode=True, debug=False, args={}, **kwargs):
+                 _safe_mode=True, args={}, **kwargs):
     """
     Solve stochastic master equation. Dispatch to specific solvers
     depending on the value of the `solver` keyword argument.
@@ -379,10 +387,6 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
         Add checks for commuting jump operators in Milstein method.
     """
 
-    if debug:
-        pass
-        #logger.debug(inspect.stack()[0][3])
-
     if isket(rho0):
         rho0 = ket2dm(rho0)
 
@@ -400,10 +404,6 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
                                   **kwargs)
 
     sso.me = True
-    if debug:
-        sso.debug = debug
-    else:
-        sso.debug = [1.,1.,1.,1.]
 
     sso.LH = liouvillian(sso.H, c_ops = sso.sc_ops + sso.c_ops) * sso.dt
     #sso.d1 = 1 + sso.LH * sso.dt
@@ -459,7 +459,7 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     return res
 
 def another_ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
-                 _safe_mode=True, debug=False, args={}, **kwargs):
+                 _safe_mode=True, args={}, **kwargs):
     """
     Solve stochastic master equation. Dispatch to specific solvers
     depending on the value of the `solver` keyword argument.
@@ -528,11 +528,11 @@ def another_ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
     else:
         sso.debug = [1, 1, 1, 1]
 
-    sso.LH = sso.H * (-1j*sso.dt )
+
     if sso.method == 'homodyne' or sso.method is None:
         if sso.m_ops is None:
             sso.m_ops = [op + op.dag() for op in sso.sc_ops]
-        sso.sops = [[op, -op.norm() * sso.dt/2, op + op.dag()] for op in sso.sc_ops]
+        sso.sops = [[op, -op.norm() *sso.dt/2, op + op.dag()] for op in sso.sc_ops]
         if not isinstance(sso.dW_factors, list):
             sso.dW_factors = [1] * len(sso.sops)
         elif len(sso.dW_factors) != len(sso.sops):
@@ -565,6 +565,11 @@ def another_ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
 
     else:
         raise Exception("The method must be one of None, homodyne, heterodyne")
+
+    sso.LH = sso.H * (-1j*sso.dt )
+    if not sso.debug[3]:
+        for ops in sso.sops:
+            sso.LH -= ops[0].norm()*0.5*sso.dt
 
     sso.ce_ops = [td_Qobj(op) for op in sso.e_ops]
     sso.cm_ops = [td_Qobj(op) for op in sso.m_ops]
@@ -603,6 +608,8 @@ def _smesolve_generic(sso, options, progress_bar):
         ssolver = sse()
     ssolver.set_data(sso.LH, sso.sops)
     ssolver.set_solver(sso)
+    if sso.checks:
+        ssolver.checks(0,sso.dt,sso.rho0)
 
     nt = sso.ntraj
     task = ssolver.cy_sesolve_single_trajectory
