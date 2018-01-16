@@ -545,8 +545,17 @@ def another_ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
         for c in sso.sc_ops:
             if sso.m_ops is None:
                 m_ops += [c + c.dag(), -1j * c - c.dag() ]
-            c1 = (spre(c) + spost(c.dag())) / np.sqrt(2)
-            c2 = (spre(c) - spost(c.dag())) * (-1j / np.sqrt(2))
+            if c.const:
+                c1 = (c + c.dag()) / np.sqrt(2)*0.5
+                c2 = (c - c.dag()) * (-1j / np.sqrt(2))*0.5
+            else:
+                # Not clean, should have a way to compress for a common coeff
+                op = c.to_list()[0][0]
+                f = c.to_list()[0][1]
+                op1 = (op + op.dag()) / np.sqrt(2)*0.5
+                c1 = td_Qobj([op1,f], args=args, tlist=times, raw_str=True)
+                op2 = (op - op.dag()) * (-1j / np.sqrt(2))*0.5
+                c2 = td_Qobj([op2,f], args=args, tlist=times, raw_str=True)
             sso.sops += [[c1, -c1.norm() * sso.dt/2, c1 + c1.dag()],
                          [c2, -c2.norm() * sso.dt/2, c2 + c2.dag()]]
         sso.m_ops = m_ops
