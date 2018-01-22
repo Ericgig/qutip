@@ -450,6 +450,8 @@ def another_smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     [op.compile() for op in sso.cm_ops]
     [op.compile() for op in sso.ce_ops]
 
+    if sso.checks == 2:
+        return sso
     res = _smesolve_generic(sso, sso.options, sso.progress_bar)
 
     if e_ops_dict:
@@ -588,6 +590,8 @@ def another_ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
     [op.compile() for op in sso.cm_ops]
     [op.compile() for op in sso.ce_ops]
 
+    if sso.checks == 2:
+        return sso
     res = _smesolve_generic(sso, sso.options, sso.progress_bar)
 
     if e_ops_dict:
