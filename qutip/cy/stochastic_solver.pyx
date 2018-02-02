@@ -298,7 +298,7 @@ cdef class ssolvers:
 
         elif self.solver == 60:
             for i in range(N_substeps):
-                self.photocurrent(t + i*dt, dt, vec, out)
+                self.photocurrent(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
         elif self.solver == 100:
@@ -366,8 +366,8 @@ cdef class ssolvers:
     def set_implicit(self, sso):
         pass
 
-    cdef void photocurrent(self, double t, double dt, complex[::1] vec,
-                           complex[::1] out):
+    cdef void photocurrent(self, double t, double dt, double[:] noise,
+                           complex[::1] vec, complex[::1] out):
         pass
 
 
@@ -1331,9 +1331,10 @@ cdef class psse(ssolvers):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void photocurrent(self, double t, double dt, complex[::1] vec, complex[::1] out):
+    cdef void photocurrent(self, double t, double dt, double[:] noise,
+                           complex[::1] vec, complex[::1] out):
         cdef cy_qobj
-        cdef double expect, noise
+        cdef double expect
         cdef int i
         cdef complex[:, ::1] d2 = self.buffer_2d[0,:,:]
         zero_2d(d2)
@@ -1344,10 +1345,10 @@ cdef class psse(ssolvers):
             c_op = self.cdc_ops[i]
             expect = c_op.expect(t, vec, 1).real * dt
             if expect > 0:
-              noise = np.random.poisson(expect, 1)[0]
+              noise[i] = np.random.poisson(expect, 1)[0]
             else:
-              noise = 0.
-            axpy(noise, d2[i,:], out)
+              noise[i] = 0.
+            axpy(noise[i], d2[i,:], out)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -1406,9 +1407,9 @@ cdef class psme(ssolvers):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void photocurrent(self, double t, double dt,
+    cdef void photocurrent(self, double t, double dt,  double[:] noise,
                            complex[::1] vec, complex[::1] out):
-        cdef double expect, noise
+        cdef double expect
         cdef int i
         cdef complex[:, ::1] d2 = self.buffer_2d[0,:,:]
         zero_2d(d2)
@@ -1419,10 +1420,10 @@ cdef class psme(ssolvers):
             c_op = self.cdcl_ops[i]
             expect = c_op.expect(t, vec, 1).real * dt
             if expect > 0:
-              noise = np.random.poisson(expect, 1)[0]
+              noise[i] = np.random.poisson(expect, 1)[0]
             else:
-              noise = 0.
-            axpy(noise, d2[i,:], out)
+              noise[i] = 0.
+            axpy(noise[i], d2[i,:], out)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
