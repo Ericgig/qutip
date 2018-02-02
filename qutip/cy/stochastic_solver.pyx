@@ -128,7 +128,7 @@ cdef class ssolvers:
     cdef int normalize
     cdef double dt
     cdef int noise_type
-    cdef double[:, :, :, ::1] custom_noise
+    cdef object custom_noise
     cdef double[::1] dW_factor
     cdef unsigned int[::1] seed
     cdef object generate_noise

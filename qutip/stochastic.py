@@ -338,11 +338,7 @@ class StochasticSolverOptions:
             self.tol = 1e-7
 
         # Noise
-        if generate_noise is not None:
-            self.noise_type = 2
-            self.generate_noise = generate_noise
-
-        elif noise is not None:
+        if noise is not None:
             if isinstance(noise, int):
                 # noise contain a seed
                 np.random.seed(noise)
