@@ -1110,19 +1110,34 @@ def _dummy(t, *args, **kwargs):
     return 0.
 
 
-def _norm2(f):
+"""def _norm2(f):
     @wraps(f)
     def ff(a, *args, **kwargs):
         return np.abs(f(a, *args, **kwargs))**2
-    return ff
+    return ff"""
 
 
-def _conj(f):
+class _norm2():
+    def __init__(self, f):
+        self.func = f
+
+    def __call__(self, t, args):
+        return self.func(t, args)**2
+
+
+"""def _conj(f):
     @wraps(f)
     def ff(a, *args, **kwargs):
         return np.conj(f(a, *args, **kwargs))
-    return ff
+    return ff"""
 
+
+class _conj():
+    def __init__(self, f):
+        self.func = f
+
+    def __call__(self, t, args):
+        return np.conj(self.func(t, args))
 
 """def td_liouvillian(H, c_ops=[], chi=None, args={}, tlist=None, raw_str=False):
     ""Assembles the Liouvillian superoperator from a Hamiltonian
