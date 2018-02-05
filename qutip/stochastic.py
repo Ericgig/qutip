@@ -31,9 +31,6 @@
 #    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-#    Significant parts of this code were contributed by Denis Vasilyev.
-#
 ###############################################################################
 import numpy as np
 import scipy.sparse as sp
@@ -134,18 +131,12 @@ def stochastic_solver_info():
 class StochasticSolverOptions:
     """Class of options for stochastic solvers such as
     :func:`qutip.stochastic.ssesolve`, :func:`qutip.stochastic.smesolve`, etc.
-    Options can be specified either as arguments to the constructor::
 
-        sso = StochasticSolverOptions(nsubsteps=100, ...)
-
-    or by changing the class attributes after creation::
-
-        sso = StochasticSolverOptions()
-        sso.nsubsteps = 1000
-
-    The stochastic solvers :func:`qutip.stochastic.ssesolve`,
-    :func:`qutip.stochastic.smesolve`, :func:`qutip.stochastic.ssepdpsolve` and
-    :func:`qutip.stochastic.smepdpsolve` all take the same keyword arguments as
+    The stochastic solvers :func:`qutip.stochastic.general_stochastic`,
+    :func:`qutip.stochastic.ssesolve`, :func:`qutip.stochastic.smesolve`,
+    :func:`qutip.stochastic.photocurrentsesolve` and
+    :func:`qutip.stochastic.photocurrentmesolve`
+    all take the same keyword arguments as
     the constructor of these class, and internally they use these arguments to
     construct an instance of this class, so it is rarely needed to explicitly
     create an instance of this class.
@@ -180,9 +171,11 @@ class StochasticSolverOptions:
         format is a nested list with one measurement operator for each
         stochastic increament, for each stochastic collapse operator.
 
-    args : dict / list
-        List of dictionary of additional problem-specific parameters.
-        Implicit methods can adjust tolerance via args = {'tol':value}
+    args : dict
+        Dictionary of parameters for time dependent systems.
+
+    tol : float
+        Tolerance of the solver for implicit methods.
 
     ntraj : int
         Number of trajectors.
@@ -190,37 +183,9 @@ class StochasticSolverOptions:
     nsubsteps : int
         Number of sub steps between each time-spep given in `times`.
 
-    d1 : function
-        Function for calculating the operator-valued coefficient to the
-        deterministic increment dt.
-
-    d2 : function
-        Function for calculating the operator-valued coefficient to the
-        stochastic increment(s) dW_n, where n is in [0, d2_len[.
-
-    d2_len : int (default 1)
-        The number of stochastic increments in the process.
-
     dW_factors : array
-        Array of length d2_len, containing scaling factors for each
+        Array of length len(sc_ops), containing scaling factors for each
         measurement operator in m_ops.
-
-    rhs : function
-        Function for calculating the deterministic and stochastic contributions
-        to the right-hand side of the stochastic differential equation. This
-        only needs to be specified when implementing a custom SDE solver.
-
-    generate_A_ops : function
-        Function that generates a list of pre-computed operators or super-
-        operators. These precomputed operators are used in some d1 and d2
-        functions.
-
-    generate_noise : function
-        Function for generate an array of pre-computed noise signal.
-
-    homogeneous : bool (True)
-        Wheter or not the stochastic process is homogenous. Inhomogenous
-        processes are only supported for poisson distributions.
 
     solver : string
         Name of the solver method to use for solving the stochastic
@@ -230,31 +195,30 @@ class StochasticSolverOptions:
         3/2 order algorithms: 'taylor15', 'taylor15-imp', 'explicit15'
         call :func:`qutip.stochastic.stochastic_solver_info` for a description
         of the solvers.
-
-        Implicit methods can adjust tolerance via args = {'tol':value},
+        Implicit methods can adjust tolerance via the kw 'tol'
         default is {'tol':1e-6}
 
-    method : string ('homodyne', 'heterodyne', 'photocurrent')
+    method : string ('homodyne', 'heterodyne')
         The name of the type of measurement process that give rise to the
-        stochastic equation to solve. Specifying a method with this keyword
-        argument is a short-hand notation for using pre-defined d1 and d2
-        functions for the corresponding stochastic processes.
-
-    distribution : string ('normal', 'poisson')
-        The name of the distribution used for the stochastic increments.
+        stochastic equation to solve.
 
     store_measurements : bool (default False)
         Whether or not to store the measurement results in the
         :class:`qutip.solver.SolverResult` instance returned by the solver.
 
-    noise : array
-        Vector specifying the noise.
+    noise : int, array[int, 1d], array[double, 4d]
+        int : seed of the noise
+        array[int, 1d], length = ntraj, seeds for each trajectories
+        array[double, 4d] (ntraj, len(times), nsubsteps, len(sc_ops)*[1|2])
+            vector for the noise, the len of the last dimensions is doubled for
+            solvers of order 1.5. The correspond to results.noise
 
-    normalize : bool (default True)
+    normalize : bool (default True for ssesolve)
         Whether or not to normalize the wave function during the evolution.
 
     options : :class:`qutip.solver.Options`
-        Generic solver options.
+        Generic solver options. Only options.average_states and
+        options.store_states are used.
 
     map_func: function
         A map function or managing the calls to single-trajactory solvers.
@@ -615,18 +579,20 @@ def ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
         sso.sops = []
         for c in sso.sc_ops:
             if sso.m_ops is None:
-                m_ops += [c + c.dag(), -1j * c - c.dag() ]
-            if c.const:
-                c1 = (c + c.dag()) / np.sqrt(2)*0.5
-                c2 = (c - c.dag()) * (-1j / np.sqrt(2))*0.5
-            else:
+                m_ops += [c + c.dag(), -1j * (c - c.dag()) ]
+            c1 = c / np.sqrt(2)
+            c2 = c * (-1j / np.sqrt(2))
+            #if c.const:
+                #c1 = (c + c.dag()) / np.sqrt(2)*0.5
+                #c2 = (c - c.dag()) * (-1j / np.sqrt(2))*0.5
+            #else:
                 # Not clean, should have a way to compress for a common coeff
-                op = c.to_list()[0][0]
-                f = c.to_list()[0][1]
-                op1 = (op + op.dag()) / np.sqrt(2)*0.5
-                c1 = td_Qobj([op1,f], args=args, tlist=times, raw_str=True)
-                op2 = (op - op.dag()) * (-1j / np.sqrt(2))*0.5
-                c2 = td_Qobj([op2,f], args=args, tlist=times, raw_str=True)
+                #op = c.to_list()[0][0]
+                #f = c.to_list()[0][1]
+                #op1 = (op + op.dag()) / np.sqrt(2)*0.5
+                #c1 = td_Qobj([op1,f], args=args, tlist=times, raw_str=True)
+                #op2 = (op - op.dag()) * (-1j / np.sqrt(2))*0.5
+                #c2 = td_Qobj([op2,f], args=args, tlist=times, raw_str=True)
             sso.sops += [[c1, c1 + c1.dag()],
                          [c2, c2 + c2.dag()]]
         sso.m_ops = m_ops
@@ -671,7 +637,7 @@ def ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
 
 
 def photocurrentmesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
-                 _safe_mode=True, args={}, **kwargs):
+                        _safe_mode=True, args={}, **kwargs):
     """
     Solve stochastic master equation using the photocurrent method.
 
@@ -806,7 +772,7 @@ def photocurrentsesolve(H, rho0, times, sc_ops=[], e_ops=[],
         e_ops_dict = None
 
     sso = StochasticSolverOptions(H=H, state0=rho0, times=times,
-                                  c_ops=c_ops, sc_ops=sc_ops, e_ops=e_ops,
+                                  sc_ops=sc_ops, e_ops=e_ops,
                                   args=args, **kwargs)
     sso.solver_code = 60
     sso.me = False
@@ -1045,7 +1011,6 @@ def _sesolve_generic(sso, options, progress_bar):
     data.times = sso.times
     data.expect = np.zeros((len(sso.e_ops), len(sso.times)), dtype=complex)
     data.ss = np.zeros((len(sso.e_ops), len(sso.times)), dtype=complex)
-    data.noise = []
     data.measurement = []
     data.solver = sso.solver_name
 
@@ -1058,14 +1023,15 @@ def _sesolve_generic(sso, options, progress_bar):
 
     results = sso.map_func(task, list(range(sso.ntraj)),
                            task_args, task_kwargs, **map_kwargs)
-
+    noise = []
     for result in results:
         states_list, dW, m, expect, ss = result
         data.states.append(states_list)
-        data.noise.append(dW)
+        noise.append(dW)
         data.measurement.append(m)
         data.expect += expect
         data.ss += ss
+    data.noise = np.stack(noise)
 
     # average density matrices
     if options.average_states and np.any(data.states):

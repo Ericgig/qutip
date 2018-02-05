@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-#
 # This file is part of QuTiP: Quantum Toolbox in Python.
 #
 #    Copyright (c) 2011 and later, Paul D. Nation and Robert J. Johansson.
@@ -31,9 +29,6 @@
 #    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-#    Significant parts of this code were contributed by Denis Vasilyev.
-#
 ###############################################################################
 import numpy as np
 cimport numpy as np
@@ -131,7 +126,6 @@ cdef class ssolvers:
     cdef object custom_noise
     cdef double[::1] dW_factor
     cdef unsigned int[::1] seed
-    cdef object generate_noise
 
     # buffer to not redo the initialisation at each substep
     cdef complex[:, ::1] buffer_1d
@@ -221,9 +215,7 @@ cdef class ssolvers:
 
         self.noise_type = sso.noise_type
         self.dW_factor = np.array(sso.dW_factors,dtype=np.float64)
-        if self.noise_type == 2:
-            self.generate_noise = sso.generate_noise
-        elif self.noise_type == 1:
+        if self.noise_type == 1:
             self.custom_noise = sso.noise
         elif self.noise_type == 0:
             self.seed = sso.noise
@@ -239,9 +231,6 @@ cdef class ssolvers:
                                    np.sqrt(self.dt)
         elif self.noise_type == 1:
             return self.custom_noise[n,:,:,:]
-        elif self.noise_type == 2:
-            return self.generate_noise((self.N_step, self.N_substeps, self.N_dw),
-                                        self.dt, n)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
