@@ -34,8 +34,9 @@
 import numpy as np
 from numpy.testing import assert_, run_module_suite
 
-from qutip import (smesolve, mesolve, photocurrentmesolve,
-                   destroy, coherent, parallel_map, qeye, fock_dm)
+from qutip import (smesolve, mesolve, photocurrentmesolve, liouvillian,
+                   td_Qobj, spre, spost, destroy, coherent, parallel_map,
+                   qeye, fock_dm, general_stochastic, ket2dm)
 
 def f(t, args):
     return args["a"] * t
@@ -122,8 +123,8 @@ def test_smesolve_homodyne_methods():
     assert_(np.all(sol.noise[0,:,:,:] == sol2.noise[1,:,:,:]))
     assert_(np.all(sol.noise[1,:,:,:] == sol2.noise[0,:,:,:]))
 
-def test_ssesolve_photocurrent():
-    "Stochastic: smesolve: photo-current"
+def test_smesolve_photocurrent():
+    "Stochastic: photocurrentmesolve"
     tol = 0.01
 
     N = 4
@@ -149,8 +150,7 @@ def test_ssesolve_photocurrent():
     assert_(all([m.shape == (len(times), len(sc_ops))
                  for m in res.measurement]))
 
-
-def test_ssesolve_homodyne():
+def test_smesolve_homodyne():
     "Stochastic: smesolve: homodyne"
     tol = 0.01
 
@@ -187,8 +187,7 @@ def test_ssesolve_homodyne():
         assert_(all([m.shape == (len(times), len(sc_ops))
                      for m in res.measurement]))
 
-
-def test_ssesolve_heterodyne():
+def test_smesolve_heterodyne():
     "Stochastic: smesolve: heterodyne"
     tol = 0.01
 
@@ -225,7 +224,48 @@ def test_ssesolve_heterodyne():
         assert_(all([m.shape == (len(times), len(sc_ops), 2)
                      for m in res.measurement]))
 
+def test_general_stochastic():
+    "Stochastic: general_stochastic"
+    "Reproduce smesolve homodyne"
+    tol = 0.015
+    N = 4
+    gamma = 0.25
+    ntraj = 20
+    nsubsteps = 100
+    a = destroy(N)
 
+    H = [[a.dag() * a,f]]
+    psi0 = coherent(N, 0.5)
+    sc_ops = [np.sqrt(gamma) * a, np.sqrt(gamma) * a * 0.5]
+    e_ops = [a.dag() * a, a + a.dag(), (-1j)*(a - a.dag())]
+
+    L = liouvillian(td_Qobj([[a.dag() * a,f]], args={"a":2}), c_ops = sc_ops)
+    L.compile()
+    sc_opsM = [td_Qobj(spre(op) + spost(op.dag())) for op in sc_ops]
+    [op.compile() for op in sc_opsM]
+    e_opsM = [spre(op) for op in e_ops]
+
+    def d1(t, vec):
+        return L.rhs(t,vec)
+
+    def d2(t, vec):
+        out = []
+        for op in sc_opsM:
+            out.append(op.rhs(t,vec)-op.expect(t,vec)*vec)
+        return np.stack(out)
+
+    times = np.linspace(0, 1.0, 25)
+    res_ref = mesolve(H, psi0, times, sc_ops, e_ops, args={"a":2})
+    list_methods_tol = ['euler-maruyama',
+                        'platen',
+                        'explicit15']
+    for solver in list_methods_tol:
+        res = general_stochastic(ket2dm(psi0),times,d1,d2,len_d2=2, e_ops=e_opsM,
+                                 normalize=False, ntraj=ntraj, nsubsteps=nsubsteps,
+                                 solver=solver)
+    assert_(all([np.mean(abs(res.expect[idx] - res_ref.expect[idx])) < tol
+                 for idx in range(len(e_ops))]))
+    assert_(len(res.measurement) == ntraj)
 
 if __name__ == "__main__":
     run_module_suite()

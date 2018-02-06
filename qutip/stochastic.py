@@ -44,9 +44,10 @@ from qutip.superoperator import (spre, spost, mat2vec, vec2mat,
 from qutip.solver import Options, _solver_safety_check
 from qutip.parallel import serial_map
 from qutip.ui.progressbar import TextProgressBar
+from qutip.pdpsolve import main_ssepdpsolve, main_smepdpsolve
 
-__all__ = ['ssesolve', 'photocurrentsesolve',
-           'smesolve', 'photocurrentmesolve',
+__all__ = ['ssesolve', 'photocurrentsesolve', 'smepdpsolve',
+           'smesolve', 'photocurrentmesolve', 'ssepdpsolve'
            'stochastic_solver_info', 'general_stochastic']
 
 def stochastic_solver_info():
@@ -566,7 +567,6 @@ def ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
     if sso.method == 'homodyne' or sso.method is None:
         if sso.m_ops is None:
             sso.m_ops = [op + op.dag() for op in sso.sc_ops]
-        #sso.sops = [[op, -op.norm() *sso.dt/2, op + op.dag()] for op in sso.sc_ops]
         sso.sops = [[op, op + op.dag()] for op in sso.sc_ops]
         if not isinstance(sso.dW_factors, list):
             sso.dW_factors = [1] * len(sso.sops)
@@ -582,17 +582,6 @@ def ssesolve(H, rho0, times, sc_ops=[], e_ops=[],
                 m_ops += [c + c.dag(), -1j * (c - c.dag()) ]
             c1 = c / np.sqrt(2)
             c2 = c * (-1j / np.sqrt(2))
-            #if c.const:
-                #c1 = (c + c.dag()) / np.sqrt(2)*0.5
-                #c2 = (c - c.dag()) * (-1j / np.sqrt(2))*0.5
-            #else:
-                # Not clean, should have a way to compress for a common coeff
-                #op = c.to_list()[0][0]
-                #f = c.to_list()[0][1]
-                #op1 = (op + op.dag()) / np.sqrt(2)*0.5
-                #c1 = td_Qobj([op1,f], args=args, tlist=times, raw_str=True)
-                #op2 = (op - op.dag()) * (-1j / np.sqrt(2))*0.5
-                #c2 = td_Qobj([op2,f], args=args, tlist=times, raw_str=True)
             sso.sops += [[c1, c1 + c1.dag()],
                          [c2, c2 + c2.dag()]]
         sso.m_ops = m_ops
@@ -886,7 +875,7 @@ def general_stochastic(state0, times, d1, d2, e_ops=[],
             out_d2 = d2(0., sso.rho0)
         except Exception as e:
             raise Exception("d2(0., mat2vec(state0.full()).ravel()) failed:\n"+\
-                            e)
+                            str(e))
         except:
             raise Exception("d2(0., mat2vec(state0.full()).ravel()) failed")
         if out_d1.shape[0] != l_vec or len(out_d1.shape) != 1:
@@ -1061,3 +1050,94 @@ def _single_trajectory(i, sso):
     ssolver.set_solver(sso)
     result = ssolver.cy_sesolve_single_trajectory(i, sso)
     return result
+
+
+
+# The code for ssepdpsolve have been moved to the file pdpsolve.
+# The call is still in stochastic for consistance.
+def ssepdpsolve(H, psi0, times, c_ops, e_ops, **kwargs):
+    """
+    A stochastic (piecewse deterministic process) PDP solver for wavefunction
+    evolution. For most purposes, use :func:`qutip.mcsolve` instead for quantum
+    trajectory simulations.
+
+    Parameters
+    ----------
+
+    H : :class:`qutip.Qobj`
+        System Hamiltonian.
+
+    psi0 : :class:`qutip.Qobj`
+        Initial state vector (ket).
+
+    times : *list* / *array*
+        List of times for :math:`t`. Must be uniformly spaced.
+
+    c_ops : list of :class:`qutip.Qobj`
+        Deterministic collapse operator which will contribute with a standard
+        Lindblad type of dissipation.
+
+    e_ops : list of :class:`qutip.Qobj` / callback function single
+        single operator or list of operators for which to evaluate
+        expectation values.
+
+    kwargs : *dictionary*
+        Optional keyword arguments. See
+        :class:`qutip.stochastic.StochasticSolverOptions`.
+
+    Returns
+    -------
+
+    output: :class:`qutip.solver.SolverResult`
+
+        An instance of the class :class:`qutip.solver.SolverResult`.
+
+    """
+    return main_ssepdpsolve(H, psi0, times, c_ops, e_ops, **kwargs)
+
+# The code for smepdpsolve have been moved to the file pdpsolve.
+# The call is still in stochastic for consistance.
+def smepdpsolve(H, rho0, times, c_ops, e_ops, **kwargs):
+    """
+    A stochastic (piecewse deterministic process) PDP solver for density matrix
+    evolution.
+
+    Parameters
+    ----------
+
+    H : :class:`qutip.Qobj`
+        System Hamiltonian.
+
+    rho0 : :class:`qutip.Qobj`
+        Initial density matrix.
+
+    times : *list* / *array*
+        List of times for :math:`t`. Must be uniformly spaced.
+
+    c_ops : list of :class:`qutip.Qobj`
+        Deterministic collapse operator which will contribute with a standard
+        Lindblad type of dissipation.
+
+    sc_ops : list of :class:`qutip.Qobj`
+        List of stochastic collapse operators. Each stochastic collapse
+        operator will give a deterministic and stochastic contribution
+        to the eqaution of motion according to how the d1 and d2 functions
+        are defined.
+
+    e_ops : list of :class:`qutip.Qobj` / callback function single
+        single operator or list of operators for which to evaluate
+        expectation values.
+
+    kwargs : *dictionary*
+        Optional keyword arguments. See
+        :class:`qutip.stochastic.StochasticSolverOptions`.
+
+    Returns
+    -------
+
+    output: :class:`qutip.solver.SolverResult`
+
+        An instance of the class :class:`qutip.solver.SolverResult`.
+
+    """
+    return main_smepdpsolve(H, rho0, times, c_ops, e_ops, **kwargs)

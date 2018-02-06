@@ -148,8 +148,6 @@ cdef class ssolvers:
         self.solver = sso.solver_code
         self.dt = sso.dt
         self.N_substeps = sso.nsubsteps
-        #if self.solver in [103, 153]:
-        #    self.set_implicit(sso)
         self.normalize = sso.normalize and not sso.me
         self.N_step = len(sso.times)
         self.N_dw = len(sso.sops)
@@ -399,12 +397,7 @@ cdef class ssolvers:
         cdef complex[:, ::1] d2p = self.buffer_2d[3,:,:]
         cdef complex[:, ::1] d2m = self.buffer_2d[4,:,:]
         zero(d1)
-        #zero(Vt)
         zero_2d(d2)
-        #zero_2d(Vm)
-        #zero_2d(Vp)
-        #zero_2d(d2p)
-        #zero_2d(d2m)
 
         self.d1(t, vec, d1)
         self.d2(t, vec, d2)
@@ -454,13 +447,10 @@ cdef class ssolvers:
         cdef complex[::1] euler = self.buffer_1d[0,:]
         cdef complex[::1] a_pred = self.buffer_1d[1,:]
         cdef complex[::1] b_pred = self.buffer_1d[2,:]
-        #cdef complex[::1] b_corr = self.buffer_1d[3,:]
         cdef complex[:, ::1] d2 = self.buffer_2d[0,:,:]
         cdef complex[:, :, ::1] dd2 = self.buffer_3d[0,:,:,:]
-        #zero(euler)
         zero(a_pred)
         zero(b_pred)
-        #zero(b_corr)
         zero_2d(d2)
         zero_3d(dd2)
         self.derivatives(t, 1, vec, a_pred, d2, dd2, None, None, None, None)
@@ -491,15 +481,12 @@ cdef class ssolvers:
         # a=0.5, b=0.5
         cdef int i, j, k
         cdef complex[::1] euler = self.buffer_1d[0,:]
-        #zero(euler)
         cdef complex[::1] a_pred = self.buffer_1d[1,:]
         zero(a_pred)
         cdef complex[::1] a_corr = self.buffer_1d[2,:]
         zero(a_corr)
         cdef complex[::1] b_pred = self.buffer_1d[3,:]
         zero(b_pred)
-        #cdef complex[::1] b_corr = self.buffer_1d[4,:]
-        #zero(b_corr)
         cdef complex[:, ::1] d2 = self.buffer_2d[0,:,:]
         zero_2d(d2)
         cdef complex[:, :, ::1] dd2 = self.buffer_3d[0,:,:,:]
@@ -728,7 +715,6 @@ cdef class ssolvers:
         cdef complex[::1] d1p = self.buffer_1d[1,:]
         cdef complex[::1] d1m = self.buffer_1d[2,:]
         cdef complex[::1] V = self.buffer_1d[3,:]
-        #cdef complex[::1] temp = self.buffer_1d[4,:]
         cdef complex[:, ::1] d2 = self.buffer_2d[0,:,:]
         cdef complex[:, ::1] dd2 = self.buffer_2d[1,:,:]
         cdef complex[:, ::1] d2p = self.buffer_2d[2,:,:]
@@ -739,8 +725,6 @@ cdef class ssolvers:
         cdef complex[:, ::1] v2m = self.buffer_2d[7,:,:]
         cdef complex[:, :, ::1] p2p = self.buffer_3d[0,:,:,:]
         cdef complex[:, : ,::1] p2m = self.buffer_3d[1,:,:,:]
-
-        #zero(temp)
 
         zero(d1)
         zero_2d(d2)
@@ -799,8 +783,6 @@ cdef class ssolvers:
             self.d2(t, p2p[i,i,:], d2pp)
             self.d2(t, p2m[i,i,:], d2mm)
 
-            #axpy(0.25, d1p, out)
-            #axpy(0.25, d1m, out)
             axpy( ddz+0.25, d1p, out)
             axpy(-ddz+0.25, d1m, out)
 
@@ -914,7 +896,7 @@ cdef class sse(ssolvers):
     cdef object imp
     cdef double tol, imp_t
 
-    def set_data(self, sso):#L, c_ops):
+    def set_data(self, sso):
         L = sso.LH
         c_ops = sso.sops
         self.l_vec = L.cte.shape[0]
@@ -938,10 +920,6 @@ cdef class sse(ssolvers):
         axpy(1.,vec,out)
         return out
 
-    #def set_implicit(self, sso):
-    #    self.tol = sso.tol
-    #    self.imp = LinearOperator( (self.l_vec,self.l_vec),
-    #                              matvec=self.implicit_op, dtype=complex)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -1135,8 +1113,7 @@ cdef class sse(ssolvers):
                                         dvec, x0 = guess, tol=self.tol)
         cdef int i
         copy(spout, out)
-        #for i in range(self.l_vec):
-        #    out[i]=spout[i]
+
 
 cdef class sme(ssolvers):
     cdef cy_qobj L
@@ -1145,7 +1122,7 @@ cdef class sme(ssolvers):
     cdef int N_root
     cdef double tol
 
-    def set_data(self, sso):#L, c_ops):
+    def set_data(self, sso):
         L = sso.LH
         c_ops = sso.sops
         self.l_vec = L.cte.shape[0]
@@ -1158,12 +1135,6 @@ cdef class sme(ssolvers):
         if sso.solver_code in [103, 153]:
             self.tol = sso.tol
             self.imp = sso.imp
-            #self.set_implicit(sso)
-
-    #def set_implicit(self, sso):
-    #    self.tol = sso.tol
-    #    self.imp = 1 - sso.LH * 0.5
-    #    self.imp.compile()
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -1298,15 +1269,13 @@ cdef class sme(ssolvers):
                                         dvec, x0 = guess, tol=self.tol)
         cdef int i
         copy(spout,out)
-        #for i in range(self.l_vec):
-        #    out[i]=spout[i]
 
 cdef class psse(ssolvers):
     cdef cy_qobj L
     cdef object c_ops
     cdef object cdc_ops
 
-    def set_data(self, sso):#L, c_ops):
+    def set_data(self, sso):
         L = sso.LH
         c_ops = sso.sops
         self.l_vec = L.cte.shape[0]
@@ -1379,7 +1348,7 @@ cdef class psme(ssolvers):
     cdef object clcdr_ops
     cdef int N_root
 
-    def set_data(self, sso):#L, c_ops):
+    def set_data(self, sso):
         L = sso.LH
         c_ops = sso.sops
         self.l_vec = L.cte.shape[0]
@@ -1449,7 +1418,6 @@ cdef class psme(ssolvers):
             c_op = self.clcdr_ops[i]
             c_op._rhs_mat(t, &rho[0], &out[i,0])
             expect = self.expect(out[i,:])
-            #print("that", expect)
             if expect.real >= 1e-15:
                 zscale((1.+0j)/expect, out[i,:])
             else:

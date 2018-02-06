@@ -121,7 +121,7 @@ def test_smesolve_homodyne_methods():
 
 
 def test_ssesolve_photocurrent():
-    "Stochastic: ssesolve: photo-current"
+    "Stochastic: photocurrentsesolve"
     tol = 0.01
 
     N = 4

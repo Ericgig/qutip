@@ -31,13 +31,7 @@
 #    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 #    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-#    Significant parts of this code were contributed by Denis Vasilyev.
-#
 ###############################################################################
-
-__all__ = ['ssepdpsolve', 'smepdpsolve']
-
 import numpy as np
 import scipy.sparse as sp
 from scipy.linalg.blas import get_blas_funcs
@@ -265,7 +259,7 @@ class StochasticSolverOptions:
             if not isinstance(ops, Qobj):
                 self.td = True
 
-def ssepdpsolve(H, psi0, times, c_ops, e_ops, **kwargs):
+def main_ssepdpsolve(H, psi0, times, c_ops, e_ops, **kwargs):
     """
     A stochastic (piecewse deterministic process) PDP solver for wavefunction
     evolution. For most purposes, use :func:`qutip.mcsolve` instead for quantum
@@ -322,7 +316,7 @@ def ssepdpsolve(H, psi0, times, c_ops, e_ops, **kwargs):
                       for n, e in enumerate(e_ops_dict.keys())}
     return res
 
-def smepdpsolve(H, rho0, times, c_ops, e_ops, **kwargs):
+def main_smepdpsolve(H, rho0, times, c_ops, e_ops, **kwargs):
     """
     A stochastic (piecewse deterministic process) PDP solver for density matrix
     evolution.
