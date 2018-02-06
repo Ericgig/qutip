@@ -47,7 +47,7 @@ from qutip.ui.progressbar import TextProgressBar
 from qutip.pdpsolve import main_ssepdpsolve, main_smepdpsolve
 
 __all__ = ['ssesolve', 'photocurrentsesolve', 'smepdpsolve',
-           'smesolve', 'photocurrentmesolve', 'ssepdpsolve'
+           'smesolve', 'photocurrentmesolve', 'ssepdpsolve',
            'stochastic_solver_info', 'general_stochastic']
 
 def stochastic_solver_info():
