@@ -150,7 +150,6 @@ cy_exts = ['spmatfuncs', 'stochastic_solver', 'sparse_utils', 'graph_utils',
         'interpolate', 'spmath', 'heom', 'math', 'spconvert', 'ptrace',
         'testing', 'brtools', 'brtools_testing', 'dopri5', 'mcsolve',  'inter',
         'td_qobj_cy']
-        # 'fast_stochastic', 'fast_ssesolve', 'stochastic',
 
 
 # If on Win and Python version >= 3.5 (i.e. Visual studio compile)
