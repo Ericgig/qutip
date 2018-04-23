@@ -37,6 +37,46 @@ from qutip.cy.spmatfuncs import spmv
 
 
 
+
+# ToDo
+# trace method ".tr()"
+
+
+
+class falselist_cte:
+    """
+    To remove exception in the code, I want to use constant and lists
+    in the same way. This is a constant which poses as a list.
+    May be useless since a list of the same elements N times is probably
+    faster and do not use that much memory.
+    """
+    __init__(self, data):
+        self.data = data
+
+    def __getitem__(self, key):
+        return self.data
+
+class falselist_func:
+    """
+    To remove exception in the code, I want to use td_Qobj and lists of
+    control_matrix in the same way. This poses as a list but contain a td_Qobj
+    and return a control_matrix corresponding to the time
+    May be useless since a list of the same elements N times is probably
+    faster and do not use that much memory.
+    """
+    __init__(self, data, tau, template):
+        self.data = data
+        self.times = []
+        self.template = template
+        summ = 0
+        for t in tau:
+            summ += t
+            self.times.append(summ+t*0.5)
+
+    def __getitem__(self, key):
+        return self.template(self.data(self.times[key], data=True))
+
+
 class control_matrix:
     def __init__(self, obj, full=False):
         self._size = 0

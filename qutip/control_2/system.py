@@ -95,7 +95,7 @@ class dynamics:
         self._num_ctrls = len(ctrl)
 
         if _filter in None:
-            self.filter = filters.pass_througth(self)
+            self.filter = filters.pass_througth()
         else:
             self.filter = _filter
 
@@ -267,22 +267,12 @@ class dynamics:
         self.x_ = x
         self._ctrl_amps = self.filter(x)
         self._compute_gen()
-        self.tslotcomp()
+        self.tslotcomp.compute_evolution()
         for costs in self.costcomp:
             error, gradient_u_cost = costs(forward, backward)
             self.error += error
             gradient_u += gradient_u_cost
         self.gradient_x = self.filter.reverse(gradient_u)
-
-    def _compute_gen(self):
-        for t, t_drift, t_ctrl in range(self._t_ind):
-            self._dyn_gen[t] = self._phased_drift_dyn_gen[t_drift].copy()
-            for i in range(self.num_ctrls):
-                self._dyn_gen[t] += self._ctrl_amps[t,i] * \
-                                    self._phased_ctrl_dyn_gen[t_ctrl, i]
-        if not self.cache_phased_dyn_gen:
-            for t in range(self.num_tslots):
-                self._dyn_gen[t] = self._apply_phase(self._dyn_gen[t])
 
     def _apply_phase(self, dg):
         return self._prephase * dg * self._postphase

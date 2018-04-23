@@ -65,6 +65,30 @@ DYNAMO - Dynamic Framework for Quantum Optimal Control
 See Machnes et.al., arXiv.1011.4874
 """
 
+
+
+
+"""
+2018 - Eric Giguere
+
+Timeslot Computer
+Will be reconstructed to be generator-like:
+
+1) set for the iteration
+2) compute and return the evolution at T
+3) return back(t),prop(t),fwd(t) from the end one-per-one
+
+This way, the prop(t) do not *need* to be saved:
+    In memory_optimization mode, no matrix/state need to be saved at each time.
+    However, the prop must be computed one extra time for each tslot...
+
+    For compute time, timeslot keeps the saved prop/state for each tslot.
+
+"""
+
+
+
+
 import os
 import warnings
 import numpy as np
@@ -78,13 +102,89 @@ import qutip.control.dump as qtrldump
 import qutip.logging_utils as logging
 logger = logging.get_logger()
 
-def _func_deprecation(message, stacklevel=3):
+
+
+class TimeslotComputer(object):
     """
-    Issue deprecation warning
-    Using stacklevel=3 will ensure message refers the function
-    calling with the deprecated parameter,
+    Base class for all Timeslot Computers
     """
-    warnings.warn(message, DeprecationWarning, stacklevel=stacklevel)
+    def __init__(self, H, ctrl, initial, target, tau, n_t):
+        self.id_text = 'TS_COMP_BASE'
+        self.cache_text = 'Save'
+        self.exp_text = 'Power'
+        self.H = H
+        self.ctrl = ctrl
+        self.initial = initial
+        self.target = target
+        self.tau = tau
+        self.n_t = n_t
+        self.num_ctrl = len(ctrl)
+
+    def set(self, u):
+        self.u = u
+        self.status = 0
+
+    def _compute_gen(self):
+        self._dyn_gen = [None] * self.n_t
+        for t in range(self.n_t):
+            self._dyn_gen[t] = self._phased_drift_dyn_gen[t].copy()
+            for i in range(self.num_ctrls):
+                self._dyn_gen[t] += self._ctrl_amps[t,i] * \
+                                    self._phased_ctrl_dyn_gen[t, i]
+        if not self.cache_phased_dyn_gen:
+            for t in range(self.num_tslots):
+                self._dyn_gen[t] = self._apply_phase(self._dyn_gen[t])
+
+
+class TSComp_Save_Power_all(TimeslotComputer):
+    """
+    Timeslot Computer - Update All
+    Updates and keep all dynamics generators, propagators and evolutions when
+    ctrl amplitudes are updated
+    """
+    def __init__(self, H, ctrl, initial, target, tau, n_t):
+        self.id_text = 'ALL'
+        self.cache_text = 'Save'
+        self.exp_text = 'Power'
+        self.H = H
+        self.ctrl = ctrl
+        self.initial = initial
+        self.target = target
+        self.tau = tau
+        self.n_t = n_t
+
+    def state_T(self, T_target):
+        self._compute_gen()
+        self.fwd = [initial]
+
+        for t in range(T_target):
+            self.fwd.append(self._dyn_gen[t].prop(tau[t])*fwd[t])
+
+        return self.fwd[-1]
+
+    def compute_evolution(self, gen, tau, initial, target):
+        """
+        Recalculates the evolution operators.
+        Dynamics generators (e.g. Hamiltonian) and
+        prop (propagators) are calculated as necessary
+
+        Changed to a function: take propagators and return evolution
+        """
+
+        fwd = [initial]
+
+        for g in gen:
+            fwd.append(g.prop(tau)*fwd[-1])
+
+        onwd = [target]
+        for p in prop[::-1]:
+            onwd.append(onwd[-1]*g.prop(tau))
+
+        if self.unitarity_check_level:
+            self.check_unitarity()
+
+
+
 
 class TimeslotComputer(object):
     """
