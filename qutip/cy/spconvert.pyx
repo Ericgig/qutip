@@ -32,6 +32,7 @@
 ###############################################################################
 import numpy as np
 from qutip.fastsparse import fast_csr_matrix
+from qutip.cy.sparse_structs cimport sp_int, sp_uint
 cimport numpy as cnp
 cimport cython
 from libc.stdlib cimport div, malloc, free
@@ -41,16 +42,16 @@ cdef extern from "stdlib.h":
         int quot
         int rem
 
-include "sparse_routines.pxi"    
-    
+include "sparse_routines.pxi"
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def arr_coo2fast(complex[::1] data, int[::1] rows, int[::1] cols, int nrows, int ncols):
+def arr_coo2fast(complex[::1] data, sp_int[::1] rows, sp_int[::1] cols, sp_int nrows, sp_int ncols):
     """
     Converts a set of ndarrays (data, rows, cols) that specify a COO sparse matrix
     to CSR format.
     """
-    cdef int nnz = data.shape[0]
+    cdef sp_int nnz = data.shape[0]
     cdef COO_Matrix mat
     mat.data = &data[0]
     mat.rows = &rows[0]
@@ -60,37 +61,37 @@ def arr_coo2fast(complex[::1] data, int[::1] rows, int[::1] cols, int nrows, int
     mat.nnz = nnz
     mat.is_set = 1
     mat.max_length = nnz
-    
+
     cdef CSR_Matrix out
     COO_to_CSR(&out, &mat)
     return CSR_to_scipy(&out)
-    
-    
+
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def dense2D_to_fastcsr_cmode(complex[:, ::1] mat, int nrows, int ncols):
+def dense2D_to_fastcsr_cmode(complex[:, ::1] mat, sp_int nrows, sp_int ncols):
     """
     Converts a dense c-mode complex ndarray to a sparse CSR matrix.
-    
+
     Parameters
     ----------
     mat : ndarray
         Input complex ndarray
-    nrows : int
+    nrows : sp_int
         Number of rows in matrix.
-    ncols : int
+    ncols : sp_int
         Number of cols in matrix.
-    
+
     Returns
     -------
     out : fast_csr_matrix
         Output matrix in CSR format.
     """
-    cdef int nnz = 0
-    cdef size_t ii, jj
+    cdef sp_int nnz = 0
+    cdef sp_uint ii, jj
     cdef np.ndarray[complex, ndim=1, mode='c'] data = np.zeros(nrows*ncols, dtype=complex)
-    cdef np.ndarray[int, ndim=1, mode='c'] ind = np.zeros(nrows*ncols, dtype=np.int32)
-    cdef np.ndarray[int, ndim=1, mode='c'] ptr = np.zeros(nrows+1, dtype=np.int32)
+    cdef np.ndarray[sp_int, ndim=1, mode='c'] ind = np.zeros(nrows*ncols, dtype=np.int32)
+    cdef np.ndarray[sp_int, ndim=1, mode='c'] ptr = np.zeros(nrows+1, dtype=np.int32)
 
     for ii in range(nrows):
         for jj in range(ncols):
@@ -108,8 +109,8 @@ def dense2D_to_fastcsr_cmode(complex[:, ::1] mat, int nrows, int ncols):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void fdense2D_to_CSR(complex[::1, :] mat, CSR_Matrix * out, 
-                                unsigned int nrows, unsigned int ncols):
+cdef void fdense2D_to_CSR(complex[::1, :] mat, CSR_Matrix * out,
+                                sp_uint nrows, sp_uint ncols):
     """
     Converts a dense complex ndarray to a CSR matrix struct.
 
@@ -117,9 +118,9 @@ cdef void fdense2D_to_CSR(complex[::1, :] mat, CSR_Matrix * out,
     ----------
     mat : ndarray
         Input complex ndarray
-    nrows : int
+    nrows : sp_int
         Number of rows in matrix.
-    ncols : int
+    ncols : sp_int
         Number of cols in matrix.
 
     Returns
@@ -127,8 +128,8 @@ cdef void fdense2D_to_CSR(complex[::1, :] mat, CSR_Matrix * out,
     out : CSR_Matrix
         Output matrix as CSR struct.
     """
-    cdef int nnz = 0
-    cdef size_t ii, jj
+    cdef sp_int nnz = 0
+    cdef sp_uint ii, jj
     init_CSR(out, nrows*ncols, nrows, ncols, nrows*ncols)
 
     for ii in range(nrows):
@@ -145,7 +146,7 @@ cdef void fdense2D_to_CSR(complex[::1, :] mat, CSR_Matrix * out,
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def dense2D_to_fastcsr_fmode(complex[::1, :] mat, int nrows, int ncols):
+def dense2D_to_fastcsr_fmode(complex[::1, :] mat, sp_int nrows, sp_int ncols):
     """
     Converts a dense fortran-mode complex ndarray to a sparse CSR matrix.
 
@@ -153,9 +154,9 @@ def dense2D_to_fastcsr_fmode(complex[::1, :] mat, int nrows, int ncols):
     ----------
     mat : ndarray
         Input complex ndarray
-    nrows : int
+    nrows : sp_int
         Number of rows in matrix.
-    ncols : int
+    ncols : sp_int
         Number of cols in matrix.
 
     Returns
@@ -163,11 +164,11 @@ def dense2D_to_fastcsr_fmode(complex[::1, :] mat, int nrows, int ncols):
     out : fast_csr_matrix
         Output matrix in CSR format.
     """
-    cdef int nnz = 0
-    cdef size_t ii, jj
+    cdef sp_int nnz = 0
+    cdef sp_uint ii, jj
     cdef np.ndarray[complex, ndim=1, mode='c'] data = np.zeros(nrows*ncols, dtype=complex)
-    cdef np.ndarray[int, ndim=1, mode='c'] ind = np.zeros(nrows*ncols, dtype=np.int32)
-    cdef np.ndarray[int, ndim=1, mode='c'] ptr = np.zeros(nrows+1, dtype=np.int32)
+    cdef np.ndarray[sp_int, ndim=1, mode='c'] ind = np.zeros(nrows*ncols, dtype=np.int32)
+    cdef np.ndarray[sp_int, ndim=1, mode='c'] ptr = np.zeros(nrows+1, dtype=np.int32)
 
     for ii in range(nrows):
         for jj in range(ncols):
@@ -186,24 +187,24 @@ def dense2D_to_fastcsr_fmode(complex[::1, :] mat, int nrows, int ncols):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def zcsr_reshape(object A not None, int new_rows, int new_cols):
+def zcsr_reshape(object A not None, sp_int new_rows, sp_int new_cols):
     """
     Reshapes a complex CSR matrix.
-    
+
     Parameters
     ----------
     A : fast_csr_matrix
         Input CSR matrix.
-    new_rows : int
+    new_rows : sp_int
         Number of rows in reshaped matrix.
-    new_cols : int
+    new_cols : sp_int
         Number of cols in reshaped matrix.
-        
+
     Returns
     -------
     out : fast_csr_matrix
         Reshaped CSR matrix.
-        
+
     Notes
     -----
     This routine does not need to make a temp. copy of the matrix.
@@ -213,8 +214,8 @@ def zcsr_reshape(object A not None, int new_rows, int new_cols):
     CSR_to_COO(&mat, &inmat)
     cdef CSR_Matrix out
     cdef div_t new_inds
-    cdef size_t kk
-    
+    cdef sp_uint kk
+
     if (mat.nrows * mat.ncols) != (new_rows * new_cols):
         raise Exception('Total size of array must be unchanged.')
 
@@ -225,7 +226,7 @@ def zcsr_reshape(object A not None, int new_rows, int new_cols):
 
     mat.nrows = new_rows
     mat.ncols = new_cols
-    
+
     COO_to_CSR_inplace(&out, &mat)
     sort_indices(&out)
     return CSR_to_scipy(&out)
@@ -234,20 +235,20 @@ def zcsr_reshape(object A not None, int new_rows, int new_cols):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-def cy_index_permute(int [::1] idx_arr,
-                     int [::1] dims,
-                     int [::1] order):
-    
-    cdef int ndims = dims.shape[0]
-    cdef int ii, n, dim, idx, orderr
-    
+def cy_index_permute(sp_int [::1] idx_arr,
+                     sp_int [::1] dims,
+                     sp_int [::1] order):
+
+    cdef sp_int ndims = dims.shape[0]
+    cdef sp_int ii, n, dim, idx, orderr
+
     #the fastest way to allocate memory for a temporary array
-    cdef int * multi_idx = <int*> malloc(sizeof(int) * ndims)
-    
+    cdef sp_int * multi_idx = <sp_int*> malloc(sizeof(sp_int) * ndims)
+
     try:
         for ii from 0 <= ii < idx_arr.shape[0]:
             idx = idx_arr[ii]
-            
+
             #First, decompose long index into multi-index
             for n from ndims > n >= 0:
                 dim = dims[n]

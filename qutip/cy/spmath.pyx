@@ -32,6 +32,7 @@
 ###############################################################################
 import numpy as np
 import qutip.settings as qset
+from qutip.cy.sparse_structs cimport sp_int, sp_uint
 cimport numpy as cnp
 cimport cython
 from libcpp cimport bool
@@ -46,37 +47,37 @@ include "sparse_routines.pxi"
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def zcsr_add(complex[::1] dataA, int[::1] indsA, int[::1] indptrA,
-             complex[::1] dataB, int[::1] indsB, int[::1] indptrB, 
-             int nrows, int ncols,
-             int Annz, int Bnnz,
+def zcsr_add(complex[::1] dataA, sp_int[::1] indsA, sp_int[::1] indptrA,
+             complex[::1] dataB, sp_int[::1] indsB, sp_int[::1] indptrB,
+             sp_int nrows, sp_int ncols,
+             sp_int Annz, sp_int Bnnz,
              double complex alpha = 1):
-    
+
     """
     Adds two sparse CSR matries. Like SciPy, we assume the worse case
     for the fill A.nnz + B.nnz.
     """
-    cdef int worse_fill = Annz + Bnnz
-    cdef int nnz
+    cdef sp_int worse_fill = Annz + Bnnz
+    cdef sp_int nnz
     #Both matrices are zero mats
     if Annz == 0 and Bnnz == 0:
         return fast_csr_matrix(([], [], []), shape=(nrows,ncols))
     #A is the zero matrix
     elif Annz == 0:
-        return fast_csr_matrix((alpha*np.asarray(dataB), indsB, indptrB), 
+        return fast_csr_matrix((alpha*np.asarray(dataB), indsB, indptrB),
                             shape=(nrows,ncols))
     #B is the zero matrix
     elif Bnnz == 0:
-        return fast_csr_matrix((dataA, indsA, indptrA), 
+        return fast_csr_matrix((dataA, indsA, indptrA),
                             shape=(nrows,ncols))
     # Out CSR_Matrix
     cdef CSR_Matrix out
     init_CSR(&out, worse_fill, nrows, ncols, worse_fill)
-    
-    nnz = _zcsr_add_core(&dataA[0], &indsA[0], &indptrA[0], 
+
+    nnz = _zcsr_add_core(&dataA[0], &indsA[0], &indptrA[0],
                      &dataB[0], &indsB[0], &indptrB[0],
                      alpha,
-                     &out,       
+                     &out,
                      nrows, ncols)
     #Shorten data and indices if needed
     if out.nnz > nnz:
@@ -91,13 +92,13 @@ cdef void _zcsr_add(CSR_Matrix * A, CSR_Matrix * B, CSR_Matrix * C, double compl
     Adds two sparse CSR matries. Like SciPy, we assume the worse case
     for the fill A.nnz + B.nnz.
     """
-    cdef int worse_fill = A.nnz + B.nnz
-    cdef int nrows = A.nrows
-    cdef int ncols = A.ncols
-    cdef int nnz
+    cdef sp_int worse_fill = A.nnz + B.nnz
+    cdef sp_int nrows = A.nrows
+    cdef sp_int ncols = A.ncols
+    cdef sp_int nnz
     init_CSR(C, worse_fill, nrows, ncols, worse_fill)
 
-    nnz = _zcsr_add_core(A.data, A.indices, A.indptr, 
+    nnz = _zcsr_add_core(A.data, A.indices, A.indptr,
                      B.data, B.indices, B.indptr,
                      alpha, C, nrows, ncols)
     #Shorten data and indices if needed
@@ -108,15 +109,15 @@ cdef void _zcsr_add(CSR_Matrix * A, CSR_Matrix * B, CSR_Matrix * C, double compl
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr, 
-                     double complex * Bdata, int * Bind, int * Bptr,
+cdef sp_int _zcsr_add_core(double complex * Adata, sp_int * Aind, sp_int * Aptr,
+                     double complex * Bdata, sp_int * Bind, sp_int * Bptr,
                      double complex alpha,
-                     CSR_Matrix * C,       
-                     int nrows, int ncols) nogil:
-    
-    cdef int j1, j2, kc = 0 
-    cdef int ka, kb, ka_max, kb_max
-    cdef size_t ii
+                     CSR_Matrix * C,
+                     sp_int nrows, sp_int ncols) nogil:
+
+    cdef sp_int j1, j2, kc = 0
+    cdef sp_int ka, kb, ka_max, kb_max
+    cdef sp_uint ii
     cdef double complex tmp
     C.indptr[0] = 0
     if alpha != 1:
@@ -143,7 +144,7 @@ cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
                         C.indices[kc] = j1
                         kc += 1
                     ka += 1
-                    kb += 1   
+                    kb += 1
                 elif j1 < j2:
                     C.data[kc] = Adata[ka]
                     C.indices[kc] = j1
@@ -180,7 +181,7 @@ cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
                         C.indices[kc] = j1
                         kc += 1
                     ka += 1
-                    kb += 1   
+                    kb += 1
                 elif j1 < j2:
                     C.data[kc] = Adata[ka]
                     C.indices[kc] = j1
@@ -200,44 +201,44 @@ cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def zcsr_mult(object A, object B, int sorted = 1):
-    
+
     cdef complex [::1] dataA = A.data
-    cdef int[::1] indsA = A.indices 
-    cdef int[::1] indptrA = A.indptr
-    cdef int Annz = A.nnz
-    
-    cdef complex [::1] dataB = B.data 
-    cdef int[::1] indsB = B.indices 
-    cdef int[::1] indptrB = B.indptr
-    cdef int Bnnz = B.nnz
-    
-    cdef int nrows = A.shape[0]
-    cdef int ncols = B.shape[1]
-    
+    cdef sp_int[::1] indsA = A.indices
+    cdef sp_int[::1] indptrA = A.indptr
+    cdef sp_int Annz = A.nnz
+
+    cdef complex [::1] dataB = B.data
+    cdef sp_int[::1] indsB = B.indices
+    cdef sp_int[::1] indptrB = B.indptr
+    cdef sp_int Bnnz = B.nnz
+
+    cdef sp_int nrows = A.shape[0]
+    cdef sp_int ncols = B.shape[1]
+
     #Both matrices are zero mats
     if Annz == 0 or Bnnz == 0:
         return fast_csr_matrix(shape=(nrows,ncols))
-    
-    cdef int nnz
+
+    cdef sp_int nnz
     cdef CSR_Matrix out
-    
-    nnz = _zcsr_mult_pass1(&dataA[0], &indsA[0], &indptrA[0], 
-                     &dataB[0], &indsB[0], &indptrB[0],  
+
+    nnz = _zcsr_mult_pass1(&dataA[0], &indsA[0], &indptrA[0],
+                     &dataB[0], &indsB[0], &indptrB[0],
                      nrows, ncols)
-    
+
     if nnz == 0:
         return fast_csr_matrix(shape=(nrows,ncols))
-    
+
     init_CSR(&out, nnz, nrows, ncols)
-    _zcsr_mult_pass2(&dataA[0], &indsA[0], &indptrA[0], 
+    _zcsr_mult_pass2(&dataA[0], &indsA[0], &indptrA[0],
                      &dataB[0], &indsB[0], &indptrB[0],
-                     &out,       
+                     &out,
                      nrows, ncols)
-    
+
     #Shorten data and indices if needed
     if out.nnz > out.indptr[out.nrows]:
         shorten_CSR(&out, out.indptr[out.nrows])
-    
+
     if sorted:
         sort_indices(&out)
     return CSR_to_scipy(&out)
@@ -248,16 +249,16 @@ def zcsr_mult(object A, object B, int sorted = 1):
 @cython.wraparound(False)
 cdef void _zcsr_mult(CSR_Matrix * A, CSR_Matrix * B, CSR_Matrix * C):
 
-    nnz = _zcsr_mult_pass1(A.data, A.indices, A.indptr, 
-                 B.data, B.indices, B.indptr,  
+    nnz = _zcsr_mult_pass1(A.data, A.indices, A.indptr,
+                 B.data, B.indices, B.indptr,
                  A.nrows, B.ncols)
 
     init_CSR(C, nnz, A.nrows, B.ncols)
-    _zcsr_mult_pass2(A.data, A.indices, A.indptr, 
+    _zcsr_mult_pass2(A.data, A.indices, A.indptr,
                  B.data, B.indices, B.indptr,
-                 C,       
+                 C,
                  A.nrows, B.ncols)
-    
+
     #Shorten data and indices if needed
     if C.nnz > C.indptr[C.nrows]:
         shorten_CSR(C, C.indptr[C.nrows])
@@ -266,14 +267,14 @@ cdef void _zcsr_mult(CSR_Matrix * A, CSR_Matrix * B, CSR_Matrix * C):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef int _zcsr_mult_pass1(double complex * Adata, int * Aind, int * Aptr, 
-                     double complex * Bdata, int * Bind, int * Bptr,       
-                     int nrows, int ncols) nogil:
+cdef sp_int _zcsr_mult_pass1(double complex * Adata, sp_int * Aind, sp_int * Aptr,
+                     double complex * Bdata, sp_int * Bind, sp_int * Bptr,
+                     sp_int nrows, sp_int ncols) nogil:
 
-    cdef int j, k, nnz = 0
-    cdef size_t ii,jj,kk
+    cdef sp_int j, k, nnz = 0
+    cdef sp_uint ii,jj,kk
     #Setup mask array
-    cdef int * mask = <int *>PyDataMem_NEW(ncols*sizeof(int))
+    cdef sp_int * mask = <sp_int *>PyDataMem_NEW(ncols*sizeof(sp_int))
     for ii in range(ncols):
         mask[ii] = -1
     #Pass 1
@@ -291,16 +292,16 @@ cdef int _zcsr_mult_pass1(double complex * Adata, int * Aind, int * Aptr,
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _zcsr_mult_pass2(double complex * Adata, int * Aind, int * Aptr, 
-                     double complex * Bdata, int * Bind, int * Bptr,
+cdef void _zcsr_mult_pass2(double complex * Adata, sp_int * Aind, sp_int * Aptr,
+                     double complex * Bdata, sp_int * Bind, sp_int * Bptr,
                      CSR_Matrix * C,
-                     int nrows, int ncols) nogil:  
+                     sp_int nrows, sp_int ncols) nogil:
 
-    cdef int head, length, temp, j, k, nnz = 0
-    cdef size_t ii,jj,kk
+    cdef sp_int head, length, temp, j, k, nnz = 0
+    cdef sp_uint ii,jj,kk
     cdef double complex val
     cdef double complex * sums = <double complex *>PyDataMem_NEW_ZEROED(ncols, sizeof(double complex))
-    cdef int * nxt = <int *>PyDataMem_NEW(ncols*sizeof(int))
+    cdef sp_int * nxt = <sp_int *>PyDataMem_NEW(ncols*sizeof(sp_int))
     for ii in range(ncols):
         nxt[ii] = -1
 
@@ -328,7 +329,7 @@ cdef void _zcsr_mult_pass2(double complex * Adata, int * Aind, int * Aptr,
             head = nxt[head]
             nxt[temp] = -1
             sums[temp] = 0
-    
+
         C.indptr[ii+1] = nnz
 
     #Free temp arrays
@@ -344,27 +345,27 @@ def zcsr_kron(object A, object B):
     sparse matrices in CSR format.
     """
     cdef complex[::1] dataA = A.data
-    cdef int[::1] indsA = A.indices
-    cdef int[::1] indptrA = A.indptr
-    cdef int rowsA = A.shape[0]
-    cdef int colsA = A.shape[1]
+    cdef sp_int[::1] indsA = A.indices
+    cdef sp_int[::1] indptrA = A.indptr
+    cdef sp_int rowsA = A.shape[0]
+    cdef sp_int colsA = A.shape[1]
 
     cdef complex[::1] dataB = B.data
-    cdef int[::1] indsB = B.indices
-    cdef int[::1] indptrB = B.indptr
-    cdef int rowsB = B.shape[0]
-    cdef int colsB = B.shape[1]
+    cdef sp_int[::1] indsB = B.indices
+    cdef sp_int[::1] indptrB = B.indptr
+    cdef sp_int rowsB = B.shape[0]
+    cdef sp_int colsB = B.shape[1]
 
-    cdef int out_nnz = _safe_multiply(dataA.shape[0], dataB.shape[0])
-    cdef int rows_out = rowsA * rowsB
-    cdef int cols_out = colsA * colsB
+    cdef sp_int out_nnz = _safe_multiply(dataA.shape[0], dataB.shape[0])
+    cdef sp_int rows_out = rowsA * rowsB
+    cdef sp_int cols_out = colsA * colsB
 
     cdef CSR_Matrix out
     init_CSR(&out, out_nnz, rows_out, cols_out)
 
-    _zcsr_kron_core(&dataA[0], &indsA[0], &indptrA[0], 
+    _zcsr_kron_core(&dataA[0], &indsA[0], &indptrA[0],
                     &dataB[0], &indsB[0], &indptrB[0],
-                    &out, 
+                    &out,
                     rowsA, rowsB, colsB)
     return CSR_to_scipy(&out)
 
@@ -377,28 +378,28 @@ cdef void _zcsr_kron(CSR_Matrix * A, CSR_Matrix * B, CSR_Matrix * C):
     sparse matrices in CSR format.
     """
 
-    cdef int out_nnz = _safe_multiply(A.nnz, B.nnz)
-    cdef int rows_out = A.nrows * B.nrows
-    cdef int cols_out = A.ncols * B.ncols
+    cdef sp_int out_nnz = _safe_multiply(A.nnz, B.nnz)
+    cdef sp_int rows_out = A.nrows * B.nrows
+    cdef sp_int cols_out = A.ncols * B.ncols
 
     init_CSR(C, out_nnz, rows_out, cols_out)
 
     _zcsr_kron_core(A.data, A.indices, A.indptr,
-                    B.data, B.indices, B.indptr, 
-                    C, 
+                    B.data, B.indices, B.indptr,
+                    C,
                     A.nrows, B.nrows, B.ncols)
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _zcsr_kron_core(double complex * dataA, int * indsA, int * indptrA, 
-                     double complex * dataB, int * indsB, int * indptrB,
-                     CSR_Matrix * out,       
-                     int rowsA, int rowsB, int colsB) nogil:
-    cdef size_t ii, jj, ptrA, ptr
-    cdef int row = 0
-    cdef int ptr_start, ptr_end
-    cdef int row_startA, row_endA, row_startB, row_endB, distA, distB, ptrB
+cdef void _zcsr_kron_core(double complex * dataA, sp_int * indsA, sp_int * indptrA,
+                     double complex * dataB, sp_int * indsB, sp_int * indptrB,
+                     CSR_Matrix * out,
+                     sp_int rowsA, sp_int rowsB, sp_int colsB) nogil:
+    cdef sp_uint ii, jj, ptrA, ptr
+    cdef sp_int row = 0
+    cdef sp_int ptr_start, ptr_end
+    cdef sp_int row_startA, row_endA, row_startB, row_endB, distA, distB, ptrB
 
     for ii in range(rowsA):
         row_startA = indptrA[ii]
@@ -434,19 +435,19 @@ def zcsr_transpose(object A):
     Transpose of a sparse matrix in CSR format.
     """
     cdef complex[::1] data = A.data
-    cdef int[::1] ind = A.indices
-    cdef int[::1] ptr = A.indptr
-    cdef int nrows = A.shape[0]
-    cdef int ncols = A.shape[1]
+    cdef sp_int[::1] ind = A.indices
+    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int nrows = A.shape[0]
+    cdef sp_int ncols = A.shape[1]
 
     cdef CSR_Matrix out
     init_CSR(&out, data.shape[0], ncols, nrows)
 
-    _zcsr_trans_core(&data[0], &ind[0], &ptr[0], 
+    _zcsr_trans_core(&data[0], &ind[0], &ptr[0],
                     &out, nrows, ncols)
     return CSR_to_scipy(&out)
-  
-  
+
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void _zcsr_transpose(CSR_Matrix * A, CSR_Matrix * B):
@@ -455,25 +456,25 @@ cdef void _zcsr_transpose(CSR_Matrix * A, CSR_Matrix * B):
     """
     init_CSR(B, A.nnz, A.ncols, A.nrows)
 
-    _zcsr_trans_core(A.data, A.indices, A.indptr, B, A.nrows, A.ncols) 
-    
+    _zcsr_trans_core(A.data, A.indices, A.indptr, B, A.nrows, A.ncols)
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _zcsr_trans_core(double complex * data, int * ind, int * ptr, 
-                     CSR_Matrix * out,       
-                     int nrows, int ncols) nogil:
-    
-    cdef int k, nxt
-    cdef size_t ii, jj
-    
+cdef void _zcsr_trans_core(double complex * data, sp_int * ind, sp_int * ptr,
+                     CSR_Matrix * out,
+                     sp_int nrows, sp_int ncols) nogil:
+
+    cdef sp_int k, nxt
+    cdef sp_uint ii, jj
+
     for ii in range(nrows):
         for jj in range(ptr[ii], ptr[ii+1]):
             k = ind[jj] + 1
             out.indptr[k] += 1
-    
+
     for ii in range(ncols):
         out.indptr[ii+1] += out.indptr[ii]
-    
+
     for ii in range(nrows):
         for jj in range(ptr[ii], ptr[ii+1]):
             k = ind[jj]
@@ -481,10 +482,10 @@ cdef void _zcsr_trans_core(double complex * data, int * ind, int * ptr,
             out.data[nxt] = data[jj]
             out.indices[nxt] = ii
             out.indptr[k] = nxt + 1
-    
+
     for ii in range(ncols,0,-1):
         out.indptr[ii] = out.indptr[ii-1]
-    
+
     out.indptr[0] = 0
 
 
@@ -496,15 +497,15 @@ def zcsr_adjoint(object A):
     Adjoint of a sparse matrix in CSR format.
     """
     cdef complex[::1] data = A.data
-    cdef int[::1] ind = A.indices
-    cdef int[::1] ptr = A.indptr
-    cdef int nrows = A.shape[0]
-    cdef int ncols = A.shape[1]
+    cdef sp_int[::1] ind = A.indices
+    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int nrows = A.shape[0]
+    cdef sp_int ncols = A.shape[1]
 
     cdef CSR_Matrix out
     init_CSR(&out, data.shape[0], ncols, nrows)
 
-    _zcsr_adjoint_core(&data[0], &ind[0], &ptr[0], 
+    _zcsr_adjoint_core(&data[0], &ind[0], &ptr[0],
                         &out, nrows, ncols)
     return CSR_to_scipy(&out)
 
@@ -517,18 +518,18 @@ cdef void _zcsr_adjoint(CSR_Matrix * A, CSR_Matrix * B):
     """
     init_CSR(B, A.nnz, A.ncols, A.nrows)
 
-    _zcsr_adjoint_core(A.data, A.indices, A.indptr, 
+    _zcsr_adjoint_core(A.data, A.indices, A.indptr,
                         B, A.nrows, A.ncols)
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _zcsr_adjoint_core(double complex * data, int * ind, int * ptr, 
-                     CSR_Matrix * out,       
-                     int nrows, int ncols) nogil:
+cdef void _zcsr_adjoint_core(double complex * data, sp_int * ind, sp_int * ptr,
+                     CSR_Matrix * out,
+                     sp_int nrows, sp_int ncols) nogil:
 
-    cdef int k, nxt
-    cdef size_t ii, jj
+    cdef sp_int k, nxt
+    cdef sp_uint ii, jj
 
     for ii in range(nrows):
         for jj in range(ptr[ii], ptr[ii+1]):
@@ -556,7 +557,7 @@ cdef void _zcsr_adjoint_core(double complex * data, int * ind, int * ptr,
 @cython.wraparound(False)
 def zcsr_isherm(object A not None, double tol = qset.atol):
     """
-    Determines if a given input sparse CSR matrix is Hermitian 
+    Determines if a given input sparse CSR matrix is Hermitian
     to within a specified floating-point tolerance.
 
     Parameters
@@ -575,24 +576,24 @@ def zcsr_isherm(object A not None, double tol = qset.atol):
     -----
     This implimentation is esentially an adjoint calulation
     where the data and indices are not stored, but checked
-    elementwise to see if they match those of the input matrix. 
-    Thus we do not need to build the actual adjoint.  Here we 
+    elementwise to see if they match those of the input matrix.
+    Thus we do not need to build the actual adjoint.  Here we
     only need a temp array of output indptr.
     """
     cdef complex[::1] data = A.data
-    cdef int[::1] ind = A.indices
-    cdef int[::1] ptr = A.indptr
-    cdef int nrows = A.shape[0]
-    cdef int ncols = A.shape[1]
+    cdef sp_int[::1] ind = A.indices
+    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int nrows = A.shape[0]
+    cdef sp_int ncols = A.shape[1]
 
-    cdef int k, nxt, isherm = 1
-    cdef size_t ii, jj
+    cdef sp_int k, nxt, isherm = 1
+    cdef sp_uint ii, jj
     cdef complex tmp, tmp2
 
     if nrows != ncols:
         return 0
 
-    cdef int * out_ptr = <int *>PyDataMem_NEW_ZEROED(ncols+1, sizeof(int))
+    cdef sp_int * out_ptr = <sp_int *>PyDataMem_NEW_ZEROED(ncols+1, sizeof(sp_int))
 
     for ii in range(nrows):
         for jj in range(ptr[ii], ptr[ii+1]):
@@ -625,11 +626,11 @@ def zcsr_isherm(object A not None, double tol = qset.atol):
     return isherm
 
 @cython.overflowcheck(True)
-cdef _safe_multiply(int A, int B):
+cdef _safe_multiply(sp_int A, sp_int B):
     """
     Computes A*B and checks for overflow.
     """
-    cdef int C = A*B
+    cdef sp_int C = A*B
     return C
 
 
@@ -638,10 +639,10 @@ cdef _safe_multiply(int A, int B):
 @cython.wraparound(False)
 def zcsr_trace(object A, bool isherm):
     cdef complex[::1] data = A.data
-    cdef int[::1] ind = A.indices
-    cdef int[::1] ptr = A.indptr
-    cdef int nrows = ptr.shape[0]-1
-    cdef size_t ii, jj
+    cdef sp_int[::1] ind = A.indices
+    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int nrows = ptr.shape[0]-1
+    cdef sp_uint ii, jj
     cdef complex tr = 0
 
     for ii in range(nrows):
@@ -653,8 +654,8 @@ def zcsr_trace(object A, bool isherm):
         return real(tr)
     else:
         return tr
-        
-        
+
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def zcsr_proj(object A, bool is_ket=1):
@@ -663,19 +664,19 @@ def zcsr_proj(object A, bool is_ket=1):
     from a given ket or bra vector
     in CSR format.  The flag 'is_ket'
     is True if passed a ket.
-    
-    This is ~3x faster than doing the 
+
+    This is ~3x faster than doing the
     conjugate transpose and sparse multiplication
     directly.  Also, does not need a temp matrix.
     """
     cdef complex[::1] data = A.data
-    cdef int[::1] ind = A.indices
-    cdef int[::1] ptr = A.indptr
-    cdef int nrows
-    cdef int nnz
+    cdef sp_int[::1] ind = A.indices
+    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int nrows
+    cdef sp_int nnz
 
-    cdef int offset = 0, new_idx, count, change_idx
-    cdef size_t jj, kk
+    cdef sp_int offset = 0, new_idx, count, change_idx
+    cdef sp_uint jj, kk
 
     if is_ket:
         nrows = A.shape[0]
@@ -703,7 +704,7 @@ def zcsr_proj(object A, bool is_ket=1):
         for jj in range(nnz):
             for kk in range(nnz):
                 out.data[jj*nnz+kk] = data[jj]*conj(data[kk])
-        
+
     else:
         count = nnz**2
         new_idx = nrows
@@ -717,10 +718,10 @@ def zcsr_proj(object A, bool is_ket=1):
                 out.indptr[new_idx] = count
                 new_idx -= 1
             count -= nnz
-    
+
 
     return CSR_to_scipy(&out)
-    
+
 
 
 @cython.boundscheck(False)
@@ -731,17 +732,17 @@ def zcsr_inner(object A, object B, bool bra_ket):
     or bra-ket vectors in sparse CSR format.
     """
     cdef complex[::1] a_data = A.data
-    cdef int[::1] a_ind = A.indices
-    cdef int[::1] a_ptr = A.indptr
+    cdef sp_int[::1] a_ind = A.indices
+    cdef sp_int[::1] a_ptr = A.indptr
 
     cdef complex[::1] b_data = B.data
-    cdef int[::1] b_ind = B.indices
-    cdef int[::1] b_ptr = B.indptr
-    cdef int nrows = B.shape[0]
+    cdef sp_int[::1] b_ind = B.indices
+    cdef sp_int[::1] b_ptr = B.indptr
+    cdef sp_int nrows = B.shape[0]
 
     cdef double complex inner = 0
-    cdef size_t jj, kk
-    cdef int a_idx, b_idx
+    cdef sp_uint jj, kk
+    cdef sp_int a_idx, b_idx
 
     if bra_ket:
         for kk in range(a_ind.shape[0]):
@@ -758,5 +759,5 @@ def zcsr_inner(object A, object B, bool bra_ket):
             if (a_ptr[kk+1]-a_idx) != 0:
                 if (b_ptr[kk+1]-b_idx) != 0:
                     inner += conj(a_data[a_idx])*b_data[b_idx]
-                
+
     return inner
