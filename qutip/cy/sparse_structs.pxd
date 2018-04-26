@@ -30,9 +30,9 @@
 #    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
-
-ctypedef long sp_int
-ctypedef unsigned long sp_uint
+cimport numpy as np
+ctypedef np.int64_t sp_int
+ctypedef np.uint64_t sp_uint
 
 cdef struct _csr_mat:
     double complex * data

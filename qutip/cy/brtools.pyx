@@ -43,6 +43,7 @@ from libc.float cimport DBL_MAX
 from libcpp.vector cimport vector
 from qutip.cy.sparse_structs cimport (CSR_Matrix, COO_Matrix)
 from qutip.cy.sparse_structs cimport sp_int, sp_uint
+cimport numpy as cnp
 
 include "sparse_routines.pxi"
 
@@ -102,7 +103,7 @@ cpdef void dense_add_mult(complex[::1,:] A,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void ZHEEVR(complex[::1,:] H, double * eigvals,
-                    complex[::1,:] Z, sp_int nrows):
+                    complex[::1,:] Z, sp_uint nrows):
     """
     Computes the eigenvalues and vectors of a dense Hermitian matrix.
     Eigenvectors are returned in Z.
