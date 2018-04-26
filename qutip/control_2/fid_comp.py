@@ -72,26 +72,61 @@ logger = logging.get_logger()
 # QuTiP control modules
 import qutip.control.errors as errors
 
-warnings.simplefilter('always', DeprecationWarning) #turn off filter
-def _attrib_deprecation(message, stacklevel=3):
-    """
-    Issue deprecation warning
-    Using stacklevel=3 will ensure message refers the function
-    calling with the deprecated parameter,
-    """
-    warnings.warn(message, DeprecationWarning, stacklevel=stacklevel)
-
-def _func_deprecation(message, stacklevel=3):
-    """
-    Issue deprecation warning
-    Using stacklevel=3 will ensure message refers the function
-    calling with the deprecated parameter,
-    """
-    warnings.warn(message, DeprecationWarning, stacklevel=stacklevel)
 
 
+class FidCompUnitary(FidelityComputer):
+    def __init__(self, parent, phase_option):
+        """
+        Computes fidelity error and gradient assuming unitary dynamics, e.g.
+        closed qubit systems
+        Note fidelity and gradient calculations were taken from DYNAMO
+        (see file header)
+
+        Attributes
+        ----------
+        phase_option : string
+            determines how global phase is treated in fidelity calculations:
+                PSU - global phase ignored
+                SU - global phase included
+        """
+        self.target_d = target.dag()
+        self.num_ctrls = num_ctrls
+        self.num_tslots = num_tslots
+        if not phase_option in ["SU","PSU"]:
+            raise Exception("Invalid phase_option for FidCompUnitary.")
+        self.SU = phase_option == "SU"
+        if self.SU:
+            self.dimensional_norm = np.real((self.target_d*target).tr())
+        else:
+            self.dimensional_norm = np.abs((self.target_d*target).tr())
+
+    def costs(self, tslotcomp):
+        n_ctrls = self.num_ctrls
+        n_ts = self.num_tslots
+        final = tslotcomp.state_T(n_ts-1)
+        fidelity_prenorm = (self.target_d*final).tr()
+
+        # create n_ts x n_ctrls zero array for grad start point
+        grad = np.zeros([n_ts, n_ctrls], dtype=complex)
+        # loop through all ctrl timeslots calculating gradients
+        for k,(onto_evo, dU, U, fwd_evo) in enumerate(tslotcomp.reversed):
+            for j in range(n_ctrls):
+                grad[k, j] = (onto_evo*dU[j]*fwd_evo).tr()
+
+        if self.SU:
+            fidelity = np.real(fidelity_prenorm) / self.dimensional_norm
+            grad_normalized = np.real(grad) / self.dimensional_norm
+        else:
+            fidelity = np.abs(fidelity_prenorm) / self.dimensional_norm
+            grad_normalized = np.real(grad / self.dimensional_norm *
+                                      np.exp(-1j * np.angle(fidelity_prenorm)))
+
+        return np.abs(1 - fidelity), grad_normalized
 
 
+
+
+## ------------------- Old version -----------------------
 
 
 def _trace(A):
@@ -275,6 +310,7 @@ class FidelityComputer(object):
                 "'uses_evo_t2targ' has been replaced by 'uses_onto_evo'")
         self.uses_onto_evo = value"""
 
+
 class FidCompUnitary(FidelityComputer):
     """
     Computes fidelity error and gradient assuming unitary dynamics, e.g.
@@ -391,15 +427,6 @@ class FidCompUnitary(FidelityComputer):
             norm = A
         return np.real(norm) / self.dimensional_norm
 
-    def normalize_gradient_SU(self, grad):
-        """
-        Normalise the gradient matrix passed as grad
-        This SU version respects global phase
-        """
-        grad_normalized = np.real(grad) / self.dimensional_norm
-
-        return grad_normalized
-
     def normalize_PSU(self, A):
         """
 
@@ -415,6 +442,15 @@ class FidCompUnitary(FidelityComputer):
             # to be the prenormalised scalar value, e.g. fidelity
             norm = A
         return np.abs(norm) / self.dimensional_norm
+
+    def normalize_gradient_SU(self, grad):
+        """
+        Normalise the gradient matrix passed as grad
+        This SU version respects global phase
+        """
+        grad_normalized = np.real(grad) / self.dimensional_norm
+
+        return grad_normalized
 
     def normalize_gradient_PSU(self, grad):
         """

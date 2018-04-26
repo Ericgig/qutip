@@ -266,10 +266,9 @@ class dynamics:
         """For a state x compute the cost and grandient"""
         self.x_ = x
         self._ctrl_amps = self.filter(x)
-        self._compute_gen()
-        self.tslotcomp.compute_evolution()
+        self.tslotcomp.set(self._ctrl_amps)
         for costs in self.costcomp:
-            error, gradient_u_cost = costs(forward, backward)
+            error, gradient_u_cost = costs(self.tslotcomp)
             self.error += error
             gradient_u += gradient_u_cost
         self.gradient_x = self.filter.reverse(gradient_u)
