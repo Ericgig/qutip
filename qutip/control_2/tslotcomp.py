@@ -146,23 +146,14 @@ class TSComp_Save_Power_all(TimeslotComputer):
         self.id_text = 'ALL'
         self.cache_text = 'Save'
         self.exp_text = 'Power'
-        self.H = H
+        self.drift = H
         self.ctrl = ctrl
         self.initial = initial
         self.target = target
         self.tau = tau
         self.n_t = n_t
 
-    def state_T(self, T_target):
-        self._compute_gen()
-        self.fwd = [initial]
-
-        for t in range(T_target):
-            self.fwd.append(self._dyn_gen[t].prop(tau[t])*fwd[t])
-
-        return self.fwd[-1]
-
-    def compute_evolution(self, gen, tau, initial, target):
+    def set(self, u):
         """
         Recalculates the evolution operators.
         Dynamics generators (e.g. Hamiltonian) and
@@ -170,18 +161,44 @@ class TSComp_Save_Power_all(TimeslotComputer):
 
         Changed to a function: take propagators and return evolution
         """
+        # Compute and cache all dyn_gen
+        self._dyn_gen = [None] * self.n_t
+        for t in range(self.n_t):
+            self._dyn_gen[t] = self.drift[t].copy()
+            for i in range(self.num_ctrls):
+                self._dyn_gen[t] += self._ctrl_amps[t,i] * self.ctrl[t,i]
 
-        fwd = [initial]
+        # Compute and cache all prop and dprop
+        self._prop = [None] * self.n_t
+        self._dU = np.empty((self.n_t,self.num_ctrls),dtype=object)
+        for t in range(self.n_t):
+            self._prop[t], self._dU[t][0] = self._dyn_gen[t].dexp(self.ctrl[t,0],
+                                             self.tau[t], compute_expm=True)
+            self._dU[t,1:] = [self._dyn_gen[t].dexp(self.ctrl[t,i], self.tau[t])
+                         for i in range(1,self.num_ctrls)]
 
-        for g in gen:
-            fwd.append(g.prop(tau)*fwd[-1])
+    def state_T(self, T_target):
+        self._compute_gen()
+        self.fwd = [initial]
+        self.T = T_target
 
-        onwd = [target]
-        for p in prop[::-1]:
-            onwd.append(onwd[-1]*g.prop(tau))
+        for t in range(T_target):
+            self.fwd.append(self._prop[t]*fwd[t])
+        self.check_unitarity(self.fwd[T_target])
+        return self.fwd[T_target]
 
-        if self.unitarity_check_level:
-            self.check_unitarity()
+    def reversed_onwd(self):
+        back = 1
+        for i in range(T_target-1,0,-1):
+            yield i, back, self._dU[i], self._prop[i], self.fwd[i]
+            back = back*self._prop[i]
+
+    def reversed_onto(self):
+        back = self.target.dag()
+        for i in range(T_target-1,0,-1):
+            yield i, back, self._dU[i], self._prop[i], self.fwd[i]
+            back = back*self._prop[i].dag()
+
 
 
 

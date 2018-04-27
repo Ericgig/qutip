@@ -268,7 +268,7 @@ class dynamics:
         self._ctrl_amps = self.filter(x)
         self.tslotcomp.set(self._ctrl_amps)
         for costs in self.costcomp:
-            error, gradient_u_cost = costs(self.tslotcomp)
+            error, gradient_u_cost = costs()
             self.error += error
             gradient_u += gradient_u_cost
         self.gradient_x = self.filter.reverse(gradient_u)

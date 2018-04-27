@@ -92,6 +92,7 @@ class FidCompUnitary(FidelityComputer):
         self.target_d = target.dag()
         self.num_ctrls = num_ctrls
         self.num_tslots = num_tslots
+        self.tslotcomp = parent.tslotcomp
         if not phase_option in ["SU","PSU"]:
             raise Exception("Invalid phase_option for FidCompUnitary.")
         self.SU = phase_option == "SU"
@@ -100,16 +101,16 @@ class FidCompUnitary(FidelityComputer):
         else:
             self.dimensional_norm = np.abs((self.target_d*target).tr())
 
-    def costs(self, tslotcomp):
+    def costs(self):
         n_ctrls = self.num_ctrls
         n_ts = self.num_tslots
-        final = tslotcomp.state_T(n_ts-1)
+        final = self.tslotcomp.state_T(n_ts)
         fidelity_prenorm = (self.target_d*final).tr()
 
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
         # loop through all ctrl timeslots calculating gradients
-        for k,(onto_evo, dU, U, fwd_evo) in enumerate(tslotcomp.reversed):
+        for k, onto_evo, dU, U, fwd_evo in self.tslotcomp.reversed_onto:
             for j in range(n_ctrls):
                 grad[k, j] = (onto_evo*dU[j]*fwd_evo).tr()
 
@@ -122,6 +123,63 @@ class FidCompUnitary(FidelityComputer):
                                       np.exp(-1j * np.angle(fidelity_prenorm)))
 
         return np.abs(1 - fidelity), grad_normalized
+
+
+class FidCompTraceDiff(FidelityComputer):
+    def __init__(self, parent, scale_factor=0):
+        """
+        Computes fidelity error and gradient for general system dynamics
+        by calculating the the fidelity error as the trace of the overlap
+        of the difference between the target and evolution resulting from
+        the pulses with the transpose of the same.
+        This should provide a distance measure for dynamics described by matrices
+        Note the gradient calculation is taken from:
+        'Robust quantum gates for open systems via optimal control:
+        Markovian versus non-Markovian dynamics'
+        Frederik F Floether, Pierre de Fouquieres, and Sophie G Schirmer
+
+        Attributes
+        ----------
+        scale_factor : float
+            The fidelity error calculated is of some arbitary scale. This
+            factor can be used to scale the fidelity error such that it may
+            represent some physical measure
+            If None is given then it is caculated as 1/2N, where N
+            is the dimension of the drift, when the Dynamics are initialised.
+        """
+        self.target = parent.target
+        self.num_ctrls = parent.num_ctrls
+        self.num_tslots = parent.num_tslots
+        self.tslotcomp = parent.tslotcomp
+        if not scale_factor:
+            self.scale_factor = 1.0 / (2.0*self.target.shape[0])
+        else:
+            self.scale_factor = scale_factor
+
+
+    def costs(self):
+        n_ctrls = self.num_ctrls
+        n_ts = self.num_tslots
+        final = self.tslotcomp.state_T(n_ts)
+        evo_f_diff = self.target - final
+
+        fid_err = self.scale_factor*np.real((evo_f_diff.dag()*evo_f_diff).tr())
+        if np.isnan(fid_err):
+            fid_err = np.Inf
+
+        # create n_ts x n_ctrls zero array for grad start point
+        grad = np.zeros([n_ts, n_ctrls])
+        # loop through all ctrl timeslots calculating gradients
+        for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_onwd:
+            for j in range(n_ctrls):
+                g = -2*self.scale_factor*np.real(
+                    (evo_f_diff.dag()*onwd_evo*dU[j]*fwd_evo).tr())
+                if np.isnan(g):
+                    g = np.Inf
+                grad[k, j] = g
+        return grad
+
+
 
 
 
