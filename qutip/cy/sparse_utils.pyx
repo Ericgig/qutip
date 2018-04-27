@@ -271,7 +271,7 @@ cpdef cnp.ndarray[complex, ndim=1, mode='c'] _csr_get_diag(complex[::1] data,
 
     cdef sp_uint row, jj
     cdef sp_int num_rows = ptr.shape[0]-1
-    cdef sp_int abs_k = abs(k)
+    cdef sp_int abs_k = abs(<long>k)
     cdef sp_int start, stop
     cdef cnp.ndarray[complex, ndim=1, mode='c'] out = np.zeros(num_rows-abs_k, dtype=complex)
 

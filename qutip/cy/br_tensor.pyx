@@ -49,17 +49,17 @@ include "sparse_routines.pxi"
 @cython.wraparound(False)
 def _br_term(complex[::1,:] A, complex[::1,:] evecs,
                 double[:,::1] skew, double dw_min, object spectral,
-                sp_uint nrows, int use_secular, double sec_cutoff,
+                int nrows, int use_secular, double sec_cutoff,
                 double atol):
 
     cdef size_t kk
     cdef size_t I, J # vector index variables
-    cdef sp_int[2] ab, cd #matrix indexing variables
+    cdef int[2] ab, cd #matrix indexing variables
     cdef complex[::1,:] A_eig = dense_to_eigbasis(A, evecs, nrows, atol)
     cdef complex elem, ac_elem, bd_elem
     cdef vector[sp_int] coo_rows, coo_cols
     cdef vector[complex] coo_data
-    cdef sp_uint nnz
+    cdef unsigned int nnz
     cdef COO_Matrix coo
     cdef CSR_Matrix csr
 
@@ -154,8 +154,8 @@ def bloch_redfield_tensor(object H, list a_ops, spectra_cb=None,
      """
      cdef list _a_ops
      cdef object a, cop, L
-     cdef sp_int K, kk
-     cdef sp_int nrows = H.shape[0]
+     cdef int K, kk
+     cdef int nrows = H.shape[0]
      cdef list op_dims = H.dims
      cdef list sop_dims = [[op_dims[0], op_dims[0]], [op_dims[1], op_dims[1]]]
      cdef list ekets, ket_dims

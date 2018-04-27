@@ -54,14 +54,14 @@ cdef extern from "<complex>" namespace "std" nogil:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef complex[::1,:] farray_alloc(sp_int nrows):
+cdef complex[::1,:] farray_alloc(int nrows):
     """
     Allocate a complex zero array in fortran-order for a
     square matrix.
 
     Parameters
     ----------
-    nrows : sp_int
+    nrows : int
         Number of rows and columns in the matrix.
 
     Returns
@@ -95,15 +95,15 @@ cpdef void dense_add_mult(complex[::1,:] A,
         Coefficient in front of B.
 
     """
-    cdef sp_int nrows2 = A.shape[0]**2
-    cdef sp_int inc = 1
+    cdef int nrows2 = A.shape[0]**2
+    cdef int inc = 1
     zaxpy(&nrows2, &alpha, &B[0,0], &inc, &A[0,0], &inc)
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void ZHEEVR(complex[::1,:] H, double * eigvals,
-                    complex[::1,:] Z, sp_uint nrows):
+                    complex[::1,:] Z, int nrows):
     """
     Computes the eigenvalues and vectors of a dense Hermitian matrix.
     Eigenvectors are returned in Z.
@@ -123,15 +123,15 @@ cdef void ZHEEVR(complex[::1,:] H, double * eigvals,
     cdef char rnge = b'A'
     cdef char uplo = b'L'
     cdef double vl=1, vu=1, abstol=0
-    cdef sp_int il=1, iu=1
-    cdef sp_int lwork = 18 * nrows
-    cdef sp_int lrwork = 24*nrows, liwork = 10*nrows
-    cdef sp_int info=0, M=0
+    cdef int il=1, iu=1
+    cdef int lwork = 18 * nrows
+    cdef int lrwork = 24*nrows, liwork = 10*nrows
+    cdef int info=0, M=0
     #These nee to be freed at end
-    cdef sp_int * isuppz = <sp_int *>PyDataMem_NEW((2*nrows) * sizeof(sp_int))
+    cdef int * isuppz = <int *>PyDataMem_NEW((2*nrows) * sizeof(int))
     cdef complex * work = <complex *>PyDataMem_NEW(lwork * sizeof(complex))
     cdef double * rwork = <double *>PyDataMem_NEW((24*nrows) * sizeof(double))
-    cdef sp_int * iwork = <sp_int *>PyDataMem_NEW((10*nrows) * sizeof(sp_int))
+    cdef int * iwork = <int *>PyDataMem_NEW((10*nrows) * sizeof(int))
 
     zheevr(&jobz, &rnge, &uplo, &nrows, &H[0,0], &nrows, &vl, &vu, &il, &iu, &abstol,
            &M, eigvals, &Z[0,0], &nrows, isuppz, work, &lwork,
@@ -150,11 +150,11 @@ cdef void ZHEEVR(complex[::1,:] H, double * eigvals,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def liou_from_diag_ham(double[::1] diags):
-    cdef sp_uint nrows = diags.shape[0]
+    cdef int nrows = diags.shape[0]
     cdef np.ndarray[complex, ndim=1, mode='c'] data = np.empty(nrows**2, dtype=complex)
-    cdef np.ndarray[sp_int, ndim=1, mode='c'] ind = np.empty(nrows**2, dtype=np.int32)
-    cdef np.ndarray[sp_int, ndim=1, mode='c'] ptr = np.empty(nrows**2+1, dtype=np.int32)
-    cdef sp_uint idx, nnz = 0
+    cdef np.ndarray[int, ndim=1, mode='c'] ind = np.empty(nrows**2, dtype=np.int32)
+    cdef np.ndarray[int, ndim=1, mode='c'] ptr = np.empty(nrows**2+1, dtype=np.int32)
+    cdef unsigned int idx, nnz = 0
     cdef size_t ii, jj
     cdef double complex val1, val2, ans
 
@@ -179,7 +179,7 @@ def liou_from_diag_ham(double[::1] diags):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void diag_liou_mult(double * diags, double complex * vec,
-                        double complex * out, sp_uint nrows) nogil:
+                        double complex * out, unsigned int nrows) nogil:
     """
     Multiplies a Liouvillian constructed from a diagonal Hamiltonian
     onto a vectorized density matrix.
@@ -195,7 +195,7 @@ cdef void diag_liou_mult(double * diags, double complex * vec,
     nrows : int
         Dimension of Hamiltonian.
     """
-    cdef sp_uint nnz = 0
+    cdef unsigned int nnz = 0
     cdef size_t ii, jj
     cdef double complex val, ans
 
@@ -210,8 +210,8 @@ cdef void diag_liou_mult(double * diags, double complex * vec,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef double complex * ZGEMM(double complex * A, double complex * B,
-         sp_int Arows, sp_int Acols, sp_int Brows, sp_int Bcols,
-         sp_int transA = 0, sp_int transB = 0,
+         int Arows, int Acols, int Brows, int Bcols,
+         int transA = 0, int transB = 0,
          double complex alpha = 1, double complex beta = 0):
     cdef double complex * C = <double complex *>PyDataMem_NEW((Acols*Brows)*sizeof(double complex))
     cdef char tA, tB
@@ -239,10 +239,10 @@ cdef double complex * ZGEMM(double complex * A, double complex * B,
 @cython.wraparound(False)
 cdef void ZGEMV(double complex * A, double complex * vec,
                         double complex * out,
-                       sp_int Arows, sp_int Acols, sp_int transA = 0,
+                       int Arows, int Acols, int transA = 0,
                        double complex alpha=1, double complex beta=1):
     cdef char tA
-    cdef sp_int idx = 1, idy = 1
+    cdef int idx = 1, idy = 1
     if transA == 0:
         tA = b'N'
     elif transA == 1:
@@ -258,9 +258,9 @@ cdef void ZGEMV(double complex * A, double complex * vec,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef complex[::1,:] dense_to_eigbasis(complex[::1,:] A, complex[::1,:] evecs,
-                                    sp_uint nrows,
+                                    unsigned int nrows,
                                     double atol):
-    cdef sp_int kk
+    cdef int kk
     cdef double complex * temp1 = ZGEMM(&A[0,0], &evecs[0,0],
                                        nrows, nrows, nrows, nrows, 0, 0)
     cdef double complex * eig_mat = ZGEMM(&evecs[0,0], temp1,
@@ -280,7 +280,7 @@ cdef complex[::1,:] dense_to_eigbasis(complex[::1,:] A, complex[::1,:] evecs,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef double complex * vec_to_eigbasis(complex[::1] vec, complex[::1,:] evecs,
-                                    sp_uint nrows):
+                                    unsigned int nrows):
 
     cdef size_t ii, jj
     cdef double complex * temp1 = ZGEMM(&vec[0], &evecs[0,0],
@@ -295,7 +295,7 @@ cdef double complex * vec_to_eigbasis(complex[::1] vec, complex[::1,:] evecs,
 @cython.wraparound(False)
 cdef np.ndarray[complex, ndim=1, mode='c'] vec_to_fockbasis(double complex * eig_vec,
                                                 complex[::1,:] evecs,
-                                                sp_uint nrows):
+                                                unsigned int nrows):
 
     cdef size_t ii, jj
     cdef np.npy_intp nrows2 = nrows**2
@@ -314,7 +314,7 @@ cdef np.ndarray[complex, ndim=1, mode='c'] vec_to_fockbasis(double complex * eig
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef cop_super_term(complex[::1,:] cop, complex[::1,:] evecs,
-                     double complex alpha, sp_uint nrows,
+                     double complex alpha, unsigned int nrows,
                      double atol):
     cdef size_t kk
     cdef CSR_Matrix mat1, mat2, mat3, mat4, mat5
@@ -380,7 +380,7 @@ cdef void cop_super_mult(complex[::1,:] cop, complex[::1,:] evecs,
                      double complex * vec,
                      double complex alpha,
                      double complex * out,
-                     sp_uint nrows,
+                     unsigned int nrows,
                      double atol):
     cdef size_t kk
     cdef CSR_Matrix mat1, mat2, mat3, mat4
@@ -464,7 +464,7 @@ cdef void cop_super_mult(complex[::1,:] cop, complex[::1,:] evecs,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-cdef inline void vec2mat_index(sp_int nrows, sp_int index, sp_int[2] out) nogil:
+cdef inline void vec2mat_index(int nrows, int index, int[2] out) nogil:
     out[1] = index // nrows
     out[0] = index - nrows * out[1]
 
@@ -473,7 +473,7 @@ cdef inline void vec2mat_index(sp_int nrows, sp_int index, sp_int[2] out) nogil:
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef double skew_and_dwmin(double * evals, double[:,::1] skew,
-                                sp_uint nrows) nogil:
+                                unsigned int nrows) nogil:
     cdef double diff
     dw_min = DBL_MAX
     cdef size_t ii, jj
@@ -491,17 +491,17 @@ cdef double skew_and_dwmin(double * evals, double[:,::1] skew,
 cdef void br_term_mult(double t, complex[::1,:] A, complex[::1,:] evecs,
                 double[:,::1] skew, double dw_min, spec_func spectral,
                 double complex * vec, double complex * out,
-                sp_uint nrows, int use_secular, double sec_cutoff,
+                unsigned int nrows, int use_secular, double sec_cutoff,
                 double atol):
 
     cdef size_t kk
-    cdef size_t I, J # vector index variables
-    cdef sp_int[2] ab, cd #matrix indexing variables
+    cdef sp_int I, J # vector index variables
+    cdef int[2] ab, cd #matrix indexing variables
     cdef complex[::1,:] A_eig = dense_to_eigbasis(A, evecs, nrows, atol)
     cdef complex elem, ac_elem, bd_elem
     cdef vector[sp_int] coo_rows, coo_cols
     cdef vector[complex] coo_data
-    cdef sp_uint nnz
+    cdef unsigned int nnz
     cdef COO_Matrix coo
     cdef CSR_Matrix csr
     cdef complex[:,::1] non_sec_mat
@@ -552,7 +552,7 @@ cdef void br_term_mult(double t, complex[::1,:] A, complex[::1,:] evecs,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void sparse_ZHEEVR(complex[::1,:] H, double * eigvals,
-                    CSR_Matrix * evecs, sp_int nrows, double atol):
+                    CSR_Matrix * evecs, int nrows, double atol):
     """
     Computes the eigenvalues and vectors of a dense Hermitian matrix.
     Eigenvectors are returned in Z.
@@ -573,15 +573,15 @@ cdef void sparse_ZHEEVR(complex[::1,:] H, double * eigvals,
     cdef char rnge = b'A'
     cdef char uplo = b'L'
     cdef double vl=1, vu=1, abstol=0
-    cdef sp_int il=1, iu=1
-    cdef sp_int lwork = 18 * nrows
-    cdef sp_int lrwork = 24*nrows, liwork = 10*nrows
-    cdef sp_int info=0, M=0
+    cdef int il=1, iu=1
+    cdef int lwork = 18 * nrows
+    cdef int lrwork = 24*nrows, liwork = 10*nrows
+    cdef int info=0, M=0
     #These nee to be freed at end
-    cdef sp_int * isuppz = <sp_int *>PyDataMem_NEW((2*nrows) * sizeof(sp_int))
+    cdef int * isuppz = <int *>PyDataMem_NEW((2*nrows) * sizeof(int))
     cdef complex * work = <complex *>PyDataMem_NEW(lwork * sizeof(complex))
     cdef double * rwork = <double *>PyDataMem_NEW((24*nrows) * sizeof(double))
-    cdef sp_int * iwork = <sp_int *>PyDataMem_NEW((10*nrows) * sizeof(sp_int))
+    cdef int * iwork = <int *>PyDataMem_NEW((10*nrows) * sizeof(int))
     cdef complex[:,::1] cZ = <complex[:nrows, :nrows]><complex *>PyDataMem_NEW(nrows**2 * sizeof(complex))
     cdef complex[::1,:] Z = cZ.T
 
@@ -608,7 +608,7 @@ cdef void sparse_ZHEEVR(complex[::1,:] H, double * eigvals,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef CSR_Matrix sparse_to_eigbasis(complex[::1] Adata, sp_int[::1] Aind, sp_int[::1] Aptr,
-                                CSR_Matrix * evecs, sp_uint nrows):
+                                CSR_Matrix * evecs, unsigned int nrows):
     cdef CSR_Matrix A, B, C, A_eig
     A.data = &Adata[0]
     A.indices = &Aind[0]
