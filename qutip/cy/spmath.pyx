@@ -32,7 +32,6 @@
 ###############################################################################
 import numpy as np
 import qutip.settings as qset
-from qutip.cy.sparse_structs cimport sp_int, sp_uint
 cimport numpy as cnp
 cimport cython
 from libcpp cimport bool
@@ -44,6 +43,11 @@ cdef extern from "<complex>" namespace "std" nogil:
     double         abs(double complex)
 
 include "sparse_routines.pxi"
+cdef sp_int test_value = 2**32+1
+if test_value == 1: #int32
+    sp_type = np.int32
+else:
+    sp_type = np.int64
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -203,13 +207,13 @@ cdef sp_int _zcsr_add_core(double complex * Adata, sp_int * Aind, sp_int * Aptr,
 def zcsr_mult(object A, object B, int sorted = 1):
 
     cdef complex [::1] dataA = A.data
-    cdef sp_int[::1] indsA = A.indices
-    cdef sp_int[::1] indptrA = A.indptr
+    cdef sp_int[::1] indsA = A.indices.astype(sp_type)
+    cdef sp_int[::1] indptrA = A.indptr.astype(sp_type)
     cdef sp_int Annz = A.nnz
 
     cdef complex [::1] dataB = B.data
-    cdef sp_int[::1] indsB = B.indices
-    cdef sp_int[::1] indptrB = B.indptr
+    cdef sp_int[::1] indsB = B.indices.astype(sp_type)
+    cdef sp_int[::1] indptrB = B.indptr.astype(sp_type)
     cdef sp_int Bnnz = B.nnz
 
     cdef sp_int nrows = A.shape[0]
@@ -345,14 +349,14 @@ def zcsr_kron(object A, object B):
     sparse matrices in CSR format.
     """
     cdef complex[::1] dataA = A.data
-    cdef sp_int[::1] indsA = A.indices
-    cdef sp_int[::1] indptrA = A.indptr
+    cdef sp_int[::1] indsA = A.indices.astype(sp_type)
+    cdef sp_int[::1] indptrA = A.indptr.astype(sp_type)
     cdef sp_int rowsA = A.shape[0]
     cdef sp_int colsA = A.shape[1]
 
     cdef complex[::1] dataB = B.data
-    cdef sp_int[::1] indsB = B.indices
-    cdef sp_int[::1] indptrB = B.indptr
+    cdef sp_int[::1] indsB = B.indices.astype(sp_type)
+    cdef sp_int[::1] indptrB = B.indptr.astype(sp_type)
     cdef sp_int rowsB = B.shape[0]
     cdef sp_int colsB = B.shape[1]
 
@@ -435,8 +439,8 @@ def zcsr_transpose(object A):
     Transpose of a sparse matrix in CSR format.
     """
     cdef complex[::1] data = A.data
-    cdef sp_int[::1] ind = A.indices
-    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int[::1] ind = A.indices.astype(sp_type)
+    cdef sp_int[::1] ptr = A.indptr.astype(sp_type)
     cdef sp_int nrows = A.shape[0]
     cdef sp_int ncols = A.shape[1]
 
@@ -497,8 +501,8 @@ def zcsr_adjoint(object A):
     Adjoint of a sparse matrix in CSR format.
     """
     cdef complex[::1] data = A.data
-    cdef sp_int[::1] ind = A.indices
-    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int[::1] ind = A.indices.astype(sp_type)
+    cdef sp_int[::1] ptr = A.indptr.astype(sp_type)
     cdef sp_int nrows = A.shape[0]
     cdef sp_int ncols = A.shape[1]
 
@@ -581,8 +585,8 @@ def zcsr_isherm(object A not None, double tol = qset.atol):
     only need a temp array of output indptr.
     """
     cdef complex[::1] data = A.data
-    cdef sp_int[::1] ind = A.indices
-    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int[::1] ind = A.indices.astype(sp_type)
+    cdef sp_int[::1] ptr = A.indptr.astype(sp_type)
     cdef sp_int nrows = A.shape[0]
     cdef sp_int ncols = A.shape[1]
 
@@ -639,8 +643,8 @@ cdef _safe_multiply(sp_int A, sp_int B):
 @cython.wraparound(False)
 def zcsr_trace(object A, bool isherm):
     cdef complex[::1] data = A.data
-    cdef sp_int[::1] ind = A.indices
-    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int[::1] ind = A.indices.astype(sp_type)
+    cdef sp_int[::1] ptr = A.indptr.astype(sp_type)
     cdef sp_int nrows = ptr.shape[0]-1
     cdef sp_uint ii, jj
     cdef complex tr = 0
@@ -670,8 +674,8 @@ def zcsr_proj(object A, bool is_ket=1):
     directly.  Also, does not need a temp matrix.
     """
     cdef complex[::1] data = A.data
-    cdef sp_int[::1] ind = A.indices
-    cdef sp_int[::1] ptr = A.indptr
+    cdef sp_int[::1] ind = A.indices.astype(sp_type)
+    cdef sp_int[::1] ptr = A.indptr.astype(sp_type)
     cdef sp_int nrows
     cdef sp_int nnz
 
@@ -732,12 +736,12 @@ def zcsr_inner(object A, object B, bool bra_ket):
     or bra-ket vectors in sparse CSR format.
     """
     cdef complex[::1] a_data = A.data
-    cdef sp_int[::1] a_ind = A.indices
-    cdef sp_int[::1] a_ptr = A.indptr
+    cdef sp_int[::1] a_ind = A.indices.astype(sp_type)
+    cdef sp_int[::1] a_ptr = A.indptr.astype(sp_type)
 
     cdef complex[::1] b_data = B.data
-    cdef sp_int[::1] b_ind = B.indices
-    cdef sp_int[::1] b_ptr = B.indptr
+    cdef sp_int[::1] b_ind = B.indices.astype(sp_type)
+    cdef sp_int[::1] b_ptr = B.indptr.astype(sp_type)
     cdef sp_int nrows = B.shape[0]
 
     cdef double complex inner = 0

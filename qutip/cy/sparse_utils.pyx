@@ -35,7 +35,7 @@ from qutip.fastsparse import fast_csr_matrix
 cimport numpy as cnp
 from libc.math cimport abs, fabs, sqrt
 from libcpp cimport bool
-from qutip.cy.sparse_structs cimport sp_int, sp_uint
+include "sparse_type.pxi"
 cimport cython
 cnp.import_array()
 

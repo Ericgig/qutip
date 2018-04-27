@@ -31,6 +31,7 @@ Operating System :: Microsoft :: Windows
 # import statements
 import os
 import sys
+from shutil import copyfile
 # The following is required to get unit tests up and running.
 # If the user doesn't have, then that's OK, we'll just skip unit tests.
 try:
@@ -147,10 +148,21 @@ if os.path.exists('qutip/version.py'):
 
 write_version_py()
 
+#
+if "--sparce64" in sys.argv:
+    sys.argv.remove("--sparce64")
+    #copyfile('qutip/cy/sparce_type64.pyx', 'qutip/cy/sparce_type.pyx')
+    copyfile('qutip/cy/sparce_type64.pxi', 'qutip/cy/sparse_type.pxi')
+    sparseflag = ["-DSPARCE64"]
+else:
+    #copyfile('qutip/cy/sparce_type32.pyx', 'qutip/cy/sparce_type.pyx')
+    copyfile('qutip/cy/sparce_type32.pxi', 'qutip/cy/sparse_type.pxi')
+    sparseflag = []
+
 # Add Cython extensions here
 cy_exts = ['spmatfuncs', 'stochastic', 'sparse_utils', 'graph_utils', 'interpolate',
         'spmath', 'heom', 'math', 'spconvert', 'ptrace', 'testing', 'brtools',
-        'brtools_testing', 'br_tensor', 'piqs']
+        'brtools_testing', 'br_tensor', 'piqs', 'sparce_type']
 
 # If on Win and Python version >= 3.5 and not in MSYS2 (i.e. Visual studio compile)
 if (sys.platform == 'win32' and int(str(sys.version_info[0])+str(sys.version_info[1])) >= 35
@@ -166,7 +178,7 @@ for ext in cy_exts:
     _mod = Extension('qutip.cy.'+ext,
             sources = ['qutip/cy/'+ext+'.pyx', 'qutip/cy/src/zspmv.cpp'],
             include_dirs = [np.get_include()],
-            extra_compile_args=_compiler_flags,
+            extra_compile_args=_compiler_flags+sparseflag,
             extra_link_args=[],
             language='c++')
     EXT_MODULES.append(_mod)
@@ -207,7 +219,7 @@ if "--with-openmp" in sys.argv:
             extra_link_args=[],
             language='c++')
     EXT_MODULES.append(_mod)
-    
+
     # Add brtools_omp
     _mod = Extension('qutip.cy.openmp.br_omp',
             sources = ['qutip/cy/openmp/br_omp.pyx'],
@@ -216,7 +228,7 @@ if "--with-openmp" in sys.argv:
             extra_link_args=[],
             language='c++')
     EXT_MODULES.append(_mod)
-    
+
     # Add omp_sparse_utils
     _mod = Extension('qutip.cy.openmp.omp_sparse_utils',
             sources = ['qutip/cy/openmp/omp_sparse_utils.pyx'],

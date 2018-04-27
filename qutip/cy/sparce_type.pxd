@@ -30,9 +30,14 @@
 #    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
+import numpy as np
+cimport numpy as cnp
 
-from qutip.cy.sparse_structs cimport CSR_Matrix
-include "sparse_type.pxi"
+cdef object sp_type = np.int64
 
-cdef void fdense2D_to_CSR(complex[::1, :] mat, CSR_Matrix * out,
-                                sp_uint nrows, sp_uint ncols)
+ctypedef cnp.int64_t sp_int
+ctypedef cnp.uint64_t sp_uint
+
+cdef void open_scipy_for_CSR(object A, sp_int[::1] ind, sp_int[::1] ptr)
+
+cdef void open_scipy_for_COO(object A, sp_int[::1] rows, sp_int[::1] cols)

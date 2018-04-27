@@ -32,7 +32,7 @@
 ###############################################################################
 
 from qutip.cy.sparse_structs cimport CSR_Matrix
-from qutip.cy.sparse_structs cimport sp_int, sp_uint
+include "sparse_type.pxi"
 
 cdef void _zcsr_add(CSR_Matrix * A, CSR_Matrix * B,
                     CSR_Matrix * C, double complex alpha)

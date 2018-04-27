@@ -32,8 +32,13 @@
 //#############################################################################
 #include <complex>
 
+#ifdef SPARCE64
 typedef long sp_int;
 typedef unsigned long sp_uint;
+#else
+typedef int sp_int;
+typedef unsigned int sp_uint;
+#endif
 
 #ifdef __GNUC__
 void zspmvpy(const std::complex<double> * __restrict__ data, const sp_int * __restrict__ ind,

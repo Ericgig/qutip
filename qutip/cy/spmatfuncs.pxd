@@ -33,7 +33,7 @@
 
 cimport numpy as cnp
 cimport cython
-from qutip.cy.sparse_structs cimport sp_int, sp_uint
+include "sparse_type.pxi"
 from libcpp cimport bool
 
 include "parameters.pxi"

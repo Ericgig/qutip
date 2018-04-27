@@ -42,9 +42,9 @@ from libc.math cimport fabs, fmin
 from libc.float cimport DBL_MAX
 from libcpp.vector cimport vector
 from qutip.cy.sparse_structs cimport (CSR_Matrix, COO_Matrix)
-from qutip.cy.sparse_structs cimport sp_int, sp_uint
 cimport numpy as cnp
 
+include "sparse_type.pxi"
 include "sparse_routines.pxi"
 
 cdef extern from "<complex>" namespace "std" nogil:

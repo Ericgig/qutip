@@ -34,7 +34,6 @@ import numpy as np
 cimport numpy as cnp
 cimport cython
 cimport libc.math
-from qutip.cy.sparse_structs cimport sp_int, sp_uint
 from libcpp cimport bool
 
 cdef extern from "src/zspmv.hpp" nogil:

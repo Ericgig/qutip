@@ -32,7 +32,6 @@
 ###############################################################################
 import numpy as np
 from qutip.fastsparse import fast_csr_matrix
-from qutip.cy.sparse_structs cimport sp_int, sp_uint
 cimport numpy as cnp
 cimport cython
 from libc.stdlib cimport div, malloc, free

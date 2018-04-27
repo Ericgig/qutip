@@ -37,12 +37,12 @@ from qutip.qobj import Qobj
 cimport numpy as np
 cimport cython
 from libcpp cimport bool
-from qutip.cy.sparse_structs cimport sp_int, sp_uint
 from qutip.cy.brtools cimport (vec2mat_index, dense_to_eigbasis,
                               ZHEEVR, skew_and_dwmin)
 from qutip.cy.brtools import (liou_from_diag_ham, cop_super_term)
 from libc.math cimport fabs
 
+include "sparse_type.pxi"
 include "sparse_routines.pxi"
 
 @cython.boundscheck(False)

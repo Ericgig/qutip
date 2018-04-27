@@ -33,10 +33,10 @@
 import numpy as np
 import scipy.sparse as sp
 from qutip.fastsparse import fast_csr_matrix
-from qutip.cy.sparse_structs cimport sp_int, sp_uint
 cimport numpy as cnp
 cimport cython
 
+include "sparse_type.pxi"
 include "sparse_routines.pxi"
 
 

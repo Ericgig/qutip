@@ -32,8 +32,13 @@
 //#############################################################################
 #include <complex>
 
+#ifdef SPARCE64
 typedef long sp_int;
 typedef unsigned long sp_uint;
+#else
+typedef int sp_int;
+typedef unsigned int sp_uint;
+#endif
 
 #if defined(__GNUC__) && defined(__SSE3__) // Using GCC or CLANG and SSE3
 #include <pmmintrin.h>

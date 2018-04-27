@@ -1,0 +1,23 @@
+
+Error compiling Cython file:
+------------------------------------------------------------
+...
+    double         real(double complex)
+    double         imag(double complex)
+    double         abs(double complex)
+
+include "sparse_routines.pxi"
+cdef sp_int test_value = 2**32+1
+           ^
+------------------------------------------------------------
+
+qutip/cy/spmath.pyx:46:12: 'test_value' redeclared 
+warning: qutip/cy/spmath.pyx:46:12: cdef variable 'test_value' declared after it is used
+Traceback (most recent call last):
+  File "setup.py", line 257, in <module>
+    ext_modules = cythonize(EXT_MODULES),
+  File "/home/eric/anaconda3/lib/python3.6/site-packages/Cython/Build/Dependencies.py", line 1027, in cythonize
+    cythonize_one(*args)
+  File "/home/eric/anaconda3/lib/python3.6/site-packages/Cython/Build/Dependencies.py", line 1149, in cythonize_one
+    raise CompileError(None, pyx_file)
+Cython.Compiler.Errors.CompileError: qutip/cy/spmath.pyx

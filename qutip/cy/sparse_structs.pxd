@@ -31,8 +31,7 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 cimport numpy as np
-ctypedef np.int64_t sp_int
-ctypedef np.uint64_t sp_uint
+include "sparse_type.pxi"
 
 cdef struct _csr_mat:
     double complex * data
