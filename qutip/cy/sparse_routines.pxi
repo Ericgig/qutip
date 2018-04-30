@@ -38,7 +38,6 @@ cimport cython
 from libcpp.algorithm cimport sort
 from libcpp.vector cimport vector
 from qutip.cy.sparse_structs cimport CSR_Matrix, COO_Matrix
-#include "sparse_type.pxi"
 np.import_array()
 
 cdef class scipy2sparce:
