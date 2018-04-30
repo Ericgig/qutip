@@ -41,11 +41,31 @@ from qutip.cy.sparse_structs cimport CSR_Matrix, COO_Matrix
 #include "sparse_type.pxi"
 np.import_array()
 
-cdef sp_int test_value_sr = 2**32+1
-if test_value_sr == 1: #int32
+cdef class scipy2sparce:
+    cdef sp_int[::1] indices(self, object A):
+        return A.indices.astype(sp_type)
+
+    cdef sp_int[::1] indptr(self, object A):
+        return A.indptr.astype(sp_type)
+
+cdef class scipy2sparce32(scipy2sparce):
+    cdef sp_int[::1] indices_32(self, object A):
+        return A.indices
+
+    cdef sp_int[::1] indptr_32(self, object A):
+        return A.indptr
+
+cdef scipy2sparce s2s
+cdef int sp_type_npy
+cdef sp_int test_value = 2**32+1
+if test_value == 1: #int32
     sp_type = np.int32
+    sp_type_npy = np.NPY_INT32
+    s2s = scipy2sparce32()
 else:
     sp_type = np.int64
+    sp_type_npy = np.NPY_INT64
+    s2s = scipy2sparce()
 
 cdef extern from "numpy/arrayobject.h" nogil:
     void PyArray_ENABLEFLAGS(np.ndarray arr, int flags)
@@ -344,10 +364,10 @@ cdef object CSR_to_scipy(CSR_Matrix * mat):
         _data = np.PyArray_SimpleNewFromData(1, &dat_len, np.NPY_COMPLEX128, mat.data)
         PyArray_ENABLEFLAGS(_data, np.NPY_OWNDATA)
 
-        _ind = np.PyArray_SimpleNewFromData(1, &dat_len, sp_type, mat.indices)
+        _ind = np.PyArray_SimpleNewFromData(1, &dat_len, sp_type_npy, mat.indices)
         PyArray_ENABLEFLAGS(_ind, np.NPY_OWNDATA)
 
-        _ptr = np.PyArray_SimpleNewFromData(1, &ptr_len, sp_type, mat.indptr)#np.NPY_INT32
+        _ptr = np.PyArray_SimpleNewFromData(1, &ptr_len, sp_type_npy, mat.indptr)#np.NPY_INT32
         PyArray_ENABLEFLAGS(_ptr, np.NPY_OWNDATA)
         mat.numpy_lock = 1
         return fast_csr_matrix((_data, _ind, _ptr), shape=(mat.nrows,mat.ncols))
@@ -380,10 +400,10 @@ cdef object COO_to_scipy(COO_Matrix * mat):
         _data = np.PyArray_SimpleNewFromData(1, &dat_len, np.NPY_COMPLEX128, mat.data)
         PyArray_ENABLEFLAGS(_data, np.NPY_OWNDATA)
 
-        _row = np.PyArray_SimpleNewFromData(1, &dat_len, sp_type, mat.rows)
+        _row = np.PyArray_SimpleNewFromData(1, &dat_len, sp_type_npy, mat.rows)
         PyArray_ENABLEFLAGS(_row, np.NPY_OWNDATA)
 
-        _col = np.PyArray_SimpleNewFromData(1, &dat_len, sp_type, mat.cols)
+        _col = np.PyArray_SimpleNewFromData(1, &dat_len, sp_type_npy, mat.cols)
         PyArray_ENABLEFLAGS(_col, np.NPY_OWNDATA)
         mat.numpy_lock = 1
         return coo_matrix((_data, (_row, _col)), shape=(mat.nrows,mat.ncols))
@@ -563,8 +583,8 @@ cdef CSR_Matrix CSR_from_scipy(object A):
     CSR_Matrix struct.
     """
     cdef complex[::1] data = A.data
-    cdef sp_int[::1] ind = A.indices.astype(sp_type)
-    cdef sp_int[::1] ptr = A.indptr.astype(sp_type)
+    cdef sp_int[::1] ind = s2s.indices(A)
+    cdef sp_int[::1] ptr = s2s.indptr(A)
     cdef sp_int nrows = A.shape[0]
     cdef sp_int ncols = A.shape[1]
     cdef sp_int nnz = ptr[nrows]

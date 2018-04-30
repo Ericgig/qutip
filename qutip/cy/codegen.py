@@ -35,6 +35,7 @@ import numpy as np
 from qutip.interpolate import Cubic_Spline
 _cython_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 _include_string = "'"+_cython_path+"/complex_math.pxi'"
+_include_string_type = "'"+_cython_path+"/sparse_type.pxi'"
 __all__ = ['Codegen']
 
 
@@ -45,7 +46,7 @@ class Codegen():
     def __init__(self, h_terms=None, h_tdterms=None, h_td_inds=None,
                  args=None, c_terms=None, c_tdterms=[], c_td_inds=None,
                  c_td_splines=[], c_td_spline_flags=[],
-                 type='me', config=None, 
+                 type='me', config=None,
                  use_openmp=False, omp_components=None, omp_threads=None):
         import sys
         import os
@@ -72,7 +73,7 @@ class Codegen():
         self.code = []  # strings to be written to file
         self.level = 0  # indent level
         self.config = config
-        
+
         #openmp settings
         self.use_openmp = use_openmp
         self.omp_components = omp_components
@@ -146,7 +147,7 @@ class Codegen():
                     (value.dtype.name, name)
             else:
                 if isinstance(value, (int, np.int32, np.int64)):
-                    kind = 'int'
+                    kind = 'sp_int'
                 elif isinstance(value, (float, np.float32, np.float64)):
                     kind = 'float'
                 elif isinstance(value, (complex, np.complex128)):
@@ -164,24 +165,24 @@ class Codegen():
         for k in self.h_terms:
             input_vars += (",\n        " +
                            "complex[::1] data%d," % k +
-                           "int[::1] idx%d," % k +
-                           "int[::1] ptr%d" % k)
-                           
+                           "sp_int[::1] idx%d," % k +
+                           "sp_int[::1] ptr%d" % k)
+
         kk = len(self.h_tdterms)
         for jj in range(len(self.c_td_splines)):
             input_vars += (",\n        " +
                            "complex[::1] data%d," % (jj+kk) +
-                           "int[::1] idx%d," % (jj+kk) +
-                           "int[::1] ptr%d" % (jj+kk))
-            
+                           "sp_int[::1] idx%d," % (jj+kk) +
+                           "sp_int[::1] ptr%d" % (jj+kk))
+
         if any(self.c_tdterms):
             for k in range(len(self.h_terms),
                            len(self.h_terms) + len(self.c_tdterms)):
                 input_vars += (",\n        " +
                                "complex[::1] data%d," % k +
-                               "int[::1] idx%d," % k +
-                               "int[::1] ptr%d" % k)
-        
+                               "sp_int[::1] idx%d," % k +
+                               "sp_int[::1] ptr%d" % k)
+
         #Add array for each Cubic_Spline term
         spline = 0
         for htd in (self.h_tdterms+self.c_td_splines):
@@ -193,7 +194,7 @@ class Codegen():
                     input_vars += (",\n        " +
                                    "complex[::1] spline%d" % spline)
                 spline += 1
-        
+
         input_vars += self._get_arg_str(self.args)
         func_end = "):"
         return [func_name + input_vars + func_end]
@@ -205,7 +206,7 @@ class Codegen():
         """
         func_name = "def col_spmv("
         input_vars = ("int which, double t, complex[::1] " +
-                      "data, int[::1] idx, int[::1] " +
+                      "data, sp_int[::1] idx, sp_int[::1] " +
                       "ptr, complex[::1] vec")
         input_vars += self._get_arg_str(self.args)
         func_end = "):"
@@ -218,7 +219,7 @@ class Codegen():
         """
         func_name = "def col_expect("
         input_vars = ("int which, double t, complex[::1] " +
-                      "data, int[::1] idx, int[::1] " +
+                      "data, sp_int[::1] idx, sp_int[::1] " +
                       "ptr, complex[::1] vec")
         input_vars += self._get_arg_str(self.args)
         func_end = "):"
@@ -226,7 +227,7 @@ class Codegen():
 
     def func_vars(self):
         """Writes the variables and their types & spmv parts"""
-        func_vars = ["", 'cdef size_t row', 'cdef unsigned int num_rows = vec.shape[0]',
+        func_vars = ["", 'cdef size_t row', 'cdef sp_uint num_rows = vec.shape[0]',
                      "cdef double complex * " +
                      'out = <complex *>PyDataMem_NEW_ZEROED(num_rows,sizeof(complex))']
         func_vars.append(" ")
@@ -259,7 +260,7 @@ class Codegen():
                     if self.use_openmp and self.omp_components[ht]:
                         str_out = "spmvpy_openmp(&data%s[0], &idx%s[0], &ptr%s[0], &vec[0], 1.0, out, num_rows, %s)" % (
                             ht, ht, ht, self.omp_threads)
-                    else:    
+                    else:
                         str_out = "spmvpy(&data%s[0], &idx%s[0], &ptr%s[0], &vec[0], 1.0, out, num_rows)" % (
                                 ht, ht, ht)
                 else:
@@ -302,7 +303,7 @@ class Codegen():
                         cstr, cstr, cstr, " (" + tdterms[ct] + ")**2")
                 cinds += 1
                 func_vars.append(str_out)
-        
+
         #Collapse operators have cubic spline td-coeffs
         if len(self.c_td_splines) > 0:
             func_vars.append(" ")
@@ -314,7 +315,7 @@ class Codegen():
                 else:
                     interp_str = "zinterp(t, %s, %s, spline%s)" % (S.a, S.b, spline)
                 spline += 1
-                
+
                 #check if need to wrap string with ()**2
                 if c_idx > 0:
                     interp_str = "("+interp_str+")**2"
@@ -326,8 +327,8 @@ class Codegen():
                     str_out = "spmvpy(&data%s[0], &idx%s[0], &ptr%s[0], &vec[0], %s, out, num_rows)" % (
                         c_idx, c_idx, c_idx, interp_str)
                 func_vars.append(str_out)
-                
-        
+
+
         return func_vars
 
     def func_which(self):
@@ -361,7 +362,7 @@ class Codegen():
 cdef np.npy_intp dims = num_rows
     cdef np.ndarray[complex, ndim=1, mode='c'] arr_out = np.PyArray_SimpleNewFromData(1, &dims, np.NPY_COMPLEX128, out)
     PyArray_ENABLEFLAGS(arr_out, np.NPY_OWNDATA)
-    return arr_out   
+    return arr_out
 """
 
     def func_end_real(self):
@@ -376,7 +377,7 @@ def cython_preamble(use_openmp=False):
         openmp_string='from qutip.cy.openmp.parfuncs cimport spmvpy_openmp'
     else:
         openmp_string=''
-    
+
     return ["""\
 # This file is generated automatically by QuTiP.
 # (C) 2011 and later, QuSTaR
@@ -397,6 +398,7 @@ from qutip.cy.math cimport erf
 cdef double pi = 3.14159265358979323
 
 include """+_include_string+"""
+include """+_include_string_type+"""
 
 """]
 
@@ -417,8 +419,8 @@ def cython_col_spmv():
     """
     return ["""\
     cdef size_t row
-    cdef unsigned int jj, row_start, row_end
-    cdef unsigned int num_rows = vec.shape[0]
+    cdef sp_uint jj, row_start, row_end
+    cdef sp_uint num_rows = vec.shape[0]
     cdef complex dot
     cdef complex * out = <complex *>PyDataMem_NEW_ZEROED(num_rows,sizeof(complex))
 
@@ -438,7 +440,7 @@ def cython_col_expect(args):
     """
     return ["""\
     cdef size_t row
-    cdef int num_rows = vec.shape[0]
+    cdef sp_int num_rows = vec.shape[0]
     cdef complex out = 0.0
     cdef np.ndarray[complex, ndim=1, mode='c'] dot = col_spmv(which, t, data, idx, ptr,
                                                     vec%s)

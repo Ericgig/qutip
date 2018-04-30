@@ -34,9 +34,17 @@ import os
 import numpy as np
 import qutip.settings as qset
 from qutip.interpolate import Cubic_Spline
+from qutip.cy.sparse_type import sparce_compilation_type
 _cython_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 _include_string = "'"+_cython_path+"/complex_math.pxi'"
+_include_string_type = "'"+_cython_path+"/sparse_type.pxi'"
 __all__ = ['BR_Codegen']
+
+if sparce_compilation_type() == np.int32:
+    int_str = "int"
+else:
+    int_str = "long"
+
 
 
 class BR_Codegen(object):
@@ -55,9 +63,9 @@ class BR_Codegen(object):
                 use_secular=None,
                 sec_cutoff=0.1,
                 args=None,
-                use_openmp=False, 
+                use_openmp=False,
                 omp_thresh=None,
-                omp_threads=None, 
+                omp_threads=None,
                 atol=None):
         import sys
         import os
@@ -88,11 +96,11 @@ class BR_Codegen(object):
             self.atol = qset.atol
         else:
             self.atol = atol
-        
+
         self.use_openmp = use_openmp
         self.omp_thresh = omp_thresh
         self.omp_threads = omp_threads
-        
+
         self.coupled_ops = coupled_ops
         self.coupled_lengths = coupled_lengths
         self.coupled_spectra = coupled_spectra
@@ -109,8 +117,8 @@ class BR_Codegen(object):
         """generate the file"""
         for line in cython_preamble(self.use_openmp)+self.aop_td_funcs():
             self.write(line)
-        
-        # write function for Hamiltonian terms (there is always 
+
+        # write function for Hamiltonian terms (there is always
         # be at least one term)
         for line in cython_checks() + self.ODE_func_header():
             self.write(line)
@@ -120,7 +128,7 @@ class BR_Codegen(object):
         for line in self.func_vars()+self.ham_add_and_eigsolve()+ \
                 self.br_matvec_terms()+["\n"]:
             self.write(line)
-        
+
         for line in self.func_end():
             self.write(line)
         self.dedent()
@@ -160,8 +168,8 @@ class BR_Codegen(object):
                 #kind = type(value).__name__
                 ret += ",\n        " + kind + " " + name
         return ret
-    
-    
+
+
     def ODE_func_header(self):
         """Creates function header for time-dependent ODE RHS."""
         func_name = "def cy_td_ode_rhs("
@@ -171,7 +179,7 @@ class BR_Codegen(object):
         for k in range(self.h_terms):
             input_vars += (",\n        " +
                            "complex[::1,:] H%d" % k)
-        
+
         #Add array for each Cubic_Spline H term
         for htd in self.h_td_terms:
             if isinstance(htd, Cubic_Spline):
@@ -182,12 +190,12 @@ class BR_Codegen(object):
                     input_vars += (",\n        " +
                                    "complex[::1] spline%d" % self.spline)
                 self.spline += 1
-        
-        
+
+
         for k in range(self.c_terms):
             input_vars += (",\n        " +
                            "complex[::1,:] C%d" % k)
-        
+
         #Add array for each Cubic_Spline c_op term
         for ctd in self.c_td_terms:
             if isinstance(ctd, Cubic_Spline):
@@ -198,8 +206,8 @@ class BR_Codegen(object):
                     input_vars += (",\n        " +
                                    "complex[::1] spline%d" % self.spline)
                 self.spline += 1
-        
-        
+
+
         #Add coupled a_op terms
         for _a in self.a_td_terms:
             if isinstance(_a, Cubic_Spline):
@@ -210,17 +218,17 @@ class BR_Codegen(object):
                     input_vars += (",\n        " +
                                    "complex[::1] spline%d" % self.spline)
                 self.spline += 1
-        
-        
+
+
         #Add a_op terms
         for k in range(self.a_terms):
             input_vars += (",\n        " +
                            "complex[::1,:] A%d" % k)
-        
-        
+
+
         input_vars += (",\n        unsigned int nrows")
         input_vars += self._get_arg_str(self.args)
-        
+
         func_end = "):"
         return [func_name + input_vars + func_end]
 
@@ -230,8 +238,8 @@ class BR_Codegen(object):
                      'out = <complex *>PyDataMem_NEW_ZEROED(nrows**2,sizeof(complex))']
         func_vars.append(" ")
         return func_vars
-    
-    
+
+
     def aop_td_funcs(self):
         aop_func_str=[]
         spline_val = self.spline_count[0]
@@ -255,7 +263,7 @@ class BR_Codegen(object):
                         spline_val += 1
                     else:
                         raise Exception('Error parsing tuple.')
-                    
+
                     if isinstance(aa[1],str):
                         str1 = aa[1]
                     elif isinstance(aa[1],Cubic_Spline):
@@ -268,7 +276,7 @@ class BR_Codegen(object):
                         spline_val += 1
                     else:
                         raise Exception('Error parsing tuple.')
-                
+
                     aop_func_str += ["cdef complex spectral{0}(double w, double t): return ({1})*({2})".format(kk, str0, str1)]
                 else:
                     raise Exception('Invalid a_td_term.')
@@ -288,10 +296,10 @@ class BR_Codegen(object):
                     aop_func_str += ["cdef complex spectral{0}(double w, double t): return {1}".format(kk, str1)]
                 kk += self.coupled_lengths[coupled_val]
                 coupled_val += 1
-                
+
         return aop_func_str
-    
-    
+
+
     def ham_add_and_eigsolve(self):
         ham_str = []
         #allocate initial zero-Hamiltonian and eigenvector array in Fortran-order
@@ -314,9 +322,9 @@ class BR_Codegen(object):
         ham_str += ["ZHEEVR(H, eigvals, evecs, nrows)"]
         #Free H as it is no longer needed
         ham_str += ["PyDataMem_FREE(&H[0,0])"]
-        
+
         return ham_str
-    
+
     def br_matvec_terms(self):
         br_str = []
         # Transform vector eigenbasis
@@ -333,30 +341,30 @@ class BR_Codegen(object):
                     td_str = "zinterp(t, %s, %s, spline%s)" % (S.a, S.b, self.spline)
                 if self.use_openmp:
 
-                    br_str += ["cop_super_mult_openmp(C{0}, evecs, eig_vec, {1}, out, nrows, {2}, {3}, {4})".format(kk, 
+                    br_str += ["cop_super_mult_openmp(C{0}, evecs, eig_vec, {1}, out, nrows, {2}, {3}, {4})".format(kk,
                                             td_str, self.omp_thresh, self.omp_threads, self.atol)]
                 else:
                     br_str += ["cop_super_mult(C{0}, evecs, eig_vec, {1}, out, nrows, {2})".format(kk, td_str, self.atol)]
                 self.spline += 1
             else:
                 if self.use_openmp:
-                    br_str += ["cop_super_mult_openmp(C{0}, evecs, eig_vec, {1}, out, nrows, {2}, {3}, {4})".format(kk, 
+                    br_str += ["cop_super_mult_openmp(C{0}, evecs, eig_vec, {1}, out, nrows, {2}, {3}, {4})".format(kk,
                                             self.c_td_terms[kk], self.omp_thresh, self.omp_threads, self.atol)]
                 else:
                     br_str += ["cop_super_mult(C{0}, evecs, eig_vec, {1}, out, nrows, {2})".format(kk, self.c_td_terms[kk], self.atol)]
-        
+
         if self.a_terms != 0:
             #Calculate skew and dw_min terms
             br_str += ["cdef double[:,::1] skew = <double[:nrows,:nrows]><double *>PyDataMem_NEW_ZEROED(nrows**2,sizeof(double))"]
             br_str += ["cdef double dw_min = skew_and_dwmin(eigvals, skew, nrows)"]
-        
+
         #Compute BR term matvec
         kk = 0
-        coupled_val = 0 
+        coupled_val = 0
         while kk < self.a_terms:
             if kk not in self.coupled_ops:
                 if self.use_openmp:
-                    br_str += ["br_term_mult_openmp(t, A{0}, evecs, skew, dw_min, spectral{0}, eig_vec, out, nrows, {1}, {2}, {3}, {4}, {5})".format(kk, 
+                    br_str += ["br_term_mult_openmp(t, A{0}, evecs, skew, dw_min, spectral{0}, eig_vec, out, nrows, {1}, {2}, {3}, {4}, {5})".format(kk,
                                         self.use_secular, self.sec_cutoff, self.omp_thresh, self.omp_threads, self.atol)]
                 else:
                     br_str += ["br_term_mult(t, A{0}, evecs, skew, dw_min, spectral{0}, eig_vec, out, nrows, {1}, {2}, {3})".format(kk, self.use_secular, self.sec_cutoff, self.atol)]
@@ -375,13 +383,13 @@ class BR_Codegen(object):
                         br_str += ["dense_add_mult(Ac{0}, A{1}, {2})".format(kk,kk+nn,td_str)]
                     else:
                         raise Exception('Invalid time-dependence fot a_op.')
-                    
+
                 if self.use_openmp:
-                    br_str += ["br_term_mult_openmp(t, Ac{0}, evecs, skew, dw_min, spectral{0}, eig_vec, out, nrows, {1}, {2}, {3}, {4}, {5})".format(kk, 
+                    br_str += ["br_term_mult_openmp(t, Ac{0}, evecs, skew, dw_min, spectral{0}, eig_vec, out, nrows, {1}, {2}, {3}, {4}, {5})".format(kk,
                                         self.use_secular, self.sec_cutoff, self.omp_thresh, self.omp_threads, self.atol)]
                 else:
                     br_str += ["br_term_mult(t, Ac{0}, evecs, skew, dw_min, spectral{0}, eig_vec, out, nrows, {1}, {2}, {3})".format(kk, self.use_secular, self.sec_cutoff, self.atol)]
-                
+
                 br_str += ["PyDataMem_FREE(&Ac{0}[0,0])".format(kk)]
                 kk += self.coupled_lengths[coupled_val]
                 coupled_val += 1
@@ -433,8 +441,9 @@ from qutip.cy.brtools cimport (dense_add_mult, ZHEEVR, dense_to_eigbasis,
 +call_str+
 """
 include """+_include_string+"""
+include """+_include_string_type+"""
 """]
-    
+
 
 
 def cython_checks():
@@ -445,5 +454,3 @@ def cython_checks():
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)"""]
-
-    
