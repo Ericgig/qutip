@@ -129,7 +129,7 @@ class fourrier(filter):
             np.linspace(0, T, self.t_step+1)
 
 
-class spline(filter):
+class spline():
     """
     Should this be a special case of convolution?
     Zero padding first and last?
@@ -138,12 +138,34 @@ class spline(filter):
         self.N = overSampleRate
         self.dt = 1/overSampleRate
 
-
     def __call__(self, x):
         u = np.zeros((self.t_step, self.num_ctrl))
 
         for j in range(self.num_ctrl):
-            for i in range(self.N):
+            for i in range(0,self.N//2):
+                tt = (i+0.5)*self.dt+0.5
+
+                u[i,j] += x[0,j]*tt*(0.5+tt*(2-tt*1.5))
+                u[i,j] += x[1,j]*tt*tt*0.5*(tt-1)
+
+                u[i+self.N,j] += x[0,j]*(1+tt*tt*(tt*1.5-2.5))
+                u[i+self.N,j] += x[1,j]*tt*(0.5+tt*(2-tt*1.5))
+                u[i+self.N,j] += x[2,j]*tt*tt*0.5*(tt-1)
+
+                for t in range(2,self.num_x-1):
+                    tout = t*self.N+i
+                    u[tout,j] += x[t-2,j]*tt*(-0.5+tt*(1-tt*0.5))
+                    u[tout,j] += x[t-1,j]*(1+tt*tt*(tt*1.5-2.5))
+                    u[tout,j] += x[t  ,j]*tt*(0.5+tt*(2-tt*1.5))
+                    u[tout,j] += x[t+1,j]*tt*tt*0.5*(tt-1)
+
+                tout = self.num_x*self.N-1*self.N+i
+                u[tout,j] += x[self.num_x-3,j]*tt*(-0.5+tt*(1-tt*0.5))
+                u[tout,j] += x[self.num_x-2,j]*(1+tt*tt*(tt*1.5-2.5))
+                u[tout,j] += x[self.num_x-1,j]*tt*(0.5+tt*(2-tt*1.5))
+
+
+            for i in range(self.N//2,self.N):
                 tt = (i+0.5)*self.dt-0.5
 
                 u[i,j] += x[0,j]*(1+tt*tt*(tt*1.5-2.5))
@@ -171,6 +193,30 @@ class spline(filter):
     def reverse(self, gradient):
         gx = np.zeros((self.num_x, self.num_ctrl))
         u = gradient
+
+        for j in range(self.num_ctrl):
+            for i in range(0,self.N//2):
+                tt = (i+0.5)*self.dt+0.5
+
+                gx[0,j] += u[i,j]*tt*(0.5+tt*(2-tt*1.5))
+                gx[1,j] += u[i,j]*tt*tt*0.5*(tt-1)
+
+                gx[0,j] += u[i+self.N,j]*(1+tt*tt*(tt*1.5-2.5))
+                gx[1,j] += u[i+self.N,j]*tt*(0.5+tt*(2-tt*1.5))
+                gx[2,j] += u[i+self.N,j]*tt*tt*0.5*(tt-1)
+
+                for t in range(2,self.num_x-1):
+                    tout = t*self.N+i
+                    gx[t-2,j] += u[tout,j]*tt*(-0.5+tt*(1-tt*0.5))
+                    gx[t-1,j] += u[tout,j]*(1+tt*tt*(tt*1.5-2.5))
+                    gx[t  ,j] += u[tout,j]*tt*(0.5+tt*(2-tt*1.5))
+                    gx[t+1,j] += u[tout,j]*tt*tt*0.5*(tt-1)
+
+                tout = self.num_x*self.N-1*self.N+i
+                gx[self.num_x-3,j] += u[tout,j]*tt*(-0.5+tt*(1-tt*0.5))
+                gx[self.num_x-2,j] += u[tout,j]*(1+tt*tt*(tt*1.5-2.5))
+                gx[self.num_x-1,j] += u[tout,j]*tt*(0.5+tt*(2-tt*1.5))
+
         for j in range(self.num_ctrl):
             for i in range(self.N):
                 tt = (i+0.5)*self.dt-0.5
@@ -204,7 +250,6 @@ class spline(filter):
 
         self.num_ctrl = num_ctrl
 
-
         if times is not None:
             if not np.allclose(np.diff(times), times[1]-times[0]):
                 raise Exception("Times must be equaly distributed")
@@ -228,6 +273,7 @@ class spline(filter):
 
         return np.array([self.num_x, self.num_ctrl]), \
             np.linspace(0, T, self.t_step+1)
+
 
 
 class convolution(filter):
