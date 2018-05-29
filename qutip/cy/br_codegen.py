@@ -34,13 +34,13 @@ import os
 import numpy as np
 import qutip.settings as qset
 from qutip.interpolate import Cubic_Spline
-from qutip.cy.sparse_type import sparce_compilation_type
+from qutip.cy.sparse_type import sparse_compilation_type
 _cython_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 _include_string = "'"+_cython_path+"/complex_math.pxi'"
 _include_string_type = "'"+_cython_path+"/sparse_type.pxi'"
 __all__ = ['BR_Codegen']
 
-if sparce_compilation_type() == np.int32:
+if sparse_compilation_type() == np.int32:
     int_str = "int"
 else:
     int_str = "long"

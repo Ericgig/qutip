@@ -44,6 +44,9 @@ cdef extern from "<complex>" namespace "std" nogil:
 
 include "sparse_routines.pxi"
 
+def _get_sp_type():
+    return sp_type
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def zcsr_add(complex[::1] dataA, sp_int[::1] indsA, sp_int[::1] indptrA,

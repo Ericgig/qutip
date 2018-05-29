@@ -7,5 +7,5 @@ if test_value == 1: #int32
 else:
     type = np.int64
 
-def sparce_compilation_type():
+def sparse_compilation_type():
     return type

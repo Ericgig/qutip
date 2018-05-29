@@ -38,6 +38,8 @@ cimport numpy as cnp
 cimport cython
 from libc.math cimport floor, trunc
 
+include "sparse_type.pxi"
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
@@ -47,50 +49,50 @@ def _ptrace(object rho, _sel):
     """
     if np.prod(rho.dims[1]) == 1:
         rho = rho * rho.dag()
-    
+
     cdef size_t mm, ii
-    cdef int _tmp
-    cdef cnp.ndarray[int, ndim=1, mode='c'] drho = np.asarray(rho.dims[0], dtype=np.int32).ravel()
-    
-    if isinstance(_sel, int):
-        _sel = np.array([_sel], dtype=np.int32)
+    cdef sp_int _tmp
+    cdef cnp.ndarray[sp_int, ndim=1, mode='c'] drho = np.asarray(rho.dims[0], dtype=sp_type).ravel()
+
+    if isinstance(_sel, (int, long)):
+        _sel = np.array([_sel], dtype=sp_type)
     else:
-        _sel = np.asarray(_sel, dtype = np.int32)
-    
-    cdef int[::1] sel = _sel
-    
+        _sel = np.asarray(_sel, dtype=sp_type)
+
+    cdef sp_int[::1] sel = _sel
+
     for mm in range(sel.shape[0]):
         if (sel[mm] < 0) or (sel[mm] >= drho.shape[0]):
             raise TypeError("Invalid selection index in ptrace.")
 
-    cdef int[::1] rest = np.delete(np.arange(drho.shape[0],dtype=np.int32),sel)
-    cdef int N = np.prod(drho)
-    cdef int M = np.prod(drho.take(sel))
-    cdef int R = np.prod(drho.take(rest))
-    
-    cdef int[:,::1] ilistsel = _select(sel, drho, M)
-    cdef int[::1] indsel = _list2ind(ilistsel, drho)
-    cdef int[:,::1] ilistrest = _select(rest, drho, R)
-    cdef int[::1] indrest = _list2ind(ilistrest, drho)
-    
+    cdef sp_int[::1] rest = np.delete(np.arange(drho.shape[0],dtype=sp_type),sel)
+    cdef sp_int N = np.prod(drho)
+    cdef sp_int M = np.prod(drho.take(sel))
+    cdef sp_int R = np.prod(drho.take(rest))
+
+    cdef sp_int[:,::1] ilistsel = _select(sel, drho, M)
+    cdef sp_int[::1] indsel = _list2ind(ilistsel, drho)
+    cdef sp_int[:,::1] ilistrest = _select(rest, drho, R)
+    cdef sp_int[::1] indrest = _list2ind(ilistrest, drho)
+
     for mm in range(indrest.shape[0]):
         _tmp = indrest[mm] * N + indrest[mm]-1
         indrest[mm] = _tmp
-    
-    cdef cnp.ndarray[int, ndim=1, mode='c'] ind = np.zeros(M**2*indrest.shape[0],dtype=np.int32)
+
+    cdef cnp.ndarray[sp_int, ndim=1, mode='c'] ind = np.zeros(M**2*indrest.shape[0],dtype=sp_type)
     for mm in range(M**2):
         for ii in range(indrest.shape[0]):
             ind[mm*indrest.shape[0]+ii] = indrest[ii] + \
-                    N*indsel[<int>floor(mm / M)] + \
-                    indsel[<int>(mm % M)]+1
-    
+                    N*indsel[<sp_int>floor(mm / M)] + \
+                    indsel[<sp_int>(mm % M)]+1
+
     data = np.ones_like(ind,dtype=complex)
-    ptr = np.arange(0,(M**2+1)*indrest.shape[0],indrest.shape[0], dtype=np.int32)
+    ptr = np.arange(0,(M**2+1)*indrest.shape[0],indrest.shape[0], dtype=sp_type)
     perm = fast_csr_matrix((data,ind,ptr),shape=(M * M, N * N))
     # No need to sort here, will be sorted in reshape
     rhdata = zcsr_mult(perm, zcsr_reshape(rho.data, np.prod(rho.shape), 1), sorted=0)
     rho1_data = zcsr_reshape(rhdata, M, M)
-    dims_kept0 = np.asarray(rho.dims[0], dtype=np.int32).take(sel)
+    dims_kept0 = np.asarray(rho.dims[0], dtype=sp_type).take(sel)
     rho1_dims = [dims_kept0.tolist(), dims_kept0.tolist()]
     rho1_shape = [np.prod(dims_kept0), np.prod(dims_kept0)]
     return rho1_data, rho1_dims, rho1_shape
@@ -99,12 +101,12 @@ def _ptrace(object rho, _sel):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-cpdef cnp.ndarray[int, ndim=1, mode='c'] _list2ind(int[:,::1] ilist, int[::1] dims):
+cpdef cnp.ndarray[sp_int, ndim=1, mode='c'] _list2ind(sp_int[:,::1] ilist, sp_int[::1] dims):
     """!
     Private function returning indicies
     """
     cdef size_t kk, ll
-    cdef int[::1] fact = np.ones(dims.shape[0],dtype=np.int32)
+    cdef sp_int[::1] fact = np.ones(dims.shape[0],dtype=sp_type)
     for kk in range(dims.shape[0]):
         for ll in range(kk+1,dims.shape[0]):
             fact[kk] *= dims[ll]
@@ -115,18 +117,18 @@ cpdef cnp.ndarray[int, ndim=1, mode='c'] _list2ind(int[:,::1] ilist, int[::1] di
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-cpdef cnp.ndarray[int, ndim=2, mode='c'] _select(int[::1] sel, int[::1] dims, int M):
+cpdef cnp.ndarray[sp_int, ndim=2, mode='c'] _select(sp_int[::1] sel, sp_int[::1] dims, sp_int M):
     """
     Private function finding selected components
     """
     cdef size_t ii, jj, kk
-    cdef int _sel, _prd
-    cdef cnp.ndarray[int, ndim=2, mode='c'] ilist = np.zeros((M, dims.shape[0]), dtype=np.int32)
+    cdef sp_int _sel, _prd
+    cdef cnp.ndarray[sp_int, ndim=2, mode='c'] ilist = np.zeros((M, dims.shape[0]), dtype=sp_type)
     for jj in range(sel.shape[0]):
         _sel =  sel[jj]
         _prd = 1
         for kk in range(jj+1,sel.shape[0]):
             _prd *= dims[sel[kk]]
         for ii in range(M):
-            ilist[ii, _sel] = <int>(trunc(ii / _prd) % dims[_sel])
+            ilist[ii, _sel] = <sp_int>(trunc(ii / _prd) % dims[_sel])
     return ilist
