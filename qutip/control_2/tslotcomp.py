@@ -65,9 +65,6 @@ DYNAMO - Dynamic Framework for Quantum Optimal Control
 See Machnes et.al., arXiv.1011.4874
 """
 
-
-
-
 """
 2018 - Eric Giguere
 
@@ -83,11 +80,7 @@ This way, the prop(t) do not *need* to be saved:
     However, the prop must be computed one extra time for each tslot...
 
     For compute time, timeslot keeps the saved prop/state for each tslot.
-
 """
-
-
-
 
 import os
 import warnings
@@ -101,7 +94,6 @@ import qutip.control.dump as qtrldump
 # QuTiP logging
 import qutip.logging_utils as logging
 logger = logging.get_logger()
-
 
 
 class TimeslotComputer(object):
@@ -181,7 +173,6 @@ class TSComp_Save_Power_all(TimeslotComputer):
         self._compute_gen()
         self.fwd = [initial]
         self.T = T_target
-
         for t in range(T_target):
             self.fwd.append(self._prop[t]*fwd[t])
         self.check_unitarity(self.fwd[T_target])
@@ -198,7 +189,6 @@ class TSComp_Save_Power_all(TimeslotComputer):
         for i in range(T_target-1,0,-1):
             yield i, back, self._dU[i], self._prop[i], self.fwd[i]
             back = back*self._prop[i].dag()
-
 
 
 

@@ -79,8 +79,6 @@ class dynamics:
             return the error gradient
 
         control_system():
-
-
     """
 
     def __init__(self, initial, target, H, ctrl,

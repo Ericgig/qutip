@@ -47,7 +47,7 @@ class falselist_cte:
     May be useless since a list of the same elements N times is probably
     faster and do not use that much memory.
     """
-    __init__(self, data):
+    def __init__(self, data):
         self.data = data
 
     def __getitem__(self, key):
@@ -62,7 +62,7 @@ class falselist_func:
     May be useless since a list of the same elements N times is probably
     faster and do not use that much memory.
     """
-    __init__(self, data, tau, template):
+    def __init__(self, data, tau, template):
         self.data = data
         self.times = []
         self.template = template
