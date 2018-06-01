@@ -32,13 +32,15 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 import numpy as np
+import scipy.sparse as sp
+import scipy.linalg as la
 from qutip.cy.spmatfuncs import spmv
-
+from qutip import Qobj
+from qutip.sparse import sp_eigs,sp_expm
+from qutip.cy.spmath import (zcsr_adjoint)
 
 # ToDo
 # trace method ".tr()"
-
-
 
 class falselist_cte:
     """
@@ -61,6 +63,7 @@ class falselist_func:
     and return a control_matrix corresponding to the time
     May be useless since a list of the same elements N times is probably
     faster and do not use that much memory.
+    10% slower than a td_Qobj.
     """
     def __init__(self, data, tau, template):
         self.data = data
@@ -68,11 +71,55 @@ class falselist_func:
         self.template = template
         summ = 0
         for t in tau:
-            summ += t
             self.times.append(summ+t*0.5)
+            summ += t
 
     def __getitem__(self, key):
         return self.template(self.data(self.times[key], data=True))
+
+
+class falselist2d_cte:
+    """
+    To remove special cases in the code, I want to use constant and lists
+    in the same way. This is a constant which poses as a list.
+    May be useless since a list of the same elements N times is probably
+    faster and do not use that much memory.
+    """
+    def __init__(self, data):
+        self.data = data
+
+    def __getitem__(self, t):
+        return self.data[t[1]]
+
+    def __len__(self):
+        return len(self.data)
+
+
+class falselist2d_func:
+    """
+    To remove special cases in the code, I want to use td_Qobj and lists of
+    control_matrix in the same way. This poses as a list but contain a td_Qobj
+    and return a control_matrix corresponding to the time
+    May be useless since a list of the same elements N times is probably
+    faster and do not use that much memory.
+    10% slower than a td_Qobj.
+    """
+    def __init__(self, data, tau, template):
+        self.data = data
+        self.times = []
+        self.template = template
+        summ = 0
+        for t in tau:
+            self.times.append(summ+t*0.5)
+            summ += t
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, t):
+        return self.template(self.data[t[1]](self.times[t[0]], data=True))
+
+
 
 
 class control_matrix:
@@ -105,8 +152,6 @@ class control_matrix:
         out = self.copy()
         out += other
         return out
-
-
 
 
 class control_dense(control_matrix):
@@ -186,6 +231,11 @@ class control_dense(control_matrix):
             raise NotImplementedError(str(type(other)))
         return self
 
+    def dag(self):
+        cp = self.copy()
+        cp.data = cp.data.T.conj()
+        return cp
+
     def tr(self):
         return self.data.trace()
 
@@ -226,24 +276,24 @@ class control_dense(control_matrix):
         else:
             return self._eig_vec_dag
 
-    def _exp(self):
+    def _exp(self, tau):
         if self._mem_prop and self._prop is not None:
             return self._prop
 
         if self.method == "spectral":
             if self._eig_vec is None:
-                self._spectral_decomp(1.)
+                self._spectral_decomp(tau)
             prop = self._eig_vec.dot(self._prop_eigen).dot(self._eig_vec_adj)
 
         elif self.method in ["approx", "Frechet"]:
-            prop = la.expm(self.data)
+            prop = la.expm(self.data*tau)
 
         if self._mem_prop:
             self._prop = prop
         return prop
 
     def prop(self,tau):
-        return control_dense(self._exp()*tau)
+        return control_dense(self._exp(tau))
 
     def dexp(self, dirr, tau, compute_expm=False):
         if self.method == "Frechet":
@@ -258,7 +308,7 @@ class control_dense(control_matrix):
             if self._eig_vec is None:
                 self._spectral_decomp(tau)
             if compute_expm:
-                prop = self._exp()
+                prop = self._exp(tau)
             # put control dyn_gen in combined dg diagonal basis
             cdg = self._eig_vec_dag.dot(dirr.data).dot(self._eig_vec)
             # multiply (elementwise) by timeslice and factor matrix
@@ -269,7 +319,7 @@ class control_dense(control_matrix):
         elif self.method == "approx":
             dM = (self.data+self.epsilon*dirr.data)*tau
             dprop = la.expm(dM)
-            prop = self._exp()
+            prop = self._exp(tau)
             prop_grad = (dprop - prop)*(1/self.epsilon)
 
         if compute_expm:
@@ -278,7 +328,7 @@ class control_dense(control_matrix):
             return control_dense(prop_grad)
 
 
-class control_sparce(control_matrix):
+class control_sparse(control_matrix):
     def __init__(self, obj=None):
         """
             Sparce representation, obj is expected to be a Qobj operators.
@@ -297,7 +347,7 @@ class control_sparce(control_matrix):
         self.method = "spectral"
 
     def copy(self):
-        copy_ = control_sparce(self.data.copy())
+        copy_ = control_sparse(self.data.copy())
         copy_.fact_mat_round_prec = self.fact_mat_round_prec
         copy_._mem_eigen_adj = self._mem_eigen_adj
         copy_._mem_prop = self._mem_prop
@@ -320,7 +370,7 @@ class control_sparce(control_matrix):
         return out
 
     def __imul__(self, other):
-        if isinstance(other, control_sparce):
+        if isinstance(other, control_sparse):
             self.data = self.data * other.data
         elif isinstance(other, (int, float, complex)):
             self.data = self.data * other
@@ -331,11 +381,16 @@ class control_sparce(control_matrix):
         return self
 
     def __iadd__(self, other):
-        if isinstance(other, control_sparce):
+        if isinstance(other, control_sparse):
             self.data = self.data + other.data
         else:
             raise NotImplementedError(type(other))
         return self
+
+    def dag(self):
+        cp = self.copy()
+        cp.data = zcsr_adjoint(self.data)
+        return cp
 
     def tr(self):
         return zcsr_trace(self.data, 0)
@@ -380,21 +435,21 @@ class control_sparce(control_matrix):
         else:
             return self._eig_vec_dag
 
-    def _exp(self):
+    def _exp(self, tau):
         if self._mem_prop and self._prop:
             return self._prop
         if self.method == "spectral":
             if self._eig_vec is None:
-                self._spectral_decomp(1.)
+                self._spectral_decomp(tau)
             prop = self._eig_vec.dot(self._prop_eigen).dot(self._eig_vec_adj)
         elif self.method in ["approx", "Frechet"]:
-            prop = sp_expm(self.data, sparse=True)
+            prop = sp_expm(self.data*tau, sparse=True)
         if self._mem_prop:
             self._prop = prop
         return prop
 
-    def prop(self,tau):
-        return control_sparce(self._exp()*tau)
+    def prop(self, tau):
+        return control_sparse(self._exp(tau))
 
     def dexp(self, dirr, tau, compute_expm=False):
         if self.method == "Frechet":
@@ -412,7 +467,7 @@ class control_sparce(control_matrix):
             if self._eig_vec is None:
                 self._spectral_decomp(tau)
             if compute_expm:
-                prop = self._exp()
+                prop = self._exp(tau)
             # put control dyn_gen in combined dg diagonal basis
             cdg = self._eig_vec_adj.dot(dirr.data.toarray()).dot(self._eig_vec)
             # multiply (elementwise) by timeslice and factor matrix
@@ -423,10 +478,10 @@ class control_sparce(control_matrix):
         elif self.method == "approx":
             dM = (self.data+self.epsilon*dirr.data)*tau
             dprop = sp_expm(dM, sparse=True)
-            prop = self._exp()
+            prop = self._exp(tau)
             prop_grad = (dprop - prop)*(1/self.epsilon)
 
         if compute_expm:
-            return control_sparce(prop), control_sparce(prop_grad)
+            return control_sparse(prop), control_sparse(prop_grad)
         else:
-            return control_sparce(prop_grad)
+            return control_sparse(prop_grad)
