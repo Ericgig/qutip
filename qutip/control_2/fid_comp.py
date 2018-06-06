@@ -147,17 +147,14 @@ class FidCompUnitarySqrt():
         self.num_tslots = self.tslotcomp.n_t
 
         target = self.tslotcomp.target
-        self.target_d =target.dag()
-        if self.SU:
-            self.dimensional_norm = np.real((self.target_d*target).tr())
-        else:
-            self.dimensional_norm = np.abs((self.target_d*target).tr())
+        self.target_d = target.dag()
+
 
     def costs(self):
         n_ctrls = self.num_ctrls
         n_ts = self.num_tslots
         final = self.tslotcomp.state_T(n_ts)
-        fidelity_prenorm = (self.target_d*final)
+        fidelity_prenorm = (self.target_d*final).tr()[0,0]
 
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
@@ -168,15 +165,9 @@ class FidCompUnitarySqrt():
 
         fidelity = fidelity_prenorm*fidelity_prenorm.conj()
         grad_normalized = 2*fidelity_prenorm.conj()*grad
-        """if self.SU:
-            fidelity = np.real(fidelity_prenorm) / self.dimensional_norm
-            grad_normalized = np.real(grad) / self.dimensional_norm
-        else:
-            fidelity = np.abs(fidelity_prenorm) / self.dimensional_norm
-            grad_normalized = np.real(grad / self.dimensional_norm *
-                                      np.exp(-1j * np.angle(fidelity_prenorm)))"""
 
-        return np.abs(1 - fidelity), grad_normalized
+
+        return np.abs(1 - fidelity), np.real(grad_normalized)
 
 class FidCompTraceDiff():
     def __init__(self, parent, scale_factor=0):

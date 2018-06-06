@@ -280,30 +280,28 @@ class dynamics:
 
 
 def _is_unitary(self, A):
-        """
-        Checks whether operator A is unitary
-        A can be either Qobj or ndarray
-        """
-        if isinstance(A, Qobj):
-            unitary = np.allclose(np.eye(A.shape[0]), A*A.dag().full(),
-                        atol=self.unitarity_tol)
-        else:
-            unitary = np.allclose(np.eye(len(A)), A.dot(A.T.conj()),
-                        atol=self.unitarity_tol)
-
-        return unitary
+    """
+    Checks whether operator A is unitary
+    A can be either Qobj or ndarray
+    """
+    if isinstance(A, Qobj):
+        unitary = np.allclose(np.eye(A.shape[0]), A*A.dag().full(),
+                    atol=self.unitarity_tol)
+    else:
+        unitary = np.allclose(np.eye(len(A)), A.dot(A.T.conj()),
+                    atol=self.unitarity_tol)
+    return unitary
 
 def _calc_unitary_err(self, A):
-        if isinstance(A, Qobj):
-            err = np.sum(abs(np.eye(A.shape[0]) - A*A.dag().full()))
-        else:
-            err = np.sum(abs(np.eye(len(A)) - A.dot(A.T.conj())))
-
-        return err
+    if isinstance(A, Qobj):
+        err = np.sum(abs(np.eye(A.shape[0]) - A*A.dag().full()))
+    else:
+        err = np.sum(abs(np.eye(len(A)) - A.dot(A.T.conj())))
+    return err
 
 def unitarity_check(self):
-        """
-        Checks whether all propagators are unitary
-        """
-        for k in range(self.num_tslots):
-            if not self._is_unitary(self._prop[k]):
+    """
+    Checks whether all propagators are unitary
+    """
+    for k in range(self.num_tslots):
+        if not self._is_unitary(self._prop[k]):
