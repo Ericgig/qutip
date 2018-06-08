@@ -164,20 +164,24 @@ class TSComp_Save_Power_all(TimeslotComputer):
         # Compute and cache all prop and dprop
         self._prop = [None] * self.n_t
         self._dU = np.empty((self.n_t, self.num_ctrl), dtype=object)
+        self.fwd = [self.initial]
         for t in range(self.n_t):
             self._prop[t], self._dU[t,0] = self._dyn_gen[t].dexp(self.ctrl[t,0],
                                              self.tau[t], compute_expm=True)
             self._dU[t,1:] = [self._dyn_gen[t].dexp(self.ctrl[t,i], self.tau[t])
                          for i in range(1,self.num_ctrl)]
+            self.fwd.append(self._prop[t] * self.fwd[t])
 
     def state_T(self, T_target):
         self._compute_gen()
-        self.fwd = [self.initial]
         self.T = T_target
-        for t in range(T_target):
-            self.fwd.append(self._prop[t] * self.fwd[t])
-        #self.check_unitarity(self.fwd[T_target])
         return self.fwd[T_target]
+
+    def forward(self, T_targets):
+        self._compute_gen()
+        self.T = max(T_targets)
+        for t in np.sort(T_targets):
+            yield self.fwd[t]
 
     def reversed_onwd(self):
         back = 1
@@ -185,13 +189,36 @@ class TSComp_Save_Power_all(TimeslotComputer):
             yield i, back, self._dU[i], self._prop[i], self.fwd[i]
             back = back*self._prop[i]
 
-    def reversed_onto(self):
-        back = self.target.dag()
+    def reversed_onto(self, target=False):
+        if target:
+            back = target.dag()
+        else:
+            back = self.target.dag()
         for i in range(self.T-1,-1,-1):
             yield i, back, self._dU[i], self._prop[i], self.fwd[i]
-            back = back*self._prop[i]#.dag()
+            back = back*self._prop[i]
 
-
+    def reversed_cumulative(self, target=False, targetd=False, times=None,
+                            phase=None):
+        if times is None:
+            times = np.arange(self.T)+1
+        times = np.sort(np.array(times, dtype=int))
+        if phase is None:
+            phase = np.ones(len(times))
+        if target or targetd:
+            if target:
+                targetd = target.dag()
+            back = targetd*phase[-1]
+        else:
+            targetd = self.target.dag()
+            back = targetd*phase[-1]
+        ind = times.shape[0]-2
+        for i in range(times[-1]-1,-1,-1):
+            yield i, back, self._dU[i], self._prop[i], self.fwd[i]
+            back = back*self._prop[i]
+            if ind != -1 and i == times[ind]:
+                back += targetd*phase[ind]
+                ind -= 1
 
 
 

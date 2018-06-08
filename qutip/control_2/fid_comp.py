@@ -75,7 +75,7 @@ import qutip.control.errors as errors
 
 
 class FidCompUnitary():
-    def __init__(self, parent, phase_option):
+    def __init__(self, tslotcomp, phase_option):
         """
         Computes fidelity error and gradient assuming unitary dynamics, e.g.
         closed qubit systems
@@ -87,23 +87,37 @@ class FidCompUnitary():
         phase_option : string
             determines how global phase is treated in fidelity calculations:
                 PSU - global phase ignored
+                PSU2 - global phase ignored
                 SU - global phase included
         """
-        self.tslotcomp = parent.tslotcomp
+        self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
 
-        if not phase_option in ["SU","PSU"]:
+        if not phase_option in ["SU","PSU","PSU2"]:
             raise Exception("Invalid phase_option for FidCompUnitary.")
-        self.SU = phase_option == "SU"
+        self.SU = phase_option
         target = self.tslotcomp.target
         self.target_d =target.dag()
-        if self.SU:
+        if self.SU == "SU":
             self.dimensional_norm = np.real((self.target_d*target).tr())
         else:
             self.dimensional_norm = np.abs((self.target_d*target).tr())
 
     def costs(self):
+        final = self.tslotcomp.state_T(self.num_tslots)
+        fidelity_prenorm = (self.target_d*final).tr()
+
+        if self.SU == "SU":
+            fidelity = np.real(fidelity_prenorm) / self.dimensional_norm
+        elif self.SU == "PSU":
+            fidelity = np.abs(fidelity_prenorm) / self.dimensional_norm
+        else:
+            fidelity = fidelity_prenorm*fidelity_prenorm.conj()
+
+        return np.abs(1 - fidelity)
+
+    def grad(self):
         n_ctrls = self.num_ctrls
         n_ts = self.num_tslots
         final = self.tslotcomp.state_T(n_ts)
@@ -116,19 +130,19 @@ class FidCompUnitary():
             for j in range(n_ctrls):
                 grad[k, j] = (onto_evo*dU[j]*fwd_evo).tr()
 
-        if self.SU:
-            fidelity = np.real(fidelity_prenorm) / self.dimensional_norm
+        if self.SU == "SU":
             grad_normalized = np.real(grad) / self.dimensional_norm
-        else:
-            fidelity = np.abs(fidelity_prenorm) / self.dimensional_norm
+        elif self.SU == "PSU":
             grad_normalized = np.real(grad / self.dimensional_norm *\
                                       np.exp(-1j * np.angle(fidelity_prenorm)))
+        else:
+            grad_normalized = np.real(2*fidelity_prenorm[0,0].conj()*grad)
 
-        return np.abs(1 - fidelity), grad_normalized
+        return grad_normalized
 
 
-class FidCompUnitarySqrt():
-    def __init__(self, parent):
+class FidCompUnitaryEarly():
+    def __init__(self, tslotcomp, phase_option, times=None):
         """
         Computes fidelity error and gradient assuming unitary dynamics, e.g.
         closed qubit systems
@@ -140,34 +154,179 @@ class FidCompUnitarySqrt():
         phase_option : string
             determines how global phase is treated in fidelity calculations:
                 PSU - global phase ignored
+                PSU2 - global phase ignored
                 SU - global phase included
         """
-        self.tslotcomp = parent.tslotcomp
+        self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
 
+        if not phase_option in ["SU","PSU","PSU2"]:
+            raise Exception("Invalid phase_option for FidCompUnitary.")
+        self.SU = phase_option
         target = self.tslotcomp.target
-        self.target_d = target.dag()
+        self.target_d =target.dag()
 
+        if times is None:
+            times = np.arange(self.num_tslots, dtype=int)[::-1]+1
+        self.times = times
+
+        if self.SU == "SU":
+            self.dimensional_norm = np.real((self.target_d*target).tr())
+        else:
+            self.dimensional_norm = np.abs((self.target_d*target).tr())
 
     def costs(self):
+        fidelity = np.zeros(len(self.times))
+        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
+            fidelity_prenorm = (self.target_d*f_state).tr()[0,0]
+            if self.SU == "SU":
+                fidelity[i] = 1 - np.real(fidelity_prenorm) / self.dimensional_norm
+            elif self.SU == "PSU":
+                fidelity[i] = 1 - np.abs(fidelity_prenorm) / self.dimensional_norm
+            else:
+                fidelity[i] = 1 - fidelity_prenorm*fidelity_prenorm.conj()
+        return np.sum(fidelity)
+
+    def costs_t(self):
+        fidelity = np.zeros(len(self.times))
+        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
+            fidelity_prenorm = (self.target_d*f_state).tr()[0,0]
+            if self.SU == "SU":
+                fidelity[i] = 1 - np.real(fidelity_prenorm) / self.dimensional_norm
+            elif self.SU == "PSU":
+                fidelity[i] = 1 - np.abs(fidelity_prenorm) / self.dimensional_norm
+            else:
+                fidelity[i] = 1 - fidelity_prenorm*fidelity_prenorm.conj()
+        return fidelity
+
+    def grad(self):
         n_ctrls = self.num_ctrls
         n_ts = self.num_tslots
         final = self.tslotcomp.state_T(n_ts)
-        fidelity_prenorm = (self.target_d*final).tr()[0,0]
+        fidelity_prenorm = np.zeros(len(self.times),dtype=complex)
+        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
+            fidelity_prenorm[i] = (self.target_d*f_state).tr()[0,0]
+        i = -1
+        # create n_ts x n_ctrls zero array for grad start point
+        grad = np.zeros([n_ts, n_ctrls], dtype=complex)
+        # loop through all ctrl timeslots calculating gradients
+
+        if self.SU == "SU":
+            phase = np.ones(len(self.times)) / self.dimensional_norm
+        elif self.SU == "PSU":
+            phase = np.exp(-1j * np.angle(fidelity_prenorm) ) / self.dimensional_norm
+        else:
+            phase = 2*fidelity_prenorm.conj()
+
+        for k, rev_evo, dU, U, fwd_evo in \
+                    self.tslotcomp.reversed_cumulative( \
+                        targetd=self.target_d, times=self.times,
+                        phase=phase):
+            for j in range(n_ctrls):
+                grad[k, j] = (rev_evo*dU[j]*fwd_evo).tr()
+
+        return np.real(grad)
+
+
+class FidCompForbidden():
+    def __init__(self, tslotcomp, forbidden, phase_option, times=None):
+        """
+        Computes fidelity error and gradient assuming unitary dynamics, e.g.
+        closed qubit systems
+        Note fidelity and gradient calculations were taken from DYNAMO
+        (see file header)
+
+        Attributes
+        ----------
+        phase_option : string
+            determines how global phase is treated in fidelity calculations:
+                PSU - global phase ignored
+                PSU2 - global phase ignored
+                SU - global phase included
+        """
+        self.tslotcomp = tslotcomp
+        self.num_ctrls = self.tslotcomp.num_ctrl
+        self.num_tslots = self.tslotcomp.n_t
+
+        if not phase_option in ["SU","PSU","PSU2"]:
+            raise Exception("Invalid phase_option for FidCompUnitary.")
+        self.SU = phase_option
+
+        self.forbidden_d = forbidden.dag()
+        if times is None:
+            times = np.arange(self.num_tslots, dtype=int)[::-1]+1
+        self.times = times
+
+        if self.SU == "SU":
+            self.dimensional_norm = np.real((self.forbidden_d*forbidden).tr())
+        else:
+            self.dimensional_norm = np.abs((self.forbidden_d*forbidden).tr())
+
+    def costs(self):
+        fidelity = np.zeros(len(self.times))
+        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
+            fidelity_prenorm = (self.forbidden_d*f_state).tr()[0,0]
+            if self.SU == "SU":
+                fidelity[i] = np.real(fidelity_prenorm) / self.dimensional_norm
+            elif self.SU == "PSU":
+                fidelity[i] = np.abs(fidelity_prenorm) / self.dimensional_norm
+            else:
+                fidelity[i] = fidelity_prenorm*fidelity_prenorm.conj()
+        return np.sum(fidelity)
+
+    def costs_t(self):
+        fidelity = np.zeros(len(self.times))
+        for i, f_state in enumerate(self.tslotcomp.state_T(self.times)):
+            fidelity_prenorm = (self.forbidden_d*f_state).tr()[0,0]
+            if self.SU == "SU":
+                fidelity[i] = np.real(fidelity_prenorm) / self.dimensional_norm
+            elif self.SU == "PSU":
+                fidelity[i] = np.abs(fidelity_prenorm) / self.dimensional_norm
+            else:
+                fidelity[i] = fidelity_prenorm*fidelity_prenorm.conj()
+        return fidelity
+
+    def grad(self):
+        n_ctrls = self.num_ctrls
+        n_ts = self.num_tslots
+        final = self.tslotcomp.state_T(n_ts)
+        fidelity_prenorm = (self.forbidden_d*final).tr()[0,0]
 
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
         # loop through all ctrl timeslots calculating gradients
-        for k, onto_evo, dU, U, fwd_evo in self.tslotcomp.reversed_onto():
+        for k, rev_evo, dU, U, fwd_evo in \
+                        self.tslotcomp.reversed_cumulative( \
+                            targetd=self.forbidden_d, times=self.times):
             for j in range(n_ctrls):
-                grad[k, j] = (onto_evo*dU[j]*fwd_evo).tr()
+                grad[k, j] = -1.*(rev_evo*dU[j]*fwd_evo).tr()
 
-        fidelity = fidelity_prenorm*fidelity_prenorm.conj()
-        grad_normalized = 2*fidelity_prenorm.conj()*grad
+        if self.SU == "SU":
+            grad_normalized = np.real(grad) / self.dimensional_norm
+        elif self.SU == "PSU":
+            grad_normalized = np.real(grad / self.dimensional_norm *\
+                                      np.exp(-1j * np.angle(fidelity_prenorm)))
+        else:
+            grad_normalized = np.real(2*fidelity_prenorm.conj()*grad)
+
+        return grad_normalized
 
 
-        return np.abs(1 - fidelity), np.real(grad_normalized)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class FidCompTraceDiff():
     def __init__(self, parent, scale_factor=0):
