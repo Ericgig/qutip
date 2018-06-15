@@ -7,20 +7,9 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 class filter:
     def __init__(self):
-        self.
+        pass
 
     def __call__(self, x):
         pass

@@ -57,9 +57,9 @@ the maximum time allowed has been exceeded
 
 These function optimisation methods are so far from SciPy.optimize
 The two methods implemented are:
-    
+
     BFGS - Broyden–Fletcher–Goldfarb–Shanno algorithm
-        
+
         This a quasi second order Newton method. It uses successive calls to
         the gradient function to make an estimation of the curvature (Hessian)
         and hence direct its search for the function minima
@@ -68,7 +68,7 @@ The two methods implemented are:
         use subclass: OptimizerBFGS
 
     L-BFGS-B - Bounded, limited memory BFGS
-        
+
         This a version of the BFGS method where the Hessian approximation is
         only based on a set of the most recent gradient calls. It generally
         performs better where the are a large number of variables
@@ -125,7 +125,7 @@ class Optimizer(object):
     This class implements the fidelity, gradient and interation callback
     functions.
     All subclass objects must be initialised with a
-        
+
         OptimConfig instance - various configuration options
         Dynamics instance - describes the dynamics of the (quantum) system
                             to be control optimised
@@ -243,7 +243,7 @@ class Optimizer(object):
     iter_summary : :class:`OptimIterSummary`
         Summary of the most recent iteration.
         Note this is only set if dummping is on
-    
+
     """
 
     def __init__(self, config, dyn, params=None):
@@ -546,7 +546,7 @@ class Optimizer(object):
 
         The result is returned in an OptimResult object, which includes
         the final fidelity, time evolution, reason for termination etc
-        
+
         """
         self.init_optim(term_conds)
         term_conds = self.termination_conditions
@@ -625,7 +625,7 @@ class Optimizer(object):
         that is the 1d array that is passed from the optimisation method
         Note for GRAPE these are the function optimiser parameters
         (and this is the default)
-        
+
         Returns
         -------
         float array[dynamics.num_tslots, dynamics.num_ctrls]
@@ -949,7 +949,7 @@ class OptimizerLBFGSB(Optimizer):
 
         The result is returned in an OptimResult object, which includes
         the final fidelity, time evolution, reason for termination etc
-        
+
         """
         self.init_optim(term_conds)
         term_conds = self.termination_conditions
@@ -1106,11 +1106,11 @@ class OptimizerCrab(Optimizer):
         Generate the 1d array that holds the current variable values
         of the function to be optimised
         For CRAB these are the basis coefficients
-        
+
         Returns
         -------
         ndarray (1d) of float
-        
+
         """
         pvals = []
         for pgen in self.pulse_generator:

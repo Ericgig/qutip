@@ -75,7 +75,7 @@ import qutip.control.errors as errors
 
 
 class FidCompUnitary():
-    def __init__(self, tslotcomp, phase_option):
+    def __init__(self, tslotcomp, target, phase_option):
         """
         Computes fidelity error and gradient assuming unitary dynamics, e.g.
         closed qubit systems
@@ -93,12 +93,13 @@ class FidCompUnitary():
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
+        self.target = target
 
         if not phase_option in ["SU","PSU","PSU2"]:
             raise Exception("Invalid phase_option for FidCompUnitary.")
         self.SU = phase_option
-        target = self.tslotcomp.target
-        self.target_d =target.dag()
+        #target = self.tslotcomp.target
+        self.target_d = target.dag()
         if self.SU == "SU":
             self.dimensional_norm = np.real((self.target_d*target).tr())
         else:
@@ -126,7 +127,7 @@ class FidCompUnitary():
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
         # loop through all ctrl timeslots calculating gradients
-        for k, onto_evo, dU, U, fwd_evo in self.tslotcomp.reversed_onto():
+        for k, onto_evo, dU, U, fwd_evo in self.tslotcomp.reversed_onto(targetd=self.target_d):
             for j in range(n_ctrls):
                 grad[k, j] = (onto_evo*dU[j]*fwd_evo).tr()
 
@@ -142,7 +143,7 @@ class FidCompUnitary():
 
 
 class FidCompUnitaryEarly():
-    def __init__(self, tslotcomp, phase_option, times=None):
+    def __init__(self, tslotcomp, target, phase_option, times=None, weight=None):
         """
         Computes fidelity error and gradient assuming unitary dynamics, e.g.
         closed qubit systems
@@ -164,7 +165,8 @@ class FidCompUnitaryEarly():
         if not phase_option in ["SU","PSU","PSU2"]:
             raise Exception("Invalid phase_option for FidCompUnitary.")
         self.SU = phase_option
-        target = self.tslotcomp.target
+        #target = self.tslotcomp.target
+        self.target = target
         self.target_d =target.dag()
 
         if times is None:
@@ -185,7 +187,7 @@ class FidCompUnitaryEarly():
             elif self.SU == "PSU":
                 fidelity[i] = 1 - np.abs(fidelity_prenorm) / self.dimensional_norm
             else:
-                fidelity[i] = 1 - fidelity_prenorm*fidelity_prenorm.conj()
+                fidelity[i] = 1 - (fidelity_prenorm*fidelity_prenorm.conj()).real
         return np.sum(fidelity)
 
     def costs_t(self):
@@ -197,7 +199,7 @@ class FidCompUnitaryEarly():
             elif self.SU == "PSU":
                 fidelity[i] = 1 - np.abs(fidelity_prenorm) / self.dimensional_norm
             else:
-                fidelity[i] = 1 - fidelity_prenorm*fidelity_prenorm.conj()
+                fidelity[i] = 1 - (fidelity_prenorm*fidelity_prenorm.conj()).real
         return fidelity
 
     def grad(self):
@@ -207,7 +209,6 @@ class FidCompUnitaryEarly():
         fidelity_prenorm = np.zeros(len(self.times),dtype=complex)
         for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
             fidelity_prenorm[i] = (self.target_d*f_state).tr()[0,0]
-        i = -1
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
         # loop through all ctrl timeslots calculating gradients
@@ -272,50 +273,47 @@ class FidCompForbidden():
             elif self.SU == "PSU":
                 fidelity[i] = np.abs(fidelity_prenorm) / self.dimensional_norm
             else:
-                fidelity[i] = fidelity_prenorm*fidelity_prenorm.conj()
+                fidelity[i] = (fidelity_prenorm*fidelity_prenorm.conj()).real
         return np.sum(fidelity)
 
     def costs_t(self):
         fidelity = np.zeros(len(self.times))
-        for i, f_state in enumerate(self.tslotcomp.state_T(self.times)):
+        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
             fidelity_prenorm = (self.forbidden_d*f_state).tr()[0,0]
             if self.SU == "SU":
                 fidelity[i] = np.real(fidelity_prenorm) / self.dimensional_norm
             elif self.SU == "PSU":
                 fidelity[i] = np.abs(fidelity_prenorm) / self.dimensional_norm
             else:
-                fidelity[i] = fidelity_prenorm*fidelity_prenorm.conj()
+                fidelity[i] = (fidelity_prenorm*fidelity_prenorm.conj()).real
         return fidelity
 
     def grad(self):
         n_ctrls = self.num_ctrls
         n_ts = self.num_tslots
         final = self.tslotcomp.state_T(n_ts)
-        fidelity_prenorm = (self.forbidden_d*final).tr()[0,0]
-
+        fidelity_prenorm = np.zeros(len(self.times),dtype=complex)
+        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
+            fidelity_prenorm[i] = (self.forbidden_d*f_state).tr()[0,0]
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
         # loop through all ctrl timeslots calculating gradients
-        for k, rev_evo, dU, U, fwd_evo in \
-                        self.tslotcomp.reversed_cumulative( \
-                            targetd=self.forbidden_d, times=self.times):
-            for j in range(n_ctrls):
-                grad[k, j] = -1.*(rev_evo*dU[j]*fwd_evo).tr()
 
         if self.SU == "SU":
-            grad_normalized = np.real(grad) / self.dimensional_norm
+            phase = -np.ones(len(self.times)) / self.dimensional_norm
         elif self.SU == "PSU":
-            grad_normalized = np.real(grad / self.dimensional_norm *\
-                                      np.exp(-1j * np.angle(fidelity_prenorm)))
+            phase = -np.exp(-1j * np.angle(fidelity_prenorm) ) / self.dimensional_norm
         else:
-            grad_normalized = np.real(2*fidelity_prenorm.conj()*grad)
+            phase = -2*fidelity_prenorm.conj()
 
-        return grad_normalized
+        for k, rev_evo, dU, U, fwd_evo in \
+                    self.tslotcomp.reversed_cumulative( \
+                        targetd=self.forbidden_d, times=self.times,
+                        phase=phase):
+            for j in range(n_ctrls):
+                grad[k, j] = (rev_evo*dU[j]*fwd_evo).tr()
 
-
-
-
-
+        return np.real(grad)
 
 
 

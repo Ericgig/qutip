@@ -96,6 +96,35 @@ import qutip.logging_utils as logging
 logger = logging.get_logger()
 
 
+def _is_unitary(prop):
+    """
+    Checks whether operator A is unitary
+    A can be either Qobj or ndarray
+    """
+    if isinstance(A, Qobj):
+        unitary = np.allclose(np.eye(A.shape[0]), A*A.dag().full(),
+                    atol=self.unitarity_tol)
+    else:
+        unitary = np.allclose(np.eye(len(A)), A.dot(A.T.conj()),
+                    atol=self.unitarity_tol)
+    return unitary
+
+def _calc_unitary_err(prop):
+    if isinstance(A, Qobj):
+        err = np.sum(abs(np.eye(A.shape[0]) - A*A.dag().full()))
+    else:
+        err = np.sum(abs(np.eye(len(A)) - A.dot(A.T.conj())))
+    return err
+
+def unitarity_check(props):
+    """
+    Checks whether all propagators are unitary
+    """
+    for k in range(self.num_tslots):
+        if not self._is_unitary(self._prop[k]):
+            pass
+
+
 class TimeslotComputer(object):
     """
     Base class for all Timeslot Computers
@@ -134,7 +163,7 @@ class TSComp_Save_Power_all(TimeslotComputer):
     Updates and keep all dynamics generators, propagators and evolutions when
     ctrl amplitudes are updated
     """
-    def __init__(self, H, ctrl, initial, target, tau, n_t):
+    def __init__(self, H, ctrl, initial, target, tau, n_t, num_ctrl):
         self.id_text = 'ALL'
         self.cache_text = 'Save'
         self.exp_text = 'Power'
@@ -144,7 +173,7 @@ class TSComp_Save_Power_all(TimeslotComputer):
         self.target = target
         self.tau = tau
         self.n_t = n_t
-        self.num_ctrl = len(ctrl)
+        self.num_ctrl = num_ctrl
 
     def _compute_gen(self):
         """
@@ -189,9 +218,11 @@ class TSComp_Save_Power_all(TimeslotComputer):
             yield i, back, self._dU[i], self._prop[i], self.fwd[i]
             back = back*self._prop[i]
 
-    def reversed_onto(self, target=False):
+    def reversed_onto(self, target=False, targetd=False):
         if target:
             back = target.dag()
+        elif targetd:
+            back = targetd
         else:
             back = self.target.dag()
         for i in range(self.T-1,-1,-1):
@@ -223,7 +254,7 @@ class TSComp_Save_Power_all(TimeslotComputer):
 
 
 
-class TimeslotComputer(object):
+class TimeslotComputer2(object):
     """
     Base class for all Timeslot Computers
     Note: this must be instantiated with a Dynamics object, that is the

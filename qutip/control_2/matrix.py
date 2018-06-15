@@ -40,7 +40,7 @@ from qutip.sparse import sp_eigs,sp_expm
 from qutip.cy.spmath import (zcsr_adjoint)
 
 # ToDo
-# trace method ".tr()"
+# trace  ".tr()"
 
 class falselist_cte:
     """
@@ -120,15 +120,16 @@ class falselist2d_func:
         return self.template(self.data[t[1]](self.times[t[0]], data=True))
 
 
-
+matrix_opt = {
+    "fact_mat_round_prec":1e-10,
+    "_mem_eigen_adj":False,
+    "_mem_prop":False,
+    "epsilon":1e-6,
+    "method":"Frechet"}
 
 class control_matrix:
-    def __init__(self, obj=None, full=False):
+    def __init__(self, obj=None):
         self._size = 0
-        self.fact_mat_round_prec = 1e-10
-        self._mem_eigen_adj = False
-        self._mem_prop = False
-        self.epsilon = 1e-6
         self.clean()
 
     def clean(self):
@@ -153,7 +154,6 @@ class control_matrix:
         out += other
         return out
 
-
 class control_dense(control_matrix):
     def __init__(self, obj=None):
         """
@@ -171,7 +171,6 @@ class control_dense(control_matrix):
         elif isinstance(obj, sp.csr_matrix):
             self.data = obj
             self._size = obj.shape[0]
-        self.method = "Frechet"
 
     def __rmul__(self, other):
         if isinstance(other, (int, float, complex)):
@@ -190,10 +189,6 @@ class control_dense(control_matrix):
 
     def copy(self):
         copy_ = control_dense(self.data.copy())
-        copy_.fact_mat_round_prec = self.fact_mat_round_prec
-        copy_._mem_eigen_adj = self._mem_eigen_adj
-        copy_._mem_prop = self._mem_prop
-        copy_.epsilon = self.epsilon
         return copy_
 
     def __imul__(self, other):
@@ -258,7 +253,7 @@ class control_dense(control_matrix):
         prop_eig_cols = prop_eig*o
         prop_eig_diffs = prop_eig_cols - prop_eig_cols.T
 
-        degen_mask = np.abs(eig_val_diffs) < self.fact_mat_round_prec
+        degen_mask = np.abs(eig_val_diffs) < matrix_opt["fact_mat_round_prec"]
         eig_val_diffs[degen_mask] = 1
         factors = prop_eig_diffs / eig_val_diffs
         factors[degen_mask] = prop_eig_cols[degen_mask]
@@ -266,29 +261,29 @@ class control_dense(control_matrix):
         self._factormatrix = factors
         self._prop_eigen = np.diagflat(prop_eig)
         self._eig_vec = eig_vec
-        if self._mem_eigen_adj is not None:
+        if matrix_opt["_mem_eigen_adj"] is not None:
             self._eig_vec_dag = eig_vec.conj().T
 
     @property
     def _eig_vec_adj(self):
-        if self._mem_eigen_adj:
+        if matrix_opt["_mem_eigen_adj"]:
             return self._eig_vec.conj().T
         else:
             return self._eig_vec_dag
 
     def _exp(self, tau):
-        if self._mem_prop and self._prop is not None:
+        if matrix_opt["_mem_prop"] and self._prop is not None:
             return self._prop
 
-        if self.method == "spectral":
+        if matrix_opt["method"] == "spectral":
             if self._eig_vec is None:
                 self._spectral_decomp(tau)
             prop = self._eig_vec.dot(self._prop_eigen).dot(self._eig_vec_adj)
 
-        elif self.method in ["approx", "Frechet"]:
+        elif matrix_opt["method"] in ["approx", "Frechet"]:
             prop = la.expm(self.data*tau)
 
-        if self._mem_prop:
+        if matrix_opt["_mem_prop"]:
             self._prop = prop
         return prop
 
@@ -296,7 +291,7 @@ class control_dense(control_matrix):
         return control_dense(self._exp(tau))
 
     def dexp(self, dirr, tau, compute_expm=False):
-        if self.method == "Frechet":
+        if matrix_opt["method"] == "Frechet":
             A = self.data*tau
             E = dirr.data*tau
             if compute_expm:
@@ -304,7 +299,7 @@ class control_dense(control_matrix):
             else:
                 prop_grad = la.expm_frechet(A, E, compute_expm=False)
 
-        elif self.method == "spectral":
+        elif matrix_opt["method"] == "spectral":
             if self._eig_vec is None:
                 self._spectral_decomp(tau)
             if compute_expm:
@@ -316,11 +311,11 @@ class control_dense(control_matrix):
             # Return to canonical basis
             prop_grad = self._eig_vec.dot(cdg).dot(self._eig_vec_adj)
 
-        elif self.method == "approx":
-            dM = (self.data+self.epsilon*dirr.data)*tau
+        elif matrix_opt["method"] == "approx":
+            dM = (self.data+matrix_opt["epsilon"]*dirr.data)*tau
             dprop = la.expm(dM)
             prop = self._exp(tau)
-            prop_grad = (dprop - prop)*(1/self.epsilon)
+            prop_grad = (dprop - prop)*(1/matrix_opt["epsilon"])
 
         if compute_expm:
             return control_dense(prop), control_dense(prop_grad)
@@ -348,10 +343,6 @@ class control_sparse(control_matrix):
 
     def copy(self):
         copy_ = control_sparse(self.data.copy())
-        copy_.fact_mat_round_prec = self.fact_mat_round_prec
-        copy_._mem_eigen_adj = self._mem_eigen_adj
-        copy_._mem_prop = self._mem_prop
-        copy_.epsilon = self.epsilon
         return copy_
 
     def __rmul__(self, other):
@@ -417,7 +408,7 @@ class control_sparse(control_matrix):
         prop_eig_cols = prop_eig*o
         prop_eig_diffs = prop_eig_cols - prop_eig_cols.T
 
-        degen_mask = np.abs(eig_val_diffs) < self.fact_mat_round_prec
+        degen_mask = np.abs(eig_val_diffs) < matrix_opt["fact_mat_round_prec"]
         eig_val_diffs[degen_mask] = 1
         factors = prop_eig_diffs / eig_val_diffs
         factors[degen_mask] = prop_eig_cols[degen_mask]
@@ -425,26 +416,26 @@ class control_sparse(control_matrix):
         self._factormatrix = factors
         self._prop_eigen = np.diagflat(prop_eig)
         self._eig_vec = eig_vec
-        if not self._mem_eigen_adj:
+        if not matrix_opt["_mem_eigen_adj"]:
             self._eig_vec_dag = eig_vec.conj().T
 
     @property
     def _eig_vec_adj(self):
-        if self._mem_eigen_adj:
+        if matrix_opt["_mem_eigen_adj"]:
             return self._eig_vec.conj().T
         else:
             return self._eig_vec_dag
 
     def _exp(self, tau):
-        if self._mem_prop and self._prop:
+        if matrix_opt["_mem_prop"] and self._prop:
             return self._prop
-        if self.method == "spectral":
+        if matrix_opt["method"] == "spectral":
             if self._eig_vec is None:
                 self._spectral_decomp(tau)
             prop = self._eig_vec.dot(self._prop_eigen).dot(self._eig_vec_adj)
-        elif self.method in ["approx", "Frechet"]:
+        elif matrix_opt["method"] in ["approx", "Frechet"]:
             prop = sp_expm(self.data*tau, sparse=True)
-        if self._mem_prop:
+        if matrix_opt["_mem_prop"]:
             self._prop = prop
         return prop
 
@@ -452,7 +443,7 @@ class control_sparse(control_matrix):
         return control_sparse(self._exp(tau))
 
     def dexp(self, dirr, tau, compute_expm=False):
-        if self.method == "Frechet":
+        if matrix_opt["method"] == "Frechet":
             A = (self.data*tau).toarray()
             E = (dirr.data*tau).toarray()
             if compute_expm:
@@ -463,7 +454,7 @@ class control_sparse(control_matrix):
                                                   compute_expm=compute_expm)
             prop_grad = sp.csr_matrix(prop_grad_dense)
 
-        elif self.method == "spectral":
+        elif matrix_opt["method"] == "spectral":
             if self._eig_vec is None:
                 self._spectral_decomp(tau)
             if compute_expm:
@@ -475,11 +466,11 @@ class control_sparse(control_matrix):
             # Return to canonical basis
             prop_grad = self._eig_vec.dot(cdg).dot(self._eig_vec_adj)
 
-        elif self.method == "approx":
-            dM = (self.data+self.epsilon*dirr.data)*tau
+        elif matrix_opt["method"] == "approx":
+            dM = (self.data+matrix_opt["epsilon"]*dirr.data)*tau
             dprop = sp_expm(dM, sparse=True)
             prop = self._exp(tau)
-            prop_grad = (dprop - prop)*(1/self.epsilon)
+            prop_grad = (dprop - prop)*(1/matrix_opt["epsilon"])
 
         if compute_expm:
             return control_sparse(prop), control_sparse(prop_grad)
