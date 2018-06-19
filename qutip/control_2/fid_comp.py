@@ -127,7 +127,8 @@ class FidCompUnitary():
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
         # loop through all ctrl timeslots calculating gradients
-        for k, onto_evo, dU, U, fwd_evo in self.tslotcomp.reversed_onto(targetd=self.target_d):
+        for k, onto_evo, dU, U, fwd_evo in \
+                        self.tslotcomp.reversed_onto(targetd=self.target_d):
             for j in range(n_ctrls):
                 grad[k, j] = (onto_evo*dU[j]*fwd_evo).tr()
 

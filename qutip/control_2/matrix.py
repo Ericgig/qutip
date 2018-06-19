@@ -125,7 +125,7 @@ matrix_opt = {
     "_mem_eigen_adj":False,
     "_mem_prop":False,
     "epsilon":1e-6,
-    "method":"Frechet"}
+    "method":"spectral"}
 
 class control_matrix:
     def __init__(self, obj=None):
@@ -241,7 +241,7 @@ class control_dense(control_matrix):
         basis, and the 'factormatrix' used in calculating the propagator
         gradient.
         """
-        eig_val, eig_vec = la.eigh(self.data)
+        eig_val, eig_vec = la.eig(self.data)
 
         eig_val_tau = eig_val*tau
         prop_eig = np.exp(eig_val_tau)
