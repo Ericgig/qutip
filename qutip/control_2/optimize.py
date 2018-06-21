@@ -232,16 +232,13 @@ class Optimizer(object):
         self.reset()
 
     def reset(self):
-
         self.alg = 'GRAPE'
         self.alg_params = None
 
-        self.method = 'l_bfgs_b'
+        self.method = 'L-BFGS-B'
         self.method_params = None
 
         self.bounds = None
-
-        mo = self.method_options
 
         # termination
         self.termination_conditions = {}
@@ -253,7 +250,7 @@ class Optimizer(object):
         tc["fid_err_targ"] = 1e-5
         tc["min_gradient_norm"] = 1e-5
         tc["max_wall_time"] = 60*60.0
-        tc["max_fid_func_calls"] = 1e6
+        tc["max_fid_func_calls"] = 10000#1e6
         tc["max_iterations"] = 1e6
 
         mo["ftol"] = 1e-5
@@ -363,7 +360,7 @@ class Optimizer(object):
         #result = self._create_result()
 
         st_time = timeit.default_timer()
-        self.wall_time_optim_start = st_time
+        self.wall_time_optimize_start = st_time
 
         """result.evo_full_initial = self.dynamics.full_evo.copy()
         result.initial_fid_err = self.fid_err_func_wrapper(self.x0)
@@ -384,12 +381,12 @@ class Optimizer(object):
                 bounds=self.bounds,
                 options=self.method_options,
                 callback=self.iter_step_callback_func)
-            result.final_amps = opt_res.x.reshape(self.x_shape)
+            result.final_x = opt_res.x.reshape(self.x_shape)
             result.termination_reason = opt_res.message
             result.num_iter = opt_res.nit
 
-        except errors.OptimizationTerminate as except_term:
-            result.final_amps = self.x1.reshape(self.x_shape)
+        except solverEnd as except_term:
+            result.final_x = self.x1.reshape(self.x_shape)
             result.termination_reason = self.termination_signal
             result.num_iter = self.num_iter
 
@@ -417,14 +414,14 @@ class Optimizer(object):
         self.num_fid_func_calls += 1
 
         x_2d = x.reshape(self.x_shape)
-        self.err = self.error_func(x_2d)
+        self.err = self.errorFunc(x_2d)
 
-        if self.err <= self.termination_conditions.fid_err_targ:
-            self.termination_signal = "fid_err_targ"
-            raise solverEnd()
-            raise errors.GoalAchievedTerminate(err)
+        #if self.err <= self.termination_conditions["fid_err_targ"]:
+        #    self.termination_signal = "fid_err_targ"
+        #    raise solverEnd()
+        #    raise errors.GoalAchievedTerminate(err)
 
-        if self.num_fid_func_calls > self.termination_conditions.max_fid_func_calls:
+        if self.num_fid_func_calls > self.termination_conditions["max_fid_func_calls"]:
             self.termination_signal = "max_fid_func_calls"
             raise solverEnd()
             raise errors.MaxFidFuncCallTerminate()
@@ -454,9 +451,9 @@ class Optimizer(object):
         grad = self.gradFunc(x_2d)
 
         self.gradnorm = np.sum(grad*grad)
-        if self.gradnorm < self.termination_conditions.min_gradient_norm:
-            self.termination_signal = "min_gradient_norm"
-            raise solverEnd()
+        #if self.gradnorm < self.termination_conditions['min_gradient_norm']:
+        #    self.termination_signal = "min_gradient_norm"
+        #    raise solverEnd()
 
         return grad.flatten()
 
@@ -468,9 +465,9 @@ class Optimizer(object):
         self.num_iter += 1
         self.x1 = x.copy()
         wall_time = timeit.default_timer() - self.wall_time_optimize_start
-        if wall_time > self.termination_conditions.max_wall_time:
+        if wall_time > self.termination_conditions["max_wall_time"]:
             self.termination_signal = "max_wall_time"
             raise solverEnd()
-        if self.num_iter > self.termination_conditions.max_iterations:
+        if self.num_iter > self.termination_conditions['max_iterations']:
             self.termination_signal = "max_iterations"
             raise solverEnd()

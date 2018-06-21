@@ -1,8 +1,6 @@
 
-
-
-
-
+import numpy as np
+from scipy.fftpack import fft
 
 
 
@@ -56,7 +54,7 @@ class pass_througth(filter):
         #for t in range(self._num_tslots):
         #    self.time[t+1] = self.time[t] + self._tau[t]
 
-        return np.ndarray([t_step, num_ctrl]), time
+        return (t_step, num_ctrl), time
 
 
 class fourrier(filter):
@@ -114,7 +112,7 @@ class fourrier(filter):
         else:
             self.num_x = num_x
 
-        return np.array([self.t_step, self.num_ctrl]), \
+        return (self.num_x, self.num_ctrl), \
             np.linspace(0, T, self.t_step+1)
 
 
@@ -260,9 +258,8 @@ class spline():
             self.num_x = 10
             self.t_step = self.num_x * self.N
 
-        return np.array([self.num_x, self.num_ctrl]), \
+        return (self.num_x, self.num_ctrl), \
             np.linspace(0, T, self.t_step+1)
-
 
 
 class convolution(filter):

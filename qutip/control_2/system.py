@@ -42,8 +42,8 @@ import numpy as np
 import scipy.linalg as la
 import scipy.sparse as sp
 # QuTiP
-from qutip import Qobj
-from qutip.sparse import sp_eigs, _dense_eigs
+from qutip import Qobj, td_Qobj
+#from qutip.sparse import sp_eigs, _dense_eigs
 import qutip.settings as settings
 # QuTiP logging
 import qutip.logging_utils as logging
@@ -64,13 +64,12 @@ import numpy as np
 import scipy.linalg as la
 import scipy.sparse as sp
 
-
-#import qutip.control.tslotcomp as tslotcomp
-#import qutip.control.fidcomp as fidcomp
-#import qutip.control.filters as filters
-#import qutip.control.matrix as matrix
-#import qutip.control.optimize as optimize
-
+from qutip.control.optimresult import OptimResult
+import qutip.control_2.tslotcomp as tslotcomp
+import qutip.control_2.fidcomp as fidcomp
+import qutip.control_2.filters as filters
+import qutip.control_2.matrix as matrix
+import qutip.control_2.optimize as optimize
 
 class dynamics:
     """
@@ -92,8 +91,18 @@ class dynamics:
 
     def __init__(self):
         self.ready = False
+        self.costcomp = None
         self.costs = []
         self.other_cost = []
+        self.early = False
+
+        self.filter = None
+        self.psi0 = None
+        self.mode = "speed"
+        self.tslotcomp = None
+
+    def set_initial_state(self, u):
+        self.psi0 = u
 
     def set_physic(self, H, ctrls, initial, target):
         self.drift_dyn_gen = H      # Hamiltonians or Liouvillian as a Qobj or td_Qobj
@@ -125,12 +134,12 @@ class dynamics:
                 raise Exception("Drift and ctrls operators dimensions do not match.")
 
         if isinstance(initial, Qobj):
-            if initial.dims == self.dims[1]:
-                self.initial = initial
-                self.state_evolution = True
-            elif initial.dims == self.dims:
+            if initial.dims == self.dims:
                 self.initial = initial
                 self.state_evolution = False
+            elif initial.dims[0] == self.dims[1] and initial.shape[1] == 1:
+                self.initial = initial
+                self.state_evolution = True
             else:
                 raise Exception("Dims of the initial state and Drift operator do not match.")
         else:
@@ -154,11 +163,11 @@ class dynamics:
         elif isinstance(_filter, filters.filter):
             self.filter = _filter
 
-    def set_times(self, times=None, tau=None, T=0, t_step=0, _num_x=0):
-        self.t_data = (times, tau, T, t_step, _num_x)
+    def set_times(self, times=None, tau=None, T=0, t_step=0, num_x=0):
+        self.t_data = (times, tau, T, t_step, num_x)
 
-    def optimization(self, mode="auto", mem=0, _tslotcomp=None):
-        if mode in ["auto","mem","speed","precision"]:
+    def optimization(self, mode="speed", mem=0, _tslotcomp=None):
+        if mode in ["mem","speed"]:
             self.mode = mode
 
         if mem and isinstance(mem, (int, float)):
@@ -210,9 +219,11 @@ class dynamics:
             if isinstance(early, (list, np.array)):
                 self.early_times = early
 
-        if isinstance(weight, (int,float)):
+        if weight is None:
+            self.weight = 1.
+        elif isinstance(weight, (int,float)):
             self.weight = weight
-        elif isinstance(weight, (list, np.array)):
+        elif isinstance(weight, (list, np.ndarray)):
             if not len(self.early_time)==len(weight):
                 self.weight = weight
             else:
@@ -229,12 +240,10 @@ class dynamics:
                 self.option[k] = v
 
     def prepare(self):
-        if _filter in None:
+        if self.filter is None:
             self.filter = filters.pass_througth()
-        else:
-            self.filter = _filter
 
-        self._x_shape, self.time = self.filter.init_timeslots(*self.t_data)
+        self._x_shape, self.time = self.filter.init_timeslots(*self.t_data, num_ctrl=self._num_ctrls)
 
         self._num_tslots = len(self.time)-1
         self._evo_time = self.time[-1]
@@ -251,14 +260,28 @@ class dynamics:
         self._gradient_u = np.zeros((self._num_tslots, self._num_ctrls))
 
         if self.tslotcomp is None:
-            matrix
-            drift = self.drift_dyn_gen
-            ctrls = self.ctrl_dyn_gen
-            initial = self.initial
-            target = self.target
-            self.tslotcomp = tslotcomp.TSlotCompUpdateAll(drift, ctrls, initial, target,
-                                                          self._tau, self._num_tslots,
-                                                          self._num_ctrls)
+            if self.mode == "mem":
+                matrix_type = matrix.control_sparse
+            else:
+                matrix_type = matrix.control_dense
+            if isinstance(self.drift_dyn_gen, Qobj):
+                drift = matrix.falselist_cte(matrix_type(self.drift_dyn_gen))
+            else:
+                drift = matrix.falselist_func(self.drift_dyn_gen, self._tau, matrix_type)
+
+            ctrl_td = any([isinstance(ctrl, td_Qobj) for ctrl in self.ctrl_dyn_gen])
+            if not ctrl_td:
+                ctrls = matrix.falselist2d_cte(
+                    [matrix_type(ctrl) for ctrl in self.ctrl_dyn_gen])
+            else:
+                drift = matrix.falselist2d_func(
+                    [td_Qobj(ctrl) for ctrl in self.ctrl_dyn_gen], self._tau, matrix_type)
+
+            initial = matrix_type(self.initial)   # As a vec?
+            target = matrix_type(self.target)     # As a vec?
+            self.tslotcomp = tslotcomp.TSComp_Save_Power_all(drift, ctrls, initial, target,
+                                                             self._tau, self._num_tslots,
+                                                             self._num_ctrls)
 
         if self.costcomp is None:
             if self.state_evolution and not self.issuper:
@@ -273,32 +296,58 @@ class dynamics:
         if self.other_cost:
             self.costcomp += self.other_cost
 
-        if not self.x0:
+        if self.psi0 is None:
             self.x0 = np.random.rand(self._x_shape)
+        else:
+            if isinstance(self.psi0, list):
+                self.psi0 = np.array(self.psi0)
+            if self.psi0.shape == self._x_shape:
+                # pre filter
+                self.x0 = self.psi0
+            elif self.psi0.shape == (self._num_tslots, self._num_ctrls):
+                # post filter u0
+                raise NotImplementedError()
+            else:
+                raise Exception("x0 bad shape")
+
+        self.x_ = self.x0*0.5
+        self.gradient_x = False
 
         self.solver = optimize.Optimizer(self._error, self._gradient, self.x0)
 
     def run(self):
+        result = OptimResult()
+        result.initial_amps = self.filter(self.x0)
+        result.initial_x = self.x0*1.
+        result.initial_fid_err = self._error(self.x0)
+        result.evo_full_initial =  self.tslotcomp.state_T(self._num_tslots).data*1
 
-        result = ...
-        self.solver.run(result)
+        self.solver.run_optimization(result)
+
+        result.evo_full_final =  self.tslotcomp.state_T(self._num_tslots).data*1
+        result.final_amps = self.filter(result.final_x)
+
+        return result
+
 
 
     ### -------------------------- Computation part ---------------------------
     def _error(self, x):
-        if not np.allclose(self.x_ == x):
+        if not np.allclose(self.x_, x):
+            self.gradient_x = False
             self._compute_state(x)
         return self.error
 
     def _gradient(self, x):
-        if not np.allclose(self.x_ == x):
-            if not self.gradient_x:
-                self._compute_grad()
+        if self.gradient_x is False:
+            if not np.allclose(self.x_, x):
+                self._compute_state(x)
+            self._compute_grad()
         return self.gradient_x
 
     def _compute_state(self, x):
         """For a state x compute the cost"""
-        self.x_ = x
+        self.x_ = x*1.
         self._ctrl_amps = self.filter(x)
         self.tslotcomp.set(self._ctrl_amps)
         self.error = 0.
@@ -313,6 +362,3 @@ class dynamics:
             gradient_u_cost = costs.grad()
             gradient_u += gradient_u_cost
         self.gradient_x = self.filter.reverse(gradient_u)
-
-    """def _apply_phase(self, dg):
-        return self._prephase * dg * self._postphase"""

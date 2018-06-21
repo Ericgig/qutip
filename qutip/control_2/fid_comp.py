@@ -130,7 +130,7 @@ class FidCompUnitary():
         for k, onto_evo, dU, U, fwd_evo in \
                         self.tslotcomp.reversed_onto(targetd=self.target_d):
             for j in range(n_ctrls):
-                grad[k, j] = (onto_evo*dU[j]*fwd_evo).tr()
+                grad[k, j] = -(onto_evo*dU[j]*fwd_evo).tr()
 
         if self.SU == "SU":
             grad_normalized = np.real(grad) / self.dimensional_norm
@@ -226,7 +226,7 @@ class FidCompUnitaryEarly():
                         targetd=self.target_d, times=self.times,
                         phase=phase):
             for j in range(n_ctrls):
-                grad[k, j] = (rev_evo*dU[j]*fwd_evo).tr()
+                grad[k, j] = -(rev_evo*dU[j]*fwd_evo).tr()
 
         return np.real(grad)
 
@@ -312,7 +312,7 @@ class FidCompForbidden():
                         targetd=self.forbidden_d, times=self.times,
                         phase=phase):
             for j in range(n_ctrls):
-                grad[k, j] = (rev_evo*dU[j]*fwd_evo).tr()
+                grad[k, j] = -(rev_evo*dU[j]*fwd_evo).tr()
 
         return np.real(grad)
 
