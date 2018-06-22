@@ -214,7 +214,7 @@ class TSComp_Save_Power_all(TimeslotComputer):
 
     def reversed_onwd(self):
         back = 1
-        for i in range(self.T-1,0,-1):
+        for i in range(self.T-1,-1,-1):
             yield i, back, self._dU[i], self._prop[i], self.fwd[i]
             back = back*self._prop[i]
 
@@ -233,7 +233,8 @@ class TSComp_Save_Power_all(TimeslotComputer):
                             phase=None):
         if times is None:
             times = np.arange(self.T)+1
-        times = np.sort(np.array(times, dtype=int))
+        else:
+            times = np.sort(np.array(times, dtype=int))
         if phase is None:
             phase = np.ones(len(times))
         if target or targetd:
@@ -248,5 +249,154 @@ class TSComp_Save_Power_all(TimeslotComputer):
             yield i, back, self._dU[i], self._prop[i], self.fwd[i]
             back = back*self._prop[i]
             if ind != -1 and i == times[ind]:
+                back += targetd*phase[ind]
+                ind -= 1
+
+
+class TSComp_Power(TimeslotComputer):
+    """
+    Timeslot Computer - Update All
+    Updates and keep all dynamics generators, propagators and evolutions when
+    ctrl amplitudes are updated
+    """
+    def __init__(self, H, ctrl, initial, target, tau, n_t, num_ctrl):
+        self.id_text = 'ALL'
+        self.cache_text = 'None'
+        self.exp_text = 'Power'
+        self.drift = H
+        self.ctrl = ctrl
+        self.initial = initial
+        self.target = target
+        self.tau = tau
+        self.n_t = n_t
+        self.num_ctrl = num_ctrl
+
+        self.T = 0
+
+    def _compute_gen(self):
+        """
+        Recalculates the evolution operators.
+        Dynamics generators (e.g. Hamiltonian) and
+        prop (propagators) are calculated as necessary
+
+        Changed to a function: take propagators and return evolution
+        """
+        # Compute and cache all dyn_gen
+        self._dyn_gen = [None] * self.n_t
+        for t in range(self.n_t):
+            self._dyn_gen[t] = self.drift[t].copy()
+            for i in range(self.num_ctrl):
+                self._dyn_gen[t] += self._ctrl_amps[t,i] * self.ctrl[t,i]
+
+        # Compute and cache all prop and dprop
+        self._prop = [None] * self.n_t
+        self._dU = np.empty((self.n_t, self.num_ctrl), dtype=object)
+        self.fwd = [self.initial]
+        for t in range(self.n_t):
+            self._prop[t], self._dU[t,0] = self._dyn_gen[t].dexp(self.ctrl[t,0],
+                                             self.tau[t], compute_expm=True)
+            self._dU[t,1:] = [self._dyn_gen[t].dexp(self.ctrl[t,i], self.tau[t])
+                         for i in range(1,self.num_ctrl)]
+            self.fwd.append(self._prop[t] * self.fwd[t])
+
+    def state_T(self, T_target):
+        self.T = T_target
+        fwd = self.initial
+        for t in range(T_target):
+            _dyn_gen = self.drift[t].copy()
+            for i in range(self.num_ctrl):
+                _dyn_gen += self._ctrl_amps[t,i] * self.ctrl[t,i]
+            _prop = _dyn_gen.prop(self.tau[t])
+            fwd = (_prop * fwd)
+        self.final = fwd
+        return fwd
+
+    def forward(self, T_targets):
+        T_targets = np.sort(np.array(T_targets, dtype=int))
+        self.T = T_targets[-1]
+        fwd = self.initial
+        self.fwd = []
+        if 0 in T_targets:
+            yield fwd
+
+        for t in range(T_targets[-1]):
+            _dyn_gen = self.drift[t].copy()
+            for i in range(self.num_ctrl):
+                _dyn_gen += self._ctrl_amps[t,i] * self.ctrl[t,i]
+            _prop = _dyn_gen.prop(self.tau[t])
+            fwd = (_prop * fwd)
+            if t+1 in T_targets:
+                yield fwd
+        self.final = fwd
+
+    def reversed_onwd(self):
+        back = 1
+        _dU = [None] * self.num_ctrl
+        fwd = self.final
+        for t in range(self.T-1,-1,-1):
+            _dyn_gen = self.drift[t].copy()
+            for i in range(self.num_ctrl):
+                _dyn_gen += self._ctrl_amps[t,i] * self.ctrl[t,i]
+            _prop, _dU[0] = _dyn_gen.dexp(self.ctrl[t,0],
+                             self.tau[t], compute_expm=True)
+            _dU[1:] = [_dyn_gen.dexp(self.ctrl[t,i], self.tau[t])
+                                for i in range(1,self.num_ctrl)]
+            fwd = _prop.dag() * fwd
+            yield t, back, _dU, _prop, fwd
+            back = back*_prop
+
+    def reversed_onto(self, target=False, targetd=False):
+        if target:
+            back = target.dag()
+        elif targetd:
+            back = targetd
+        else:
+            back = self.target.dag()
+        _dU = [None] * self.num_ctrl
+        fwd = self.final
+        for t in range(self.T-1,-1,-1):
+            _dyn_gen = self.drift[t].copy()
+            for i in range(self.num_ctrl):
+                _dyn_gen += self._ctrl_amps[t,i] * self.ctrl[t,i]
+            _prop, _dU[0] = _dyn_gen.dexp(self.ctrl[t,0],
+                            self.tau[t], compute_expm=True)
+            _dU[1:] = [_dyn_gen.dexp(self.ctrl[t,i], self.tau[t])
+                                for i in range(1,self.num_ctrl)]
+            fwd = _prop.dag() * fwd
+            yield t, back, _dU, _prop, fwd
+            back = back*_prop
+
+    def reversed_cumulative(self, target=False, targetd=False, times=None,
+                            phase=None):
+        if times is None:
+            times = np.arange(self.T)+1
+        else:
+            times = np.sort(np.array(times, dtype=int))
+
+        if phase is None:
+            phase = np.ones(len(times))
+        if target or targetd:
+            if target:
+                targetd = target.dag()
+            back = targetd*phase[-1]
+        else:
+            targetd = self.target.dag()
+            back = targetd*phase[-1]
+
+        _dU = [None] * self.num_ctrl
+        fwd = self.final
+        ind = times.shape[0]-2
+        for t in range(times[-1]-1,-1,-1):
+            _dyn_gen = self.drift[t].copy()
+            for i in range(self.num_ctrl):
+                _dyn_gen += self._ctrl_amps[t,i] * self.ctrl[t,i]
+            _prop, _dU[0] = _dyn_gen.dexp(self.ctrl[t,0],
+                             self.tau[t], compute_expm=True)
+            _dU[1:] = [_dyn_gen.dexp(self.ctrl[t,i], self.tau[t])
+                                for i in range(1,self.num_ctrl)]
+            fwd = _prop.dag() * fwd
+            yield t, back, _dU, _prop, fwd
+            back = back*_prop
+            if ind != -1 and t == times[ind]:
                 back += targetd*phase[ind]
                 ind -= 1
