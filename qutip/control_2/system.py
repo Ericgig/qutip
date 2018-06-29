@@ -56,20 +56,51 @@ logger = logging.get_logger()
 #import qutip.control.symplectic as sympl
 #import qutip.control.dump as qtrldump
 
+import importlib
+import importlib.util
+
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/matrix.py"
+spec = importlib.util.spec_from_file_location("matrix", moduleName)
+matrix = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(matrix)
+
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/tslotcomp.py"
+spec = importlib.util.spec_from_file_location("tslotcomp", moduleName)
+tslotcomp = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tslotcomp)
+
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/fid_comp.py"
+spec = importlib.util.spec_from_file_location("fidcomp", moduleName)
+fidcomp = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fidcomp)
+
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/filters.py"
+spec = importlib.util.spec_from_file_location("filters", moduleName)
+filters = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(filters)
+
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/stats.py"
+spec = importlib.util.spec_from_file_location("stats", moduleName)
+stats = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(stats)
+Stats = stats.Stats
+
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/optimize.py"
+spec = importlib.util.spec_from_file_location("optimize", moduleName)
+optimize = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(optimize)
 
 
-
-from qutip.qobj import Qobj
-import numpy as np
-import scipy.linalg as la
-import scipy.sparse as sp
 
 from qutip.control.optimresult import OptimResult
+"""
 import qutip.control_2.tslotcomp as tslotcomp
 import qutip.control_2.fidcomp as fidcomp
 import qutip.control_2.filters as filters
 import qutip.control_2.matrix as matrix
 import qutip.control_2.optimize as optimize
+from qutip.control_2.stats import Stats
+"""
 
 class dynamics:
     """
@@ -94,12 +125,14 @@ class dynamics:
         self.costcomp = None
         self.costs = []
         self.other_cost = []
+
         self.early = False
+        self.mode = "speed"
 
         self.filter = None
         self.psi0 = None
-        self.mode = "speed"
         self.tslotcomp = None
+        self.stats = None
 
     def set_initial_state(self, u):
         self.psi0 = u
@@ -166,19 +199,8 @@ class dynamics:
     def set_times(self, times=None, tau=None, T=0, t_step=0, num_x=0):
         self.t_data = (times, tau, T, t_step, num_x)
 
-    def optimization(self, mode="speed", mem=0, _tslotcomp=None):
-        if mode in ["mem","speed"]:
-            self.mode = mode
-
-        if mem and isinstance(mem, (int, float)):
-            self.mem = mem
-        else:
-            #Not sure to want to get here yet
-            import psutil
-            self.mem = psutil.virtual_memory().free/1024/1024
-
-        if _tslotcomp is not None:
-            self.tslotcomp = _tslotcomp
+    def set_stats(self, timings=1, states=1):
+        self.stats = Stats(timings, states)
 
     def set_cost(self, mode=None, early=False, weight=None):
         """
@@ -234,12 +256,29 @@ class dynamics:
     def _add_cost(self, cost_comp=None):
         self.other_cost.append(cost_comp)
 
+    def optimization(self, mode="speed", mem=0, _tslotcomp=None):
+        if mode in ["mem","speed"]:
+            self.mode = mode
+
+        if mem and isinstance(mem, (int, float)):
+            self.mem = mem
+        else:
+            #Not sure to want to get here yet
+            import psutil
+            self.mem = psutil.virtual_memory().free/1024/1024
+
+        if _tslotcomp is not None:
+            self.tslotcomp = _tslotcomp
+
     def option(self, **kwargs):
         for k,v in kwargs.items():
             if k in self.option:
                 self.option[k] = v
 
     def prepare(self):
+        if self.stats is None:
+            self.stats = Stats()
+
         if self.filter is None:
             self.filter = filters.pass_througth()
 
@@ -313,7 +352,7 @@ class dynamics:
         self.x_ = self.x0*0.5
         self.gradient_x = False
 
-        self.solver = optimize.Optimizer(self._error, self._gradient, self.x0)
+        self.solver = optimize.Optimizer(self._error, self._gradient, self.x0, self.stats)
 
     def run(self):
         result = OptimResult()
@@ -332,33 +371,67 @@ class dynamics:
 
 
     ### -------------------------- Computation part ---------------------------
-    def _error(self, x):
-        if not np.allclose(self.x_, x):
+    def _error(self, x, stats=False):
+        if not np.allclose(self.x_, x) or stats:
             self.gradient_x = False
-            self._compute_state(x)
+            self._compute_state(x, stats)
         return self.error
 
-    def _gradient(self, x):
+    def _gradient(self, x, stats=False):
         if self.gradient_x is False:
             if not np.allclose(self.x_, x):
-                self._compute_state(x)
-            self._compute_grad()
+                self._compute_state(x, stats)
+            self._compute_grad(stats)
         return self.gradient_x
 
-    def _compute_state(self, x):
+    def _compute_state(self, x, stats):
         """For a state x compute the cost"""
+        if self.stats is not None and self.stats.timings:
+            self.stats.num_fidelity_computes += 1
         self.x_ = x*1.
         self._ctrl_amps = self.filter(x)
         self.tslotcomp.set(self._ctrl_amps)
         self.error = 0.
-        for costs in self.costcomp:
-            error = costs.costs()
-            self.error += error
+        if stats:
+            error = []
+            for costs in self.costcomp:
+                error += [costs.costs()]
+            self.error = sum(error)
+            if self.stats.states == 1:
+                self.stats.fidelity += [sum(error)]
+            elif self.stats.states >= 2:
+                self.stats.x += [x*1.]
+                self.stats.u += [self._ctrl_amps*1.]
+                self.stats.fidelity += [error]
+        else:
+            for costs in self.costcomp:
+                error = costs.costs()
+                self.error += error
 
-    def _compute_grad(self):
+    def _compute_grad(self, stats):
         """For a state x compute the grandient"""
-        gradient_u = np.zeros((self._num_tslots, self._num_ctrls))
-        for costs in self.costcomp:
-            gradient_u_cost = costs.grad()
-            gradient_u += gradient_u_cost
-        self.gradient_x = self.filter.reverse(gradient_u)
+        if self.stats is not None and self.stats.timings:
+            self.stats.num_grad_computes += 1
+
+        if stats:
+            gradient_u_cost = np.zeros((self._num_tslots, self._num_ctrls, \
+                                   len(self.costcomp)))
+            gradient_u = np.zeros((self._num_tslots, self._num_ctrls))
+
+            for i, costs in enumerate(self.costcomp):
+                gradient_u_cost[:,:,i] = costs.grad()
+                gradient_u += gradient_u_cost[:,:,i]
+            self.gradient_x = self.filter.reverse(gradient_u)
+
+            if self.stats.states >= 2:
+                self.stats.grad_norm += [np.sum(self.gradient_x*\
+                                               self.gradient_x.conj())]
+            if self.stats.states >= 3:
+                self.stats.grad_x += [self.gradient_x*1.]
+                self.stats.grad_u += [gradient_u_cost*1.]
+        else:
+            gradient_u = np.zeros((self._num_tslots, self._num_ctrls))
+            for costs in self.costcomp:
+                gradient_u_cost = costs.grad()
+                gradient_u += gradient_u_cost
+            self.gradient_x = self.filter.reverse(gradient_u)

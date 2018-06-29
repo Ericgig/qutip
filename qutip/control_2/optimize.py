@@ -224,11 +224,12 @@ class Optimizer(object):
 
     """
 
-    def __init__(self, error, grad=None, x0=np.zeros(0)):
+    def __init__(self, error, grad=None, x0=np.zeros(0), stats=None):
         self.errorFunc = error
         self.gradFunc = grad
         self.x_shape = x0.shape
         self.x0 = x0.flatten()
+        self.stats = stats
         self.reset()
 
     def reset(self):
@@ -266,9 +267,9 @@ class Optimizer(object):
         self.termination_signal = ""
 
         # Stats
-        self.stats = None
-        self.iter_summary = None
-        self.disp_conv_msg = False
+        #self.stats = None
+        #self.iter_summary = None
+        #self.disp_conv_msg = False
 
         #self.apply_params()
 
@@ -361,6 +362,11 @@ class Optimizer(object):
 
         st_time = timeit.default_timer()
         self.wall_time_optimize_start = st_time
+        if self.stats is not None and self.stats.timings:
+            self.stats.wall_time_optim_start = st_time
+            self.stats.num_grad_func_calls_per_iter = [0]
+            self.stats.num_fidelity_func_calls_per_iter = [0]
+            self.stats.wall_time_per_iter = [0.]
 
         """result.evo_full_initial = self.dynamics.full_evo.copy()
         result.initial_fid_err = self.fid_err_func_wrapper(self.x0)
@@ -395,6 +401,12 @@ class Optimizer(object):
         result.num_fid_func_calls = self.num_fid_func_calls
         result.wall_time = timeit.default_timer() - st_time
 
+        if self.stats is not None and self.stats.timings:
+            self.stats.wall_time_optim_end = timeit.default_timer()
+            self.stats.wall_time_optim = timeit.default_timer() - st_time
+            self.stats.wall_time_per_iter = \
+                            np.diff(np.array(self.stats.wall_time_per_iter))
+
         return result
 
     def fid_err_func_wrapper(self, x):
@@ -412,9 +424,16 @@ class Optimizer(object):
         terminated if the target has been achieved.
         """
         self.num_fid_func_calls += 1
+        if self.stats is not None and self.stats.timings:
+            self.stats.num_fidelity_func_calls += 1
+            self.stats.num_fidelity_func_calls_per_iter[self.num_iter] += 1
+            t_start = timeit.default_timer()
 
         x_2d = x.reshape(self.x_shape)
         self.err = self.errorFunc(x_2d)
+
+        if self.stats is not None and self.stats.timings:
+            self.stats.wall_time_fidelity_func += timeit.default_timer() - t_start
 
         #if self.err <= self.termination_conditions["fid_err_targ"]:
         #    self.termination_signal = "fid_err_targ"
@@ -446,11 +465,18 @@ class Optimizer(object):
         condition
         """
         self.num_grad_func_calls += 1
+        if self.stats is not None and self.stats.timings:
+            self.stats.num_grad_func_calls += 1
+            self.stats.num_grad_func_calls_per_iter[self.num_iter] += 1
+            t_start = timeit.default_timer()
 
         x_2d = x.reshape(self.x_shape)
         grad = self.gradFunc(x_2d)
 
-        self.gradnorm = np.sum(grad*grad)
+        if self.stats is not None and self.stats.timings:
+            self.stats.wall_time_grad_func += timeit.default_timer() - t_start
+
+        self.gradnorm = np.sum(grad*grad.conj())
         #if self.gradnorm < self.termination_conditions['min_gradient_norm']:
         #    self.termination_signal = "min_gradient_norm"
         #    raise solverEnd()
@@ -463,8 +489,22 @@ class Optimizer(object):
         Terminate if this has exceeded the maximum allowed time
         """
         self.num_iter += 1
-        self.x1 = x.copy()
         wall_time = timeit.default_timer() - self.wall_time_optimize_start
+        if self.stats is not None and self.stats.timings:
+            self.stats.num_iter += 1
+            self.stats.num_grad_func_calls += 1
+            self.stats.num_grad_func_calls_per_iter += [0]
+            self.stats.num_fidelity_func_calls_per_iter += [0]
+            self.stats.wall_time_per_iter += [wall_time]
+
+        self.x1 = x.copy()
+
+        if self.stats is not None and self.stats.states:
+            x_2d = x.reshape(self.x_shape)
+            self.err = [self.errorFunc(x_2d, stats=True)]
+            grad = self.gradFunc(x_2d, stats=True)
+            self.stats.grad_norm += [np.sum(grad*grad.conj())]
+
         if wall_time > self.termination_conditions["max_wall_time"]:
             self.termination_signal = "max_wall_time"
             raise solverEnd()

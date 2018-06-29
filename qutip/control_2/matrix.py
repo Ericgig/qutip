@@ -144,6 +144,11 @@ class control_matrix:
         out += other
         return out
 
+    def __sub__(self, other):
+        out = self.copy()
+        out -= other
+        return out
+
     def __mul__(self, other):
         out = self.copy()
         out *= other
@@ -163,7 +168,7 @@ class control_dense(control_matrix):
         self.full = True
         self.data = None
         if isinstance(obj, Qobj):
-            self.data = obj.data.todense()
+            self.data = np.array(obj.data.todense())
             self._size = self.data.shape[0]
         elif isinstance(obj, np.ndarray):
             self.data = obj
@@ -222,6 +227,15 @@ class control_dense(control_matrix):
             self.data += other.data
         elif isinstance(other, np.ndarray):
             self.data += other
+        else:
+            raise NotImplementedError(str(type(other)))
+        return self
+
+    def __isub__(self, other):
+        if isinstance(other, control_dense):
+            self.data -= other.data
+        elif isinstance(other, np.ndarray):
+            self.data -= other
         else:
             raise NotImplementedError(str(type(other)))
         return self
@@ -374,6 +388,13 @@ class control_sparse(control_matrix):
     def __iadd__(self, other):
         if isinstance(other, control_sparse):
             self.data = self.data + other.data
+        else:
+            raise NotImplementedError(type(other))
+        return self
+
+    def __isub__(self, other):
+        if isinstance(other, control_sparse):
+            self.data = self.data - other.data
         else:
             raise NotImplementedError(type(other))
         return self
