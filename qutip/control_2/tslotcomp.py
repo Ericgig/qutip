@@ -85,6 +85,7 @@ This way, the prop(t) do not *need* to be saved:
 import os
 import warnings
 import numpy as np
+import scipy as sc
 import timeit
 # QuTiP
 from qutip import Qobj
@@ -94,6 +95,14 @@ import qutip.control.dump as qtrldump
 # QuTiP logging
 import qutip.logging_utils as logging
 logger = logging.get_logger()
+
+import importlib
+import importlib.util
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/matrix.py"
+spec = importlib.util.spec_from_file_location("mat", moduleName)
+mat = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mat)
+control_dense = mat.control_dense
 
 
 def _is_unitary(prop):
@@ -124,6 +133,23 @@ def unitarity_check(props):
         if not self._is_unitary(self._prop[k]):
             pass
 
+shape_c = [(0,0)]
+def d2c(d_vec, N=0):
+    if N==0:
+        N=len(d_vec)//2
+    c_vec = d_vec[:N]+1j*d_vec[N:]
+    return c_vec.reshape(shape_c[0])
+
+def c2d(c_vec, N=0):
+    shape_c[0] = c_vec.shape
+    c_vec = c_vec.flatten()
+    if N==0:
+        N=len(c_vec)
+    d_vec = np.zeros(N*2)
+    d_vec[:N] = c_vec.real
+    d_vec[N:] = c_vec.imag
+    return d_vec
+
 
 class TimeslotComputer(object):
     """
@@ -152,9 +178,22 @@ class TimeslotComputer(object):
             self._dyn_gen[t] = self.drift[t].copy()
             for i in range(self.num_ctrl):
                 self._dyn_gen[t] += self._ctrl_amps[t,i] * self.ctrl[t, i]
-        #if not self.cache_phased_dyn_gen:
-            #for t in range(self.num_tslots):
-                #self._dyn_gen[t] = self._apply_phase(self._dyn_gen[t])
+
+    def state_T(self, T_target):
+        pass
+
+    def forward(self, T_targets):
+        pass
+
+    def reversed_onwd(self):
+        pass
+
+    def reversed_onto(self, target=False, targetd=False):
+        pass
+
+    def reversed_cumulative(self, target=False, targetd=False, times=None,
+                            phase=None):
+        pass
 
 
 class TSComp_Save_Power_all(TimeslotComputer):
@@ -400,3 +439,146 @@ class TSComp_Power(TimeslotComputer):
             if ind != -1 and t == times[ind]:
                 back += targetd*phase[ind]
                 ind -= 1
+
+
+class TSComp_Int(TimeslotComputer):
+    """
+    Timeslot Computer - Update All
+    Updates and keep all dynamics generators, propagators and evolutions when
+    ctrl amplitudes are updated
+    """
+    def __init__(self, H, ctrl, initial, target, tau, n_t, num_ctrl):
+        self.id_text = 'ALL'
+        self.cache_text = 'None'
+        self.exp_text = 'Integration'
+        self.drift = H
+        self.ctrl = ctrl
+        self.initial = initial
+        self.target = target
+        self.tau = tau
+        self.n_t = n_t
+        self.times = np.insert(np.cumsum(tau), 0, 0.)
+        self.num_ctrl = num_ctrl
+
+        self.T = 0
+        def f(x,t):
+            x_complex = d2c(x)
+            ti =  np.searchsorted(self.times[:-1],t)-1
+            try:
+                return c2d((self._dyn_gen[ti]*x_complex).data)
+            except:
+                print(t,ti,self.times)
+        self.int_func = f
+
+
+    def _compute_gen(self):
+        """
+        Recalculates the evolution operators.
+        Dynamics generators (e.g. Hamiltonian) and
+        prop (propagators) are calculated as necessary
+
+        Changed to a function: take propagators and return evolution
+        """
+        # Compute and cache all dyn_gen
+        self._dyn_gen = [None] * self.n_t
+        for t in range(self.n_t):
+            self._dyn_gen[t] = self.drift[t].copy()
+            for i in range(self.num_ctrl):
+                self._dyn_gen[t] += self._ctrl_amps[t,i] * self.ctrl[t,i]
+
+    def state_T(self, T_target):
+        self._compute_gen()
+        self.T = T_target
+        res = sc.integrate.odeint(self.int_func,
+                                  c2d(self.initial.data),
+                                  self.times)
+        self.final = d2c(res[-1])
+        self.fwd = [d2c(state) for state in res]
+        return self.final
+
+    def forward(self, T_targets):
+        self._compute_gen()
+        T_targets = np.sort(np.array(T_targets, dtype=int))
+        self.T = T_targets[-1]
+        times = self.times[:self.T+1]
+        res = sc.integrate.odeint(self.int_func,
+                                  c2d(self.initial.data),
+                                  times)
+        self.final = d2c(res[-1])
+        self.fwd = [d2c(state) for state in res]
+        for i in T_targets:
+            yield d2c(res[i])
+
+    def reversed_onwd(self):
+        back = 1
+        """_dU = [None] * self.num_ctrl
+        fwd = self.final
+        for t in range(self.T-1,-1,-1):
+            _dyn_gen = self.drift[t].copy()
+            for i in range(self.num_ctrl):
+                _dyn_gen += self._ctrl_amps[t,i] * self.ctrl[t,i]
+            _prop, _dU[0] = _dyn_gen.dexp(self.ctrl[t,0],
+                             self.tau[t], compute_expm=True)
+            _dU[1:] = [_dyn_gen.dexp(self.ctrl[t,i], self.tau[t])
+                                for i in range(1,self.num_ctrl)]
+            fwd = _prop.dag() * fwd
+            yield t, back, _dU, _prop, fwd
+            back = back*_prop"""
+
+    def reversed_onto(self, target=False):
+        if target:
+            if isinstance(target, (int, float, complex)):
+                back = np.eye(self.drift[0].data.shape[0]) * target
+            elif isinstance(target, control_dense):
+                back = target.data
+            else:
+                back = target
+        else:
+            back = np.eye(self.drift[0].data.shape[0])
+        times = self.times[::-1]
+        back = sc.integrate.odeint(self.int_func, c2d(back), times)
+        for t in range(self.T-1,-1,-1):
+            _dU = [self._dyn_gen[t].dexp(self.ctrl[t,i], self.tau[t])
+                                for i in range(self.num_ctrl)]
+
+            yield t, back[-t], _dU, None, self.fwd[t]
+
+    def reversed_cumulative(self, target=False, times=None, phase=None):
+        if times is None:
+            times = np.arange(self.T)+1
+        else:
+            times = np.sort(np.array(times, dtype=int))[::-1]
+        if phase is None:
+            phase = np.ones(len(times))
+        if target:
+            if isinstance(target, (int, float, complex)):
+                back = np.eye(self.drift[0].data.shape[0]) * target
+            else:
+                back = target
+        else:
+            back = np.eye(self.drift[0].data.shape[0])
+        if self.T+1 in times:
+            _dU = [self._dyn_gen[self.T].dexp(self.ctrl[self.T,i], self.tau[self.T])
+                                for i in range(self.num_ctrl)]
+            yield self.T+1, back, _dU, None, self.fwd[self.T+1]
+            ode_times = range(times[0], times[1]-1, -1)
+            ii = 1
+        else:
+            ode_times = range(self.T+1, times[0]-1, -1)
+            ii = 0
+
+        back = sc.integrate.odeint(self.int_func, c2d(back.data), ode_times)
+        ind = 0
+        for t in range(times[-1]-1,-1,-1):
+            _dU = [self._dyn_gen.dexp(self.ctrl[t,i], self.tau[t])
+                                for i in range(self.num_ctrl)]
+            yield t, back[ind], _dU, None, self.fwd[t]
+            ind += 1
+            if t == times[ii]-1:
+                ii += 1
+                ind = 0
+                back = back[-1] + target*phase[ind]
+                ode_times = range(times[ii], times[ii]-1, -1)
+                back = sc.integrate.odeint(self.int_func,
+                                           c2d(back),
+                                           ode_times)

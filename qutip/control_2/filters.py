@@ -1,13 +1,13 @@
 
 import numpy as np
 from scipy.fftpack import fft
-
-
+import scipy.optimize as opt
 
 
 class filter:
     def __init__(self):
-        pass
+        self.num_x = 0
+        self.num_ctrl = 0
 
     def __call__(self, x):
         pass
@@ -18,6 +18,21 @@ class filter:
     def init_timeslots(self, times, tau, T, t_step, num_x, num_ctrl):
         pass
 
+    def reverse_state(self, target):
+        x_shape = (self.num_x, self.num_ctrl)
+        xx = np.zeros(x_shape)
+
+        def diff(y):
+            yy = self(y.reshape(x_shape))
+            return np.sum((yy-target)**2)
+
+        def gradiant(y):
+            yy = self(y.reshape(x_shape))
+            grad = self.reverse((yy-target)*2)
+            return grad.reshape(np.prod(x_shape))
+
+        rez = opt.minimize(fun=diff, jac=gradiant, x0=xx)
+        return rez.x.reshape(s)
 
 
 class pass_througth(filter):
@@ -42,17 +57,15 @@ class pass_througth(filter):
             t_step = len(times)-1
             T = times[-1]
             time = times
-            #tau = np.diff(times)
         elif tau is not None:
             t_step = len(tau)
             T = np.sum(tau)
             time = np.cumsum(np.insert(tau,0,0))
         else:
-            #tau = np.ones(t_step, dtype='f') * T/t_step
             time = np.linspace(0,T,t_step+1)
-        #self.time = np.zeros(self._num_tslots+1, dtype=float)
-        #for t in range(self._num_tslots):
-        #    self.time[t+1] = self.time[t] + self._tau[t]
+
+        self.num_x = t_step
+        self.num_ctrl = num_ctrl
 
         return (t_step, num_ctrl), time
 
@@ -116,7 +129,7 @@ class fourrier(filter):
             np.linspace(0, T, self.t_step+1)
 
 
-class spline():
+class spline(filter):
     """
     Should this be a special case of convolution?
     Zero padding first and last?

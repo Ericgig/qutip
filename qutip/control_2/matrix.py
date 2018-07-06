@@ -39,8 +39,6 @@ from qutip import Qobj
 from qutip.sparse import sp_eigs,sp_expm
 from qutip.cy.spmath import (zcsr_adjoint)
 
-# ToDo
-# trace  ".tr()"
 
 class falselist_cte:
     """
@@ -54,7 +52,6 @@ class falselist_cte:
 
     def __getitem__(self, key):
         return self.data
-
 
 class falselist_func:
     """
@@ -77,7 +74,6 @@ class falselist_func:
     def __getitem__(self, key):
         return self.template(self.data(self.times[key], data=True))
 
-
 class falselist2d_cte:
     """
     To remove special cases in the code, I want to use constant and lists
@@ -93,7 +89,6 @@ class falselist2d_cte:
 
     def __len__(self):
         return len(self.data)
-
 
 class falselist2d_func:
     """
@@ -297,6 +292,9 @@ class control_dense(control_matrix):
         elif matrix_opt["method"] in ["approx", "Frechet"]:
             prop = la.expm(self.data*tau)
 
+        elif matrix_opt["method"] == "first_order":
+            prop = la.expm(self.data*tau)
+
         if matrix_opt["_mem_prop"]:
             self._prop = prop
         return prop
@@ -331,11 +329,13 @@ class control_dense(control_matrix):
             prop = self._exp(tau)
             prop_grad = (dprop - prop)*(1/matrix_opt["epsilon"])
 
+        elif matrix_opt["method"] == "first_order":
+            prop_grad = dirr*tau
+
         if compute_expm:
             return control_dense(prop), control_dense(prop_grad)
         else:
             return control_dense(prop_grad)
-
 
 class control_sparse(control_matrix):
     def __init__(self, obj=None):
@@ -456,6 +456,8 @@ class control_sparse(control_matrix):
             prop = self._eig_vec.dot(self._prop_eigen).dot(self._eig_vec_adj)
         elif matrix_opt["method"] in ["approx", "Frechet"]:
             prop = sp_expm(self.data*tau, sparse=True)
+        elif matrix_opt["method"] == "first_order":
+            prop = sp_expm(self.data*tau, sparse=True)
         if matrix_opt["_mem_prop"]:
             self._prop = prop
         return prop
@@ -492,6 +494,9 @@ class control_sparse(control_matrix):
             dprop = sp_expm(dM, sparse=True)
             prop = self._exp(tau)
             prop_grad = (dprop - prop)*(1/matrix_opt["epsilon"])
+
+        elif matrix_opt["method"] == "first_order":
+            prop_grad = dirr * tau
 
         if compute_expm:
             return control_sparse(prop), control_sparse(prop_grad)

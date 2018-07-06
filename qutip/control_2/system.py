@@ -127,7 +127,8 @@ class dynamics:
         self.other_cost = []
 
         self.early = False
-        self.mode = "speed"
+        self.opt_mode = "speed"
+        self.option = {}
 
         self.filter = None
         self.psi0 = None
@@ -138,7 +139,7 @@ class dynamics:
         self.psi0 = u
 
     def set_physic(self, H, ctrls, initial, target):
-        self.drift_dyn_gen = H      # Hamiltonians or Liouvillian as a Qobj or td_Qobj
+        self.drift_dyn_gen = H # Hamiltonians or Liouvillian as a Qobj or td_Qobj
         if isinstance(H, Qobj):
             self.issuper = H.issuper
             self.dims = H.dims
@@ -148,23 +149,26 @@ class dynamics:
             self.dims = H.cte.dims
             self.shape = H.cte.shape
         else:
-            raise Exception("The drift operator is expected to be a Qobj or td_Qobj.")
+            raise Exception("The drift operator is expected"
+                            " to be a Qobj or td_Qobj.")
         if len(self.shape) != 2 or self.shape[0] != self.shape[1]:
             raise Exception("Invalid drift operator.")
 
         if isinstance(ctrls, (Qobj, td_Qobj)):
             ctrls = [ctrls]
-        self.ctrl_dyn_gen = ctrls    # Control operator [Qobj] or [td_Qobj]
+        self.ctrl_dyn_gen = ctrls # Control operator [Qobj] or [td_Qobj]
         self._num_ctrls = len(ctrls)
         for ctrl in ctrls:
             if not isinstance(ctrl, (Qobj, td_Qobj)):
-                raise Exception("The ctrls operators are expected to be a list of Qobj or td_Qobj.")
+                raise Exception("The ctrls operators are expected"
+                                " to be a list of Qobj or td_Qobj.")
             if isinstance(ctrl, td_Qobj):
                 c = c.cte
             else:
                 c = ctrl
             if not self.dims == c.dims:
-                raise Exception("Drift and ctrls operators dimensions do not match.")
+                raise Exception("Drift and ctrls operators"
+                                " dimensions do not match.")
 
         if isinstance(initial, Qobj):
             if initial.dims == self.dims:
@@ -174,7 +178,8 @@ class dynamics:
                 self.initial = initial
                 self.state_evolution = True
             else:
-                raise Exception("Dims of the initial state and Drift operator do not match.")
+                raise Exception("Dims of the initial state and"
+                                " Drift operator do not match.")
         else:
             raise Exception("The initial state is expected to be a Qobj.")
 
@@ -182,7 +187,8 @@ class dynamics:
             raise Exception("The target state is expected to be a Qobj.")
         else:
             if not initial.dims == target.dims:
-                raise Exception("Dims of the target state and initial state do not match.")
+                raise Exception("Dims of the target state and"
+                                " initial state do not match.")
             self.target = target
 
     def set_filter(self, _filter, **kwargs):
@@ -213,7 +219,7 @@ class dynamics:
                 "SU":   real(<target,final>)
                 "PSU":  abs(<target,final>)
                 "PSU2": abs(<target,final>)**2
-        ...
+                "Diff": abs(target-final)**2
 
         early :: bool, [int]
             Solve for solution that converge early (slower)
@@ -226,13 +232,21 @@ class dynamics:
             Weight of the fidelity or list of weights for each timestep if early
         """
 
-
-        if not self.issuper and self.state_evolution:
-            # Unitary state evolution
+        if self.state_evolution:
+            # State evolution
             if mode is None:
                 mode = "PSU"
-            if not mode in ["SU","PSU","PSU2"]:
-                raise Exception("mode must be one of 'SU','PSU','PSU2' for unitary state evolution")
+            if not mode in ["SU","PSU","PSU2","Diff"]:
+                raise Exception("mode must be one of 'SU', 'PSU', 'PSU2', "
+                                "'Diff' for unitary state evolution")
+            self.mode = mode
+        else:
+            # Operator evolution
+            if mode is None:
+                mode = "TrDiff"
+            if not mode in ["TrDiff","TrSq","TrAbs"]:
+                raise Exception("mode must be one of 'TrDiff', 'TrSq', 'TrAbs'"
+                                " for unitary state evolution")
             self.mode = mode
 
         if early:
@@ -249,16 +263,17 @@ class dynamics:
             if not len(self.early_time)==len(weight):
                 self.weight = weight
             else:
-                raise Exception("The number of weight do not match the numbers of times")
+                raise Exception("The number of weight do not match"
+                                " the numbers of times")
         else:
             raise Exception("weight should be a real or list of real.")
 
     def _add_cost(self, cost_comp=None):
         self.other_cost.append(cost_comp)
 
-    def optimization(self, mode="speed", mem=0, _tslotcomp=None):
-        if mode in ["mem","speed"]:
-            self.mode = mode
+    def optimization(self, opt_mode="speed", mem=0, _tslotcomp=None):
+        if opt_mode in ["mem", "speed"]:
+            self.opt_mode = opt_mode
 
         if mem and isinstance(mem, (int, float)):
             self.mem = mem
@@ -279,10 +294,15 @@ class dynamics:
         if self.stats is None:
             self.stats = Stats()
 
+        if not self.costs:
+            self.set_cost()
+
         if self.filter is None:
             self.filter = filters.pass_througth()
 
-        self._x_shape, self.time = self.filter.init_timeslots(*self.t_data, num_ctrl=self._num_ctrls)
+        self._x_shape, self.time = \
+                self.filter.init_timeslots(*self.t_data,
+                                           num_ctrl=self._num_ctrls)
 
         self._num_tslots = len(self.time)-1
         self._evo_time = self.time[-1]
@@ -306,31 +326,52 @@ class dynamics:
             if isinstance(self.drift_dyn_gen, Qobj):
                 drift = matrix.falselist_cte(matrix_type(self.drift_dyn_gen))
             else:
-                drift = matrix.falselist_func(self.drift_dyn_gen, self._tau, matrix_type)
+                drift = matrix.falselist_func(self.drift_dyn_gen,
+                                              self._tau, matrix_type)
 
-            ctrl_td = any([isinstance(ctrl, td_Qobj) for ctrl in self.ctrl_dyn_gen])
+            ctrl_td = any([isinstance(ctrl, td_Qobj)
+                                for ctrl in self.ctrl_dyn_gen])
             if not ctrl_td:
                 ctrls = matrix.falselist2d_cte(
                     [matrix_type(ctrl) for ctrl in self.ctrl_dyn_gen])
             else:
                 drift = matrix.falselist2d_func(
-                    [td_Qobj(ctrl) for ctrl in self.ctrl_dyn_gen], self._tau, matrix_type)
+                    [td_Qobj(ctrl) for ctrl in self.ctrl_dyn_gen],
+                    self._tau, matrix_type)
 
             initial = matrix_type(self.initial)   # As a vec?
             target = matrix_type(self.target)     # As a vec?
-            self.tslotcomp = tslotcomp.TSComp_Save_Power_all(drift, ctrls, initial, target,
-                                                             self._tau, self._num_tslots,
+            self.tslotcomp = tslotcomp.TSComp_Save_Power_all(drift, ctrls,
+                                                             initial, target,
+                                                             self._tau,
+                                                             self._num_tslots,
                                                              self._num_ctrls)
 
         if self.costcomp is None:
-            if self.state_evolution and not self.issuper:
+            if self.state_evolution:
                 if self.early:
-                    self.costcomp = [fidcomp.FidCompUnitaryEarly(self.tslotcomp, self.target, self.mode,
-                                                                self.early_times, self.weight)]
+                    self.costcomp = [
+                        fidcomp.FidCompStateEarly(self.tslotcomp,
+                                                  self.target,
+                                                  self.mode,
+                                                  times=self.early_times,
+                                                  weight=self.weight)]
                 else:
-                    self.costcomp = [fidcomp.FidCompUnitary(self.tslotcomp, self.target, self.mode)]
+                    self.costcomp = [fidcomp.FidCompState(self.tslotcomp,
+                                                          self.target,
+                                                          self.mode)]
             else:
-                raise NotImplementedError()
+                if self.early:
+                    self.costcomp = [
+                        fidcomp.FidCompOperatorEarly(self.tslotcomp,
+                                                     self.target,
+                                                     self.mode,
+                                                     times=self.early_times,
+                                                     weight=self.weight)]
+                else:
+                    self.costcomp = [fidcomp.FidCompOperator(self.tslotcomp,
+                                                             self.target,
+                                                             self.mode)]
 
         if self.other_cost:
             self.costcomp += self.other_cost
@@ -352,18 +393,19 @@ class dynamics:
         self.x_ = self.x0*0.5
         self.gradient_x = False
 
-        self.solver = optimize.Optimizer(self._error, self._gradient, self.x0, self.stats)
+        self.solver = optimize.Optimizer(self._error, self._gradient,
+                                         self.x0, self.stats)
 
     def run(self):
         result = OptimResult()
         result.initial_amps = self.filter(self.x0)
         result.initial_x = self.x0*1.
         result.initial_fid_err = self._error(self.x0)
-        result.evo_full_initial =  self.tslotcomp.state_T(self._num_tslots).data*1
+        result.evo_full_initial = self.tslotcomp.state_T(self._num_tslots).data*1
 
         self.solver.run_optimization(result)
 
-        result.evo_full_final =  self.tslotcomp.state_T(self._num_tslots).data*1
+        result.evo_full_final = self.tslotcomp.state_T(self._num_tslots).data*1
         result.final_amps = self.filter(result.final_x)
 
         return result
