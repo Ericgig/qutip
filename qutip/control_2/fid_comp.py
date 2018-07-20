@@ -102,12 +102,11 @@ class FidCompState():
         self.target = target
 
         self.SU = phase_option
-        #target = self.tslotcomp.target
-        self.target_d = target.dag()
+        self.target_d = target.conj()
         if self.SU == "SU":
-            self.dimensional_norm = np.real((self.target_d*target).tr())
+            self.dimensional_norm = np.real(np.dot(self.target_d,target))
         elif self.SU in ["PSU","PSU2"]:
-            self.dimensional_norm = np.abs((self.target_d*target).tr())
+            self.dimensional_norm = np.abs(np.dot(self.target_d,target))
         elif self.SU in ["Diff"]:
             self.dimensional_norm = target.data.shape[0]
             self.target_d = 1.
@@ -117,42 +116,44 @@ class FidCompState():
             raise Exception("Invalid phase_option for FidCompState.")
 
     def costs(self):
-        final = self.tslotcomp.state_T(self.num_tslots)
+        self.final = self.tslotcomp.state_T(self.num_tslots)
         if self.SU == "SU":
-            fidelity_prenorm = (self.target_d*final).tr()
+            fidelity_prenorm = np.dot(self.target_d,self.final)
             cost = 1 - np.real(fidelity_prenorm) / self.dimensional_norm
         elif self.SU == "PSU":
-            fidelity_prenorm = (self.target_d*final).tr()
+            fidelity_prenorm = np.dot(self.target_d,self.final)
             cost = 1 - np.abs(fidelity_prenorm) / self.dimensional_norm
         elif self.SU == "PSU2":
-            fidelity_prenorm = (self.target_d*final).tr()
-            cost = 1 - fidelity_prenorm*fidelity_prenorm.conj()
+            fidelity_prenorm = np.dot(self.target_d,self.final)
+            cost = 1 - np.real(fidelity_prenorm*fidelity_prenorm.conj())
         elif self.SU == "Diff":
-            dvec = (self.target - final)
-            cost = np.real((dvec.dag()*dvec).tr()) / self.dimensional_norm
+            dvec = (self.target - self.final)
+            cost = np.real( np.dot(dvec.conj(),dvec)) / self.dimensional_norm
         elif self.SU == "SuTr":
             fidelity_prenorm = 0
             N = self.dimensional_norm
-            fidelity_prenorm = rhoProdTrace(self.target.data, final.data, N)
-            # only work on array, sparse state ok?
+            fidelity_prenorm = rhoProdTrace(self.target, self.final, N)
             cost = 1 - np.real(fidelity_prenorm)
         return cost
 
     def grad(self):
         n_ctrls = self.num_ctrls
         n_ts = self.num_tslots
-        final = self.tslotcomp.state_T(n_ts)
-        fidelity_prenorm = (self.target_d*final).tr()
+
+        #final = self.tslotcomp.state_T(n_ts)
+        fidelity_prenorm = np.dot(self.target_d,self.final)
         if self.SU == "Diff":
-            self.target_d = (self.target - final).dag()
+            self.target_d = (self.target - self.final).conj()
 
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
-        # loop through all ctrl timeslots calculating gradients
-        for k, onto_evo, dU, U, fwd_evo in \
-                        self.tslotcomp.reversed_onto(targetd=self.target_d):
-            for j in range(n_ctrls):
-                grad[k, j] = -(onto_evo*dU[j]*fwd_evo).tr()
+
+        if self.SU != "SuTr":
+            # loop through all ctrl timeslots calculating gradients
+            for k, onto_evo, dU, U, fwd_evo in \
+                            self.tslotcomp.reversed(target=self.target_d):
+                for j in range(n_ctrls):
+                    grad[k, j] = -np.dot(onto_evo,dU[j]*fwd_evo)
 
         if self.SU == "SU":
             grad_normalized = np.real(grad) / self.dimensional_norm
@@ -163,13 +164,15 @@ class FidCompState():
             grad_normalized = np.real(2 * fidelity_prenorm.conj() * grad)
         elif self.SU == "Diff":
             grad_normalized = np.real(2 * grad / self.dimensional_norm)
+
         elif self.SU == "SuTr":
-            N = self.dimensional_norm
             for k, onto_evo, dU, U, fwd_evo in \
-                        self.tslotcomp.reversed_onto(targetd=1):
+                        self.tslotcomp.reversed():
                 for j in range(n_ctrls):
                     dfinal = onto_evo * dU[j] * fwd_evo
-                    grad[k, j] = -rhoProdTrace(self.target.data, dfinal.data, N)
+                    grad[k, j] = -rhoProdTrace(self.target.data,
+                                               dfinal.data,
+                                               self.dimensional_norm)
                 # only work on dense state, sparse state ok?
             grad_normalized = grad
 
@@ -196,9 +199,8 @@ class FidCompStateEarly():
         self.num_tslots = self.tslotcomp.n_t
 
         self.SU = phase_option
-        #target = self.tslotcomp.target
         self.target = target
-        self.target_d =target.dag()
+        self.target_d =target.conj()
 
         if times is None:
             times = np.arange(self.num_tslots, dtype=int)[::-1]+1
@@ -210,82 +212,66 @@ class FidCompStateEarly():
         self.weight = np.array(weight)
 
         if self.SU == "SU":
-            self.dimensional_norm = np.real((self.target_d*target).tr())
+            self.dimensional_norm = np.real(np.dot(self.target_d,target))
         elif self.SU in ["PSU","PSU2"]:
-            self.dimensional_norm = np.abs((self.target_d*target).tr())
+            self.dimensional_norm = np.abs(np.dot(self.target_d,target))
         elif self.SU in ["Diff"]:
             self.dimensional_norm = target.data.shape[0]
             self.target_d = 1.
         else:
             raise Exception("Invalid phase_option for FidCompStateEarly.")
 
-
     def costs(self):
-        fidelity = np.zeros(len(self.times))
-        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
-            if self.SU == "SU":
-                fidelity_prenorm = (self.target_d*f_state).tr()
-                fidelity[i] = 1 - np.real(fidelity_prenorm) / self.dimensional_norm
-            elif self.SU == "PSU":
-                fidelity_prenorm = (self.target_d*f_state).tr()
-                fidelity[i] = 1 - np.abs(fidelity_prenorm) / self.dimensional_norm
-            elif self.SU == "PSU2":
-                fidelity_prenorm = (self.target_d*f_state).tr()
-                fidelity[i] = 1 - (fidelity_prenorm*fidelity_prenorm.conj()).real
-            elif self.SU == "Diff":
-                dvec = (self.target - f_state)
-                fidelity[i] = np.real((dvec.dag()*dvec).tr()) / self.dimensional_norm
-        return np.sum(fidelity*self.weight)
+        fidelity = self.costs_t()
+        return np.sum(fidelity)
 
     def costs_t(self):
+        self.fidelity_prenorm = np.zeros(len(self.times),dtype=complex)
+        self.diff = np.zeros((len(self.times),len(self.target)), dtype=complex)
         fidelity = np.zeros(len(self.times))
         for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
             if self.SU == "SU":
-                fidelity_prenorm = (self.target_d*f_state).tr()
-                fidelity[i] = 1 - np.real(fidelity_prenorm) / self.dimensional_norm
+                self.fidelity_prenorm[i] = np.dot(self.target_d,f_state)
+                fidelity[i] = 1 - np.real(self.fidelity_prenorm[i]) / self.dimensional_norm
             elif self.SU == "PSU":
-                fidelity_prenorm = (self.target_d*f_state).tr()
-                fidelity[i] = 1 - np.abs(fidelity_prenorm) / self.dimensional_norm
+                self.fidelity_prenorm[i] = np.dot(self.target_d,f_state)
+                fidelity[i] = 1 - np.abs(self.fidelity_prenorm[i]) / self.dimensional_norm
             elif self.SU == "PSU2":
-                fidelity_prenorm = (self.target_d*f_state).tr()
-                fidelity[i] = 1 - (fidelity_prenorm*fidelity_prenorm.conj()).real
+                self.fidelity_prenorm[i] = np.dot(self.target_d,f_state)
+                fidelity[i] = 1 - (self.fidelity_prenorm[i]*self.fidelity_prenorm[i].conj()).real
             elif self.SU == "Diff":
                 dvec = (self.target - f_state)
-                fidelity[i] = np.real((dvec.dag()*dvec).tr()) / self.dimensional_norm
+                self.diff[i] = dvec.conj()
+                fidelity[i] = np.real(np.dot(self.diff[i],dvec)) / self.dimensional_norm
             #elif self.SU == "DMTr":
         return fidelity*self.weight
 
     def grad(self):
         n_ctrls = self.num_ctrls
         n_ts = self.num_tslots
-        # final = self.tslotcomp.state_T(n_ts)
-        fidelity_prenorm = np.zeros(len(self.times),dtype=complex)
-        diff = []
-        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
-            if self.SU in ["SU","PSU","PSU2"]:
-                fidelity_prenorm[i] = (self.target_d*f_state).tr()
-            else:
-                diff.append((self.target - f_state).dag())
+
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
-        # loop through all ctrl timeslots calculating gradients
 
         if self.SU == "SU":
             phase = self.weight / self.dimensional_norm
         elif self.SU == "PSU":
-            phase = np.exp(-1j * np.angle(fidelity_prenorm) )*self.weight / self.dimensional_norm
+            phase = np.exp(-1j * np.angle(self.fidelity_prenorm) )*self.weight / self.dimensional_norm
         elif self.SU == "PSU2":
-            phase = 2 * fidelity_prenorm.conj()*self.weight
+            phase = 2 * self.fidelity_prenorm.conj()*self.weight
         elif self.SU == "Diff":
             self.target_d = 1
-            phase = 2 / self.dimensional_norm * self.weight * diff
+            phase = []
+            for i in range(len(self.times)):
+                phase += [2/self.dimensional_norm * self.weight[i] * self.diff[i,:]]
 
+        # loop through all ctrl timeslots calculating gradients
         for k, rev_evo, dU, U, fwd_evo in \
                     self.tslotcomp.reversed_cumulative( \
-                        targetd=self.target_d, times=self.times,
+                        target=self.target_d, times=self.times,
                         phase=phase):
             for j in range(n_ctrls):
-                grad[k, j] = -(rev_evo*dU[j]*fwd_evo).tr()
+                grad[k, j] = -np.dot(rev_evo,dU[j]*fwd_evo)
 
         return np.real(grad)
 
@@ -312,7 +298,7 @@ class FidCompStateForbidden():
         self.SU = phase_option
 
         self.forbidden = forbidden
-        self.forbidden_d = forbidden.dag()
+        self.forbidden_d = forbidden.conj()
         if times is None:
             times = np.arange(self.num_tslots, dtype=int)[::-1]+1
         self.times = times
@@ -323,9 +309,9 @@ class FidCompStateForbidden():
         self.weight = np.array(weight)
 
         if self.SU == "SU":
-            self.dimensional_norm = np.real((self.forbidden_d*forbidden).tr())
+            self.dimensional_norm = np.real(np.dot(self.forbidden_d,forbidden))
         elif self.SU in ["PSU","PSU2"]:
-            self.dimensional_norm = np.abs((self.forbidden_d*forbidden).tr())
+            self.dimensional_norm = np.abs(np.dot(self.forbidden_d,forbidden))
         elif self.SU in ["Diff"]:
             self.dimensional_norm = forbidden.data.shape[0]
             self.forbidden_d = 1.
@@ -333,76 +319,57 @@ class FidCompStateForbidden():
             raise Exception("Invalid phase_option for FidCompStateEarly.")
 
     def costs(self):
-        fidelity = np.zeros(len(self.times))
-        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
-            if self.SU == "SU":
-                fidelity_prenorm = (self.forbidden_d*f_state).tr()
-                fidelity[i] = np.real(fidelity_prenorm) / self.dimensional_norm
-            elif self.SU == "PSU":
-                fidelity_prenorm = (self.forbidden_d*f_state).tr()
-                fidelity[i] = np.abs(fidelity_prenorm) / self.dimensional_norm
-            elif self.SU == "PSU2":
-                fidelity_prenorm = (self.forbidden_d*f_state).tr()
-                fidelity[i] = (fidelity_prenorm*fidelity_prenorm.conj()).real
-            elif self.SU == "Diff":
-                dvec = (self.forbidden - f_state)
-                fidelity[i] = -np.real((dvec.dag()*dvec).tr()) / self.dimensional_norm
-        return np.sum(fidelity*self.weight)
+        fidelity = self.costs_t()
+        return np.sum(fidelity)
 
     def costs_t(self):
+        self.fidelity_prenorm = np.zeros(len(self.times),dtype=complex)
+        self.diff = np.zeros((len(self.times),len(self.forbidden)), dtype=complex)
         fidelity = np.zeros(len(self.times))
         for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
             if self.SU == "SU":
-                fidelity_prenorm = (self.forbidden_d*f_state).tr()
-                fidelity[i] = np.real(fidelity_prenorm) / self.dimensional_norm
+                self.fidelity_prenorm[i] = np.dot(self.forbidden_d, f_state)
+                fidelity[i] = np.real(self.fidelity_prenorm[i]) / self.dimensional_norm
             elif self.SU == "PSU":
-                fidelity_prenorm = (self.forbidden_d*f_state).tr()
-                fidelity[i] = np.abs(fidelity_prenorm) / self.dimensional_norm
+                self.fidelity_prenorm[i] = np.dot(self.forbidden_d, f_state)
+                fidelity[i] = np.abs(self.fidelity_prenorm[i]) / self.dimensional_norm
             elif self.SU == "PSU2":
-                fidelity_prenorm = (self.forbidden_d*f_state).tr()
-                fidelity[i] = (fidelity_prenorm*fidelity_prenorm.conj()).real
+                self.fidelity_prenorm[i] = np.dot(self.forbidden_d, f_state)
+                fidelity[i] = (self.fidelity_prenorm[i]*self.fidelity_prenorm[i].conj()).real
             elif self.SU == "Diff":
                 dvec = (self.forbidden - f_state)
-                fidelity[i] = -np.real((dvec.dag()*dvec).tr()) / self.dimensional_norm
+                self.diff[i] = dvec.conj()
+                fidelity[i] = -np.real(np.dot(self.diff[i], dvec)) / self.dimensional_norm
         return fidelity*self.weight
 
     def grad(self):
         n_ctrls = self.num_ctrls
         n_ts = self.num_tslots
-        #final = self.tslotcomp.state_T(n_ts)
 
-        fidelity_prenorm = np.zeros(len(self.times),dtype=complex)
-        diff = []
-        for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
-            if self.SU in ["SU","PSU","PSU2"]:
-                fidelity_prenorm[i] = (self.forbidden_d*f_state).tr()
-            else:
-                diff.append((self.forbidden - f_state).dag())
-
-        #fidelity_prenorm = np.zeros(len(self.times),dtype=complex)
-        #for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
-        #    fidelity_prenorm[i] = (self.forbidden_d*f_state).tr()
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
-        # loop through all ctrl timeslots calculating gradients
 
         if self.SU == "SU":
             phase = self.weight / self.dimensional_norm
         elif self.SU == "PSU":
-            phase = np.exp(-1j * np.angle(fidelity_prenorm) ) \
+            phase = np.exp(-1j * np.angle(self.fidelity_prenorm) ) \
                     * self.weight / self.dimensional_norm
         elif self.SU == "PSU2":
-            phase = 2 * fidelity_prenorm.conj() * self.weight
+            phase = 2 * self.fidelity_prenorm.conj() * self.weight
         elif self.SU == "Diff":
-            self.forbidden_d = 1#(self.forbidden - f_state).dag()
-            phase = 2 / self.dimensional_norm *self.weight * diff
+            self.forbidden_d = 1
+            phase = []
+            for i in range(len(self.times)):
+                phase += [2 / self.dimensional_norm *
+                          self.weight[i] * self.diff[i,:]]
 
+        # loop through all ctrl timeslots calculating gradients
         for k, rev_evo, dU, U, fwd_evo in \
                     self.tslotcomp.reversed_cumulative( \
-                        targetd=self.forbidden_d, times=self.times,
+                        target=self.forbidden_d, times=self.times,
                         phase=phase):
             for j in range(n_ctrls):
-                grad[k, j] = (rev_evo*dU[j]*fwd_evo).tr()
+                grad[k, j] = np.dot(rev_evo,dU[j]*fwd_evo)
 
         return np.real(grad)
 
@@ -441,13 +408,13 @@ class FidCompOperator():
             else:
                 self.scale_factor = scale_factor
         elif mode=="TrSq":
-            self.target_d = target.dag()
+            self.target_d = target.T.conj()
             if not scale_factor:
                 self.scale_factor = 1.0 / (self.target.data.shape[0])**4
             else:
                 self.scale_factor = scale_factor
         elif mode=="TrAbs":
-            self.target_d = target.dag()
+            self.target_d = target.T.conj()
             if not scale_factor:
                 self.scale_factor = 1.0 / (self.target.data.shape[0])**2
             else:
@@ -460,12 +427,13 @@ class FidCompOperator():
         final = self.tslotcomp.state_T(n_ts)
         if self.mode=="TrDiff":
             evo_f_diff = self.target - final
-            fid_err = self.scale_factor*np.real((evo_f_diff.dag()*evo_f_diff).tr())
+            #fid_err = self.scale_factor*np.real((evo_f_diff.dag()*evo_f_diff).tr())
+            fid_err = self.scale_factor*np.real(np.sum(evo_f_diff.conj()*evo_f_diff))
         elif self.mode=="TrSq":
-            fid = (self.target_d*final).tr()
+            fid = (self.target_d@final).trace()
             fid_err = 1 - self.scale_factor * np.real(fid * np.conj(fid))
         elif self.mode=="TrAbs":
-            fid = (self.target_d*final).tr()
+            fid = (self.target_d@final).trace()
             fid_err = 1-self.scale_factor*np.abs(fid)
         if np.isnan(fid_err):
             # Shouldn't this raise an error?
@@ -479,23 +447,30 @@ class FidCompOperator():
         grad = np.zeros([self.num_tslots, self.num_ctrls])
         if self.mode=="TrDiff":
             evo_f_diff = self.target - final
-            for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_onwd():
+            for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed():
                 for j in range(n_ctrls):
                     grad[k, j] = -2*self.scale_factor*np.real(
-                        (evo_f_diff.dag()*onwd_evo*dU[j]*fwd_evo).tr())
+                        (evo_f_diff.T.conj()@onwd_evo@(dU[j]*fwd_evo)).trace())
+                    #grad[k, j] = -2*self.scale_factor*np.real(
+                    #    (evo_f_diff.T.conj()@onwd_evo@(dU[j]@fwd_evo)).trace())
         elif self.mode=="TrSq":
-            trace = np.conj((self.target_d * final).tr())
-            for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_onwd():
+            trace = np.conj((self.target_d @ final).trace())
+            for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed():
                 for j in range(n_ctrls):
                     grad[k, j] = -2*self.scale_factor*\
-                        np.real( trace*(self.target_d*onwd_evo*dU[j]*fwd_evo).tr() )
+                        np.real( trace*(self.target_d@onwd_evo@(dU[j]*fwd_evo)).trace() )
+                    #grad[k, j] = -2*self.scale_factor*\
+                    #    np.real( trace*(self.target_d*onwd_evo*dU[j]*fwd_evo).trace() )
         elif self.mode=="TrAbs":
-            fid = (self.target_d*final).tr()
-            for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_onwd():
+            fid = (self.target_d@final).trace()
+            for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed():
                 for j in range(n_ctrls):
                     grad[k, j] = -self.scale_factor*\
-                        np.real( (self.target_d*onwd_evo*dU[j]*fwd_evo).tr() \
+                        np.real( (self.target_d@onwd_evo@(dU[j]*fwd_evo)).trace() \
                                  *np.exp(-1j * np.angle(fid)) )
+                    #grad[k, j] = -self.scale_factor*\
+                    #    np.real( (self.target_d*onwd_evo*dU[j]*fwd_evo).trace() \
+                    #             *np.exp(-1j * np.angle(fid)) )
         grad[np.isnan(grad)] = np.Inf
         return  grad
 
@@ -543,13 +518,13 @@ class FidCompOperatorEarly():
             else:
                 self.scale_factor = scale_factor
         elif mode=="TrSq":
-            self.target_d = target.dag()
+            self.target_d = target.T.conj()
             if not scale_factor:
                 self.scale_factor = 1.0 / (self.target.data.shape[0])**4
             else:
                 self.scale_factor = scale_factor
         elif mode=="TrAbs":
-            self.target_d = target.dag()
+            self.target_d = target.T.conj()
             if not scale_factor:
                 self.scale_factor = 1.0 / (self.target.data.shape[0])**2
             else:
@@ -563,12 +538,13 @@ class FidCompOperatorEarly():
         for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
             if self.mode=="TrDiff":
                 evo_f_diff = self.target - f_state
-                fid_err[i] = self.scale_factor*np.real((evo_f_diff.dag()*evo_f_diff).tr())
+                #fid_err[i] = self.scale_factor*np.real((evo_f_diff.T.conj()@evo_f_diff).trace())
+                fid_err[i] = self.scale_factor*np.real(np.sum(evo_f_diff.conj()*evo_f_diff))
             elif self.mode=="TrSq":
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 fid_err[i] = 1 - self.scale_factor * np.real(fid * np.conj(fid))
             elif self.mode=="TrAbs":
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 fid_err[i] = 1-self.scale_factor*np.abs(fid)
             if np.isnan(fid_err[i]):
                 # Shouldn't this raise an error?
@@ -581,12 +557,13 @@ class FidCompOperatorEarly():
         for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
             if self.mode=="TrDiff":
                 evo_f_diff = self.target - f_state
-                fid_err[i] = self.scale_factor*np.real((evo_f_diff.dag()*evo_f_diff).tr())
+                #fid_err[i] = self.scale_factor*np.real((evo_f_diff.T.conj()@evo_f_diff).trace())
+                fid_err[i] = self.scale_factor*np.real(np.sum(evo_f_diff.conj()*evo_f_diff))
             elif self.mode=="TrSq":
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 fid_err[i] = 1 - self.scale_factor * np.real(fid * np.conj(fid))
             elif self.mode=="TrAbs":
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 fid_err[i] = 1-self.scale_factor*np.abs(fid)
             if np.isnan(fid_err[i]):
                 # Shouldn't this raise an error?
@@ -601,33 +578,33 @@ class FidCompOperatorEarly():
             evo_f_diff = []
             for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
                 evo_f_diff.append(-2 * self.scale_factor * self.weight[i] *
-                                  (self.target - f_state).dag())
+                                  (self.target - f_state).T.conj())
 
             for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_cumulative(\
-                targetd=1, times=self.times, phase=evo_f_diff):
+                target=1, times=self.times, phase=evo_f_diff):
                 for j in range(n_ctrls):
-                    grad[k, j] = np.real((onwd_evo*dU[j]*fwd_evo).tr())
+                    grad[k, j] = np.real((onwd_evo@(dU[j]*fwd_evo)).trace())
 
         elif self.mode=="TrSq":
             trace = np.zeros(len(self.times),dtype=complex)
             for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
-                trace[i] = -2*self.scale_factor*np.conj((self.target_d * f_state).tr())* self.weight[i]
+                trace[i] = -2*self.scale_factor*np.conj((self.target_d @ f_state).trace())* self.weight[i]
 
             for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_cumulative(\
-                targetd=self.target_d, times=self.times, phase=trace):
+                target=self.target_d, times=self.times, phase=trace):
                 for j in range(n_ctrls):
-                    grad[k, j] = np.real((onwd_evo*dU[j]*fwd_evo).tr())
+                    grad[k, j] = np.real((onwd_evo@(dU[j]*fwd_evo)).trace())
 
         elif self.mode=="TrAbs":
             phase = np.zeros(len(self.times),dtype=complex)
             for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 phase[i] = -self.scale_factor*np.exp(-1j * np.angle(fid))* self.weight[i]
 
             for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_cumulative(\
-                targetd=self.target_d, times=self.times, phase=phase):
+                target=self.target_d, times=self.times, phase=phase):
                 for j in range(n_ctrls):
-                    grad[k, j] = np.real((onwd_evo*dU[j]*fwd_evo).tr())
+                    grad[k, j] = np.real((onwd_evo@(dU[j]*fwd_evo)).trace())
 
         grad[np.isnan(grad)] = np.Inf
         return  grad
@@ -676,13 +653,13 @@ class FidCompOperatorForbidden():
             else:
                 self.scale_factor = scale_factor
         elif mode=="TrSq":
-            self.target_d = forbidden.dag()
+            self.target_d = forbidden.T.conj()
             if not scale_factor:
                 self.scale_factor = 1.0 / (self.target.data.shape[0])**4
             else:
                 self.scale_factor = scale_factor
         elif mode=="TrAbs":
-            self.target_d = forbidden.dag()
+            self.target_d = forbidden.T.conj()
             if not scale_factor:
                 self.scale_factor = 1.0 / (self.target.data.shape[0])**2
             else:
@@ -696,12 +673,13 @@ class FidCompOperatorForbidden():
         for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
             if self.mode=="TrDiff":
                 evo_f_diff = self.target - f_state
-                fid_err[i] = -self.scale_factor*np.real((evo_f_diff.dag()*evo_f_diff).tr())
+                #fid_err[i] = -self.scale_factor*np.real((evo_f_diff.T.conj()@evo_f_diff).trace())
+                fid_err[i] = -self.scale_factor*np.real(np.sum(evo_f_diff.conj()*evo_f_diff))
             elif self.mode=="TrSq":
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 fid_err[i] = self.scale_factor * np.real(fid * np.conj(fid))
             elif self.mode=="TrAbs":
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 fid_err[i] = self.scale_factor*np.abs(fid)
             if np.isnan(fid_err[i]):
                 # Shouldn't this raise an error?
@@ -714,12 +692,13 @@ class FidCompOperatorForbidden():
         for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
             if self.mode=="TrDiff":
                 evo_f_diff = self.target - f_state
-                fid_err[i] = -self.scale_factor*np.real((evo_f_diff.dag()*evo_f_diff).tr())
+                #fid_err[i] = -self.scale_factor*np.real((evo_f_diff.T.conj()@evo_f_diff).trace())
+                fid_err[i] = -self.scale_factor*np.real(np.sum(evo_f_diff.conj()*evo_f_diff))
             elif self.mode=="TrSq":
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 fid_err[i] = self.scale_factor * np.real(fid * np.conj(fid))
             elif self.mode=="TrAbs":
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 fid_err[i] = self.scale_factor*np.abs(fid)
             if np.isnan(fid_err[i]):
                 # Shouldn't this raise an error?
@@ -734,43 +713,44 @@ class FidCompOperatorForbidden():
             evo_f_diff = []
             for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
                 evo_f_diff.append(2 * self.scale_factor * self.weight[i] *
-                                  (self.target - f_state).dag())
+                                  (self.target - f_state).T.conj())
 
             for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_cumulative(\
-                targetd=1, times=self.times, phase=evo_f_diff):
+                target=1, times=self.times, phase=evo_f_diff):
                 for j in range(n_ctrls):
-                    grad[k, j] = np.real((onwd_evo*dU[j]*fwd_evo).tr())
+                    grad[k, j] = np.real((onwd_evo@(dU[j]*fwd_evo)).trace())
 
         elif self.mode=="TrSq":
             trace = np.zeros(len(self.times),dtype=complex)
             for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
-                trace[i] = 2*self.scale_factor*np.conj((self.target_d * f_state).tr())* self.weight[i]
+                trace[i] = 2*self.scale_factor*np.conj((self.target_d @ f_state).trace())* self.weight[i]
 
             for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_cumulative(\
-                targetd=self.target_d, times=self.times, phase=trace):
+                target=self.target_d, times=self.times, phase=trace):
                 for j in range(n_ctrls):
-                    grad[k, j] = np.real((onwd_evo*dU[j]*fwd_evo).tr())
+                    grad[k, j] = np.real((onwd_evo@(dU[j]*fwd_evo)).trace())
 
         elif self.mode=="TrAbs":
             phase = np.zeros(len(self.times),dtype=complex)
             for i, f_state in enumerate(self.tslotcomp.forward(self.times)):
-                fid = (self.target_d*f_state).tr()
+                fid = (self.target_d@f_state).trace()
                 phase[i] = self.scale_factor*np.exp(-1j * np.angle(fid))* self.weight[i]
 
             for k, onwd_evo, dU, U, fwd_evo in self.tslotcomp.reversed_cumulative(\
-                targetd=self.target_d, times=self.times, phase=phase):
+                target=self.target_d, times=self.times, phase=phase):
                 for j in range(n_ctrls):
-                    grad[k, j] = np.real((onwd_evo*dU[j]*fwd_evo).tr())
+                    grad[k, j] = np.real((onwd_evo@(dU[j]*fwd_evo)).trace())
 
         grad[np.isnan(grad)] = np.Inf
         return  grad
 
 
 class FidCompAmp():
-    def __init__(self, tslotcomp, weight=0.1):
+    def __init__(self, tslotcomp, weight=0.1, mode=2):
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
+        self.mode = mode
         if isinstance(weight, (int, float)):
             weight = weight * np.ones((self.num_tslots,self.num_ctrls))
         elif isinstance(weight, (list, np.ndarray)):
@@ -790,10 +770,10 @@ class FidCompAmp():
         self.weight = weight
 
     def costs(self):
-        return np.sum(self.tslotcomp._ctrl_amps**2 * self.weight)
+        return np.sum(self.tslotcomp._ctrl_amps**self.mode * self.weight)
 
     def grad(self):
-        return 2*self.tslotcomp._ctrl_amps * self.weight
+        return self.mode*self.tslotcomp._ctrl_amps**(self.mode-1) * self.weight
 
 class FidCompDAmp():
     def __init__(self, tslotcomp, weight=0.1):

@@ -37,7 +37,7 @@ import scipy.linalg as la
 from qutip.cy.spmatfuncs import spmv
 from qutip import Qobj
 from qutip.sparse import sp_eigs,sp_expm
-from qutip.cy.spmath import (zcsr_adjoint)
+from qutip.cy.spmath import (zcsr_adjoint, zcsr_trace)
 
 
 class falselist_cte:
@@ -47,11 +47,15 @@ class falselist_cte:
     May be useless since a list of the same elements N times is probably
     faster and do not use that much memory.
     """
-    def __init__(self, data):
+    def __init__(self, data, N):
         self.data = data
+        self.shape = (N,)
 
     def __getitem__(self, key):
         return self.data
+
+    def __len__(self):
+        return self.shape[0]
 
 class falselist_func:
     """
@@ -62,10 +66,11 @@ class falselist_func:
     faster and do not use that much memory.
     10% slower than a td_Qobj.
     """
-    def __init__(self, data, tau, template):
+    def __init__(self, data, tau, template, N):
         self.data = data
         self.times = []
         self.template = template
+        self.shape = (N,)
         summ = 0
         for t in tau:
             self.times.append(summ+t*0.5)
@@ -74,6 +79,9 @@ class falselist_func:
     def __getitem__(self, key):
         return self.template(self.data(self.times[key], data=True))
 
+    def __len__(self):
+        return self.shape[0]
+
 class falselist2d_cte:
     """
     To remove special cases in the code, I want to use constant and lists
@@ -81,14 +89,15 @@ class falselist2d_cte:
     May be useless since a list of the same elements N times is probably
     faster and do not use that much memory.
     """
-    def __init__(self, data):
+    def __init__(self, data, N):
         self.data = data
+        self.shape = (N,len(data))
 
     def __getitem__(self, t):
         return self.data[t[1]]
 
     def __len__(self):
-        return len(self.data)
+        return len(self.shape[0]*self.shape[1])
 
 class falselist2d_func:
     """
@@ -99,20 +108,21 @@ class falselist2d_func:
     faster and do not use that much memory.
     10% slower than a td_Qobj.
     """
-    def __init__(self, data, tau, template):
+    def __init__(self, data, tau, template, N):
         self.data = data
         self.times = []
         self.template = template
+        self.shape = (N,len(data))
         summ = 0
         for t in tau:
             self.times.append(summ+t*0.5)
             summ += t
 
-    def __len__(self):
-        return len(self.data)
-
     def __getitem__(self, t):
         return self.template(self.data[t[1]](self.times[t[0]], data=True))
+
+    def __len__(self):
+        return len(self.shape[0]*self.shape[1])
 
 
 matrix_opt = {
@@ -120,7 +130,81 @@ matrix_opt = {
     "_mem_eigen_adj":False,
     "_mem_prop":False,
     "epsilon":1e-6,
-    "method":"spectral"}
+    "method":"Frechet"}
+
+class control_vector:
+    """
+    Wrapper arround a 1d numpy array. (no Safety)
+    Overload the operator:
+        np.array * control_matrix had some unwanted side effect.
+    """
+    def __init__(self, data=None):
+        self.data = data
+
+    def copy(self):
+        return control_vector(self.data.copy())
+
+    def __mul__(self, other):
+        if isinstance(other, control_dense):
+            out = control_vector()
+            out.data = np.dot(self.data, other.data)
+        elif isinstance(other, control_sparse):
+            out = control_vector()
+            out.data = other.data.T * self.data
+        elif isinstance(other, (int, float, complex)):
+            out = self.copy()
+            out.data *= other
+        elif isinstance(other, control_vector):
+            out = np.inner(self.data, other.data)
+        else:
+            print("control_vector mul NotImplemented:",str(type(other)))
+            return NotImplemented
+        return out
+
+    def __rmul__(self, other):
+        if isinstance(other, control_dense):
+            out = control_vector()
+            out.data = np.dot(other.data, self.data)
+        elif isinstance(other, control_sparse):
+            out = control_vector()
+            out.data = other.data * self.data
+        elif isinstance(other, (int, float, complex)):
+            out = self.copy()
+            out.data *= other
+        else:
+            print("control_vector imul NotImplemented:",str(type(other)))
+            raise NotImplementedError()
+        return out
+
+    def __imul__(self, other):
+        if isinstance(other, control_dense):
+            self.data = np.dot(self.data, other.data)
+        elif isinstance(other, control_sparse):
+            self.data = self.data * other.data
+        elif isinstance(other, (int, float, complex)):
+            self.data *= other
+        else:
+            print("control_vector rmul NotImplemented:",str(type(other)))
+            raise NotImplementedError()
+        return out
+
+    def __add__(self, other):
+        if isinstance(other, control_vector):
+            out = control_vector()
+            out.data = other.data + self.data
+        else:
+            print("control_vector add NotImplemented:",str(type(other)))
+            return NotImplemented
+        return out
+
+    def __iadd__(self, other):
+        if isinstance(other, control_vector):
+            self.data += other.data + self.data
+        else:
+            print("control_vector iadd NotImplemented:",str(type(other)))
+            raise NotImplementedError()
+        return out
+
 
 class control_matrix:
     def __init__(self, obj=None):
@@ -133,7 +217,7 @@ class control_matrix:
         self._eig_vec = None
         self._eig_vec_dag = None
         self._prop = None
-
+    """
     def __add__(self, other):
         out = self.copy()
         out += other
@@ -152,7 +236,7 @@ class control_matrix:
     def __radd__(self, other):
         out = self.copy()
         out += other
-        return out
+        return out"""
 
 class control_dense(control_matrix):
     def __init__(self, obj=None):
@@ -172,49 +256,42 @@ class control_dense(control_matrix):
             self.data = obj
             self._size = obj.shape[0]
 
-    def __rmul__(self, other):
-        if isinstance(other, (int, float, complex)):
-            out = self.copy()
-            out *= other
-        elif isinstance(other, Qobj):
-            out = self.copy()
-            out.data = other.data * out.data
-        elif isinstance(other, sp.csr_matrix):
-            out = self.copy()
-            out.data = other.data * out.data
-        elif isinstance(other, np.array):
-            out = self.copy()
-            out.data = other * out.data
-        return out
-
     def copy(self):
         copy_ = control_dense(self.data.copy())
         return copy_
 
     def __imul__(self, other):
         if isinstance(other, control_dense):
-            self.data = np.matmul(self.data, other.data)
+            self.data = self.data @ other.data
         elif isinstance(other, (int, float, complex)):
-            self.data = self.data * other
-        elif isinstance(other, np.ndarray):
-            self.data = np.matmul(self.data, other)
+            self.data *= other
+        #elif isinstance(other, np.ndarray):
+        #    self.data = np.matmul(self.data, other)
         else:
             raise NotImplementedError(str(type(other)))
         return self
 
-    def __rmul__(self, other):
+    def __mul__(self, other):
         if isinstance(other, (int, float, complex)):
             out = self.copy()
             out *= other
-        elif isinstance(other, Qobj):
-            out = self.copy()
-            out.data = other.data * out.data
-        elif isinstance(other, sp.csr_matrix):
-            out = self.copy()
-            out.data = other.data * out.data
         elif isinstance(other, np.ndarray):
+            out = self.data @ other
+        elif isinstance(other, control_dense):
             out = self.copy()
-            out.data = np.matmul(other, self.data)
+            out.data = out.data @ other.data
+        else:
+            raise NotImplementedError(str(type(other)))
+        return out
+
+    def __rmul__(self, other):
+        if isinstance(other, np.ndarray):
+            out = other @ self.data
+        elif isinstance(other, (int, float, complex)):
+            out = self.copy()
+            out *= other
+        else:
+            raise NotImplementedError(str(type(other)))
         return out
 
     def __iadd__(self, other):
@@ -293,7 +370,18 @@ class control_dense(control_matrix):
             prop = la.expm(self.data*tau)
 
         elif matrix_opt["method"] == "first_order":
-            prop = la.expm(self.data*tau)
+            prop = np.eye(self.data.shape[0]) + self.data * tau
+
+        elif matrix_opt["method"] == "second_order":
+            prop = np.eye(self.data.shape[0]) + self.data * tau
+            prop += self.data @ self.data * (tau * tau * 0.5)
+
+        elif matrix_opt["method"] == "third_order":
+            B = self.data * tau
+            prop = np.eye(self.data.shape[0]) + B
+            BB = B @ B * 0.5
+            prop += BB
+            prop += BB @ B * 0.3333333333333333333
 
         if matrix_opt["_mem_prop"]:
             self._prop = prop
@@ -330,12 +418,33 @@ class control_dense(control_matrix):
             prop_grad = (dprop - prop)*(1/matrix_opt["epsilon"])
 
         elif matrix_opt["method"] == "first_order":
-            prop_grad = dirr*tau
+            if compute_expm:
+                prop = self._exp(tau)
+            prop_grad = dirr.data * tau
+
+        elif matrix_opt["method"] == "second_order":
+            if compute_expm:
+                prop = self._exp(tau)
+            prop_grad = dirr.data * tau
+            prop_grad += (self.data @ dirr.data + dirr.data @ self.data) \
+                            * (tau * tau * 0.5)
+
+        elif matrix_opt["method"] == "third_order":
+            if compute_expm:
+                prop = self._exp(tau)
+            prop_grad = dirr.data * tau
+            prop_grad += (self.data @ dirr.data + dirr.data @ self.data) \
+                            * tau * tau * 0.5
+            prop_grad += (self.data @ self.data @ dirr.data +
+                          dirr.data @ self.data @ self.data +
+                          self.data @ dirr.data @ self.data ) \
+                            * (tau * tau * tau * 0.16666666666666666)
 
         if compute_expm:
             return control_dense(prop), control_dense(prop_grad)
         else:
             return control_dense(prop_grad)
+
 
 class control_sparse(control_matrix):
     def __init__(self, obj=None):
@@ -363,15 +472,34 @@ class control_sparse(control_matrix):
         if isinstance(other, (int, float, complex)):
             out = self.copy()
             out *= other
-        elif isinstance(other, Qobj):
-            out = self.copy()
-            out.data = other.data * out.data
-        elif isinstance(other, sp.csr_matrix):
-            out = self.copy()
-            out.data = other.data * out.data
+        #elif isinstance(other, Qobj):
+        #    out = self.copy()
+        #    out.data = other.data * out.data
+        #elif isinstance(other, sp.csr_matrix):
+        #    out = self.copy()
+        #    out.data = other.data * out.data
         elif isinstance(other, np.ndarray):
+            if len(other.shape) == 1:
+                out = spmv(self.data.T, other)
+            else:
+                out = (self.data.T * other.T).T
+        return out
+
+    def __mul__(self, other):
+        if isinstance(other, control_sparse):
             out = self.copy()
-            out.data = sp.csr_matrix(other, self.data)
+            out.data = self.data * other.data
+        elif isinstance(other, (int, float, complex)):
+            out = self.copy()
+            out.data = self.data * other
+        elif isinstance(other, np.ndarray):
+            if len(other.shape) == 1:
+                out = spmv(self.data, other)
+            else:
+                out = self.data * other
+
+        else:
+            raise NotImplementedError(type(other))
         return out
 
     def __imul__(self, other):
@@ -379,8 +507,8 @@ class control_sparse(control_matrix):
             self.data = self.data * other.data
         elif isinstance(other, (int, float, complex)):
             self.data = self.data * other
-        elif isinstance(other, np.ndarray):
-            self.data = sp.csr_matrix(spmv(self.data, other))
+        #elif isinstance(other, np.ndarray):
+        #    self.data = sp.csr_matrix(spmv(self.data, other))
         else:
             raise NotImplementedError(type(other))
         return self
@@ -456,8 +584,21 @@ class control_sparse(control_matrix):
             prop = self._eig_vec.dot(self._prop_eigen).dot(self._eig_vec_adj)
         elif matrix_opt["method"] in ["approx", "Frechet"]:
             prop = sp_expm(self.data*tau, sparse=True)
+
         elif matrix_opt["method"] == "first_order":
-            prop = sp_expm(self.data*tau, sparse=True)
+            prop = np.eye(self.data.shape[0]) + self.data * tau
+
+        elif matrix_opt["method"] == "second_order":
+            prop = np.eye(self.data.shape[0]) + self.data * tau
+            prop += self.data * self.data * (tau * tau * 0.5)
+
+        elif matrix_opt["method"] == "third_order":
+            B = self.data * tau
+            prop = np.eye(self.data.shape[0]) + B
+            BB = B * B * 0.5
+            prop += BB
+            prop += BB * B * 0.3333333333333333333
+
         if matrix_opt["_mem_prop"]:
             self._prop = prop
         return prop
@@ -496,7 +637,27 @@ class control_sparse(control_matrix):
             prop_grad = (dprop - prop)*(1/matrix_opt["epsilon"])
 
         elif matrix_opt["method"] == "first_order":
-            prop_grad = dirr * tau
+            if compute_expm:
+                prop = self._exp(tau)
+            prop_grad = dirr.data * tau
+
+        elif matrix_opt["method"] == "second_order":
+            if compute_expm:
+                prop = self._exp(tau)
+            prop_grad = dirr.data * tau
+            prop_grad += (self.data * dirr.data + dirr.data * self.data) \
+                            * tau * tau * 0.5
+
+        elif matrix_opt["method"] == "third_order":
+            if compute_expm:
+                prop = self._exp(tau)
+            prop_grad = dirr.data * tau
+            prop_grad += (self.data * dirr.data + dirr.data * self.data) \
+                            * (tau * tau * 0.5)
+            prop_grad += (self.data * self.data * dirr.data +
+                          dirr.data * self.data * self.data +
+                          self.data * dirr.data * self.data ) \
+                            * (tau * tau * tau * 0.16666666666666666)
 
         if compute_expm:
             return control_sparse(prop), control_sparse(prop_grad)
