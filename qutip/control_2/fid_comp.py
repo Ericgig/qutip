@@ -410,13 +410,13 @@ class FidCompOperator():
         elif mode=="TrSq":
             self.target_d = target.T.conj()
             if not scale_factor:
-                self.scale_factor = 1.0 / (self.target.data.shape[0])**4
+                self.scale_factor = 1.0 / (self.target.data.shape[0])**2
             else:
                 self.scale_factor = scale_factor
         elif mode=="TrAbs":
             self.target_d = target.T.conj()
             if not scale_factor:
-                self.scale_factor = 1.0 / (self.target.data.shape[0])**2
+                self.scale_factor = 1.0 / (self.target.data.shape[0])
             else:
                 self.scale_factor = scale_factor
         else:

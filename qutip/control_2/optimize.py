@@ -96,6 +96,18 @@ from qutip import Qobj
 class solverEnd(Exception):
     pass
 
+termination_conditions = {}
+termination_conditions["fid_goal"] = None
+termination_conditions["fid_err_targ"] = 1e-7
+termination_conditions["min_gradient_norm"] = 1e-7
+termination_conditions["max_wall_time"] = 1*60.0
+termination_conditions["max_fid_func_calls"] = 10000 # 1e6
+termination_conditions["max_iterations"] = 1e6
+
+method_options = {}
+method_options["ftol"] = 1e-5
+method_options["disp"] = False
+
 class Optimizer(object):
     """
     Base class for all control pulse optimisers. This class should not be
@@ -224,12 +236,14 @@ class Optimizer(object):
 
     """
 
-    def __init__(self, error, grad=None, x0=np.zeros(0), stats=None):
+    def __init__(self, error, grad=None, x0=np.zeros(0),
+                 stats=None, dyn_stats=None):
         self.errorFunc = error
         self.gradFunc = grad
         self.x_shape = x0.shape
         self.x0 = x0.flatten()
         self.stats = stats
+        self.dyn_stats = dyn_stats
         self.reset()
 
     def reset(self):
@@ -242,23 +256,12 @@ class Optimizer(object):
         self.bounds = None
 
         # termination
-        self.termination_conditions = {}
-        self.method_options = {}
-        tc = self.termination_conditions
-        mo = self.method_options
+        self.termination_conditions = termination_conditions
+        self.method_options = method_options
 
-        tc["fid_goal"] = None
-        tc["fid_err_targ"] = 1e-5
-        tc["min_gradient_norm"] = 1e-5
-        tc["max_wall_time"] = 60*60.0
-        tc["max_fid_func_calls"] = 10000#1e6
-        tc["max_iterations"] = 1e6
-
-        mo["ftol"] = 1e-5
-        mo["maxfun"] = tc["max_fid_func_calls"]
-        mo["gtol"] = tc["min_gradient_norm"]
-        mo["maxiter"] = tc["max_iterations"]
-        mo["disp"] = False
+        method_options["maxfun"] = termination_conditions["max_fid_func_calls"]
+        method_options["gtol"] = termination_conditions["min_gradient_norm"]
+        method_options["maxiter"] = termination_conditions["max_iterations"]
 
         self.wall_time_optim_start = 0.0
         self.num_iter = 0
@@ -267,20 +270,10 @@ class Optimizer(object):
         self.termination_signal = ""
 
         # Stats
-        #self.stats = None
-        #self.iter_summary = None
-        #self.disp_conv_msg = False
-
-        #self.apply_params()
-
-        ### Not / no longer useful
-        # self.dump_to_file = False
-        # self.dump = None
-        # self.amp_lbound = None
-        # self.amp_ubound = None
-        # self.iteration_steps = None
-        # self.record_iteration_steps=False
-        # self.pulse_generator = None
+        # self.stats = None
+        # self.iter_summary = None
+        # self.disp_conv_msg = False
+        # self.apply_params()
 
     def apply_method_params(self, params):
         """
@@ -492,7 +485,7 @@ class Optimizer(object):
         wall_time = timeit.default_timer() - self.wall_time_optimize_start
         if self.stats is not None and self.stats.timings:
             self.stats.num_iter += 1
-            self.stats.num_grad_func_calls += 1
+            #self.stats.num_grad_func_calls += 1
             self.stats.num_grad_func_calls_per_iter += [0]
             self.stats.num_fidelity_func_calls_per_iter += [0]
             self.stats.wall_time_per_iter += [wall_time]
@@ -501,9 +494,11 @@ class Optimizer(object):
 
         if self.stats is not None and self.stats.states:
             x_2d = x.reshape(self.x_shape)
-            self.err = [self.errorFunc(x_2d, stats=True)]
-            grad = self.gradFunc(x_2d, stats=True)
-            self.stats.grad_norm += [np.sum(grad*grad.conj())]
+            self.dyn_stats(x_2d)
+            self.err = self.errorFunc(x_2d)
+            #grad = self.gradFunc(x_2d, stats=True)
+            #self.stats.grad_norm += [np.sum(grad*grad.conj())]
+            print("step: ", self.num_iter, " cost: ",self.err)
 
         if wall_time > self.termination_conditions["max_wall_time"]:
             self.termination_signal = "max_wall_time"

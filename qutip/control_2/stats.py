@@ -155,22 +155,24 @@ class Stats(object):
         self.num_grad_computes = 0                     # Dynamics
 
         # Duration attributes, timings>=2
-        """self.wall_time_dyn_gen_compute = 0.0
+        """
+        self.wall_time_dyn_gen_compute = 0.0
         self.wall_time_prop_compute = 0.0
         self.wall_time_fwd_prop_compute = 0.0
         self.wall_time_onwd_prop_compute = 0.0
         self.wall_time_amp_filter_compute = 0.0
         self.wall_time_gradient_filter_compute = 0.0
         # Fidelity and gradient function calls and computes
-        self.num_tslot_recompute = 0"""
+        self.num_tslot_recompute = 0
 
         # Control amplitudes
-        """self.num_ctrl_amp_updates = 0
+        self.num_ctrl_amp_updates = 0
         self.mean_num_ctrl_amp_updates_per_iter = 0.0
         self.num_timeslot_changes = 0
         self.mean_num_timeslot_changes_per_update = 0.0
         self.num_ctrl_amp_changes = 0
-        self.mean_num_ctrl_amp_changes_per_update = 0.0"""
+        self.mean_num_ctrl_amp_changes_per_update = 0.0
+        """
 
         # iter_summary
         self.fidelity = []                         # Dynamics states=1
