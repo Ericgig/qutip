@@ -33,10 +33,12 @@
 ###############################################################################
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.linalg as spla
+from scipy.sparse import identity
 import scipy.linalg as la
 from qutip.cy.spmatfuncs import spmv
 from qutip import Qobj
-from qutip.sparse import sp_eigs,sp_expm
+from qutip.sparse import sp_eigs, sp_expm
 from qutip.cy.spmath import (zcsr_adjoint, zcsr_trace)
 
 
@@ -130,81 +132,9 @@ matrix_opt = {
     "_mem_eigen_adj":False,
     "_mem_prop":False,
     "epsilon":1e-6,
-    "method":"Frechet"}
-
-class control_vector:
-    """
-    Wrapper arround a 1d numpy array. (no Safety)
-    Overload the operator:
-        np.array * control_matrix had some unwanted side effect.
-    """
-    def __init__(self, data=None):
-        self.data = data
-
-    def copy(self):
-        return control_vector(self.data.copy())
-
-    def __mul__(self, other):
-        if isinstance(other, control_dense):
-            out = control_vector()
-            out.data = np.dot(self.data, other.data)
-        elif isinstance(other, control_sparse):
-            out = control_vector()
-            out.data = other.data.T * self.data
-        elif isinstance(other, (int, float, complex)):
-            out = self.copy()
-            out.data *= other
-        elif isinstance(other, control_vector):
-            out = np.inner(self.data, other.data)
-        else:
-            print("control_vector mul NotImplemented:",str(type(other)))
-            return NotImplemented
-        return out
-
-    def __rmul__(self, other):
-        if isinstance(other, control_dense):
-            out = control_vector()
-            out.data = np.dot(other.data, self.data)
-        elif isinstance(other, control_sparse):
-            out = control_vector()
-            out.data = other.data * self.data
-        elif isinstance(other, (int, float, complex)):
-            out = self.copy()
-            out.data *= other
-        else:
-            print("control_vector imul NotImplemented:",str(type(other)))
-            raise NotImplementedError()
-        return out
-
-    def __imul__(self, other):
-        if isinstance(other, control_dense):
-            self.data = np.dot(self.data, other.data)
-        elif isinstance(other, control_sparse):
-            self.data = self.data * other.data
-        elif isinstance(other, (int, float, complex)):
-            self.data *= other
-        else:
-            print("control_vector rmul NotImplemented:",str(type(other)))
-            raise NotImplementedError()
-        return out
-
-    def __add__(self, other):
-        if isinstance(other, control_vector):
-            out = control_vector()
-            out.data = other.data + self.data
-        else:
-            print("control_vector add NotImplemented:",str(type(other)))
-            return NotImplemented
-        return out
-
-    def __iadd__(self, other):
-        if isinstance(other, control_vector):
-            self.data += other.data + self.data
-        else:
-            print("control_vector iadd NotImplemented:",str(type(other)))
-            raise NotImplementedError()
-        return out
-
+    "method":"Frechet",
+    "sparse2dense":False,
+    "sparse_exp":True}
 
 class control_matrix:
     def __init__(self, obj=None):
@@ -217,7 +147,7 @@ class control_matrix:
         self._eig_vec = None
         self._eig_vec_dag = None
         self._prop = None
-    """
+
     def __add__(self, other):
         out = self.copy()
         out += other
@@ -228,6 +158,7 @@ class control_matrix:
         out -= other
         return out
 
+    """
     def __mul__(self, other):
         out = self.copy()
         out *= other
@@ -236,7 +167,8 @@ class control_matrix:
     def __radd__(self, other):
         out = self.copy()
         out += other
-        return out"""
+        return out
+    """
 
 class control_dense(control_matrix):
     def __init__(self, obj=None):
@@ -253,7 +185,7 @@ class control_dense(control_matrix):
             self.data = obj
             self._size = self.data.shape[0]
         elif isinstance(obj, sp.csr_matrix):
-            self.data = obj
+            self.data = obj.toarray()
             self._size = obj.shape[0]
 
     def copy(self):
@@ -445,7 +377,6 @@ class control_dense(control_matrix):
         else:
             return control_dense(prop_grad)
 
-
 class control_sparse(control_matrix):
     def __init__(self, obj=None):
         """
@@ -578,32 +509,53 @@ class control_sparse(control_matrix):
     def _exp(self, tau):
         if matrix_opt["_mem_prop"] and self._prop:
             return self._prop
+
         if matrix_opt["method"] == "spectral":
             if self._eig_vec is None:
                 self._spectral_decomp(tau)
             prop = self._eig_vec.dot(self._prop_eigen).dot(self._eig_vec_adj)
         elif matrix_opt["method"] in ["approx", "Frechet"]:
-            prop = sp_expm(self.data*tau, sparse=True)
-
+            if matrix_opt["sparse2dense"]:
+                prop = la.expm(self.data.toarray()*tau)
+            else:
+                prop = sp_expm(self.data*tau,
+                               sparse=matrix_opt["sparse_exp"])
         elif matrix_opt["method"] == "first_order":
-            prop = np.eye(self.data.shape[0]) + self.data * tau
-
+            if matrix_opt["sparse2dense"]:
+                prop = np.eye(self.data.shape[0]) + self.data.toarray() * tau
+            else:
+                prop = identity(self.data.shape[0], format='csr') + \
+                        self.data * tau
         elif matrix_opt["method"] == "second_order":
-            prop = np.eye(self.data.shape[0]) + self.data * tau
-            prop += self.data * self.data * (tau * tau * 0.5)
-
+            if matrix_opt["sparse2dense"]:
+                M = self.data.toarray() * tau
+                prop = np.eye(self.data.shape[0]) + M
+                prop += M @ M * 0.5
+            else:
+                M = self.data * tau
+                prop = identity(self.data.shape[0], format='csr') + M
+                prop += M * M * 0.5
         elif matrix_opt["method"] == "third_order":
-            B = self.data * tau
-            prop = np.eye(self.data.shape[0]) + B
-            BB = B * B * 0.5
-            prop += BB
-            prop += BB * B * 0.3333333333333333333
+            if matrix_opt["sparse2dense"]:
+                B = self.data.toarray() * tau
+                prop = np.eye(self.data.shape[0]) + B
+                BB = B @ B * 0.5
+                prop += BB
+                prop += BB @ B * 0.3333333333333333333
+            else:
+                B = self.data * tau
+                prop = identity(self.data.shape[0], format='csr') + B
+                BB = B * B * 0.5
+                prop += BB
+                prop += BB * B * 0.3333333333333333333
 
         if matrix_opt["_mem_prop"]:
             self._prop = prop
         return prop
 
     def prop(self, tau):
+        if matrix_opt["sparse2dense"]:
+            return control_dense(self._exp(tau))
         return control_sparse(self._exp(tau))
 
     def dexp(self, dirr, tau, compute_expm=False):
@@ -612,11 +564,13 @@ class control_sparse(control_matrix):
             E = (dirr.data*tau).toarray()
             if compute_expm:
                 prop_dense, prop_grad_dense = la.expm_frechet(A, E)
-                prop = sp.csr_matrix(prop_dense)
+                prop = prop_dense
+                # prop = sp.csr_matrix(prop_dense)
             else:
                 prop_grad_dense = la.expm_frechet(A, E,
                                                   compute_expm=compute_expm)
-            prop_grad = sp.csr_matrix(prop_grad_dense)
+            prop_grad = prop_grad_dense
+            # prop_grad = sp.csr_matrix(prop_grad_dense)
 
         elif matrix_opt["method"] == "spectral":
             if self._eig_vec is None:
@@ -631,10 +585,17 @@ class control_sparse(control_matrix):
             prop_grad = self._eig_vec.dot(cdg).dot(self._eig_vec_adj)
 
         elif matrix_opt["method"] == "approx":
-            dM = (self.data+matrix_opt["epsilon"]*dirr.data)*tau
-            dprop = sp_expm(dM, sparse=True)
-            prop = self._exp(tau)
-            prop_grad = (dprop - prop)*(1/matrix_opt["epsilon"])
+            if matrix_opt["sparse2dense"]:
+                dM = (self.data.toarray() + \
+                      matrix_opt["epsilon"] * dirr.data.toarray()) * tau
+                dprop = la.expm(dM)
+                prop = self._exp(tau)
+                prop_grad = (dprop - prop)*(1/matrix_opt["epsilon"])
+            else:
+                dM = (self.data + matrix_opt["epsilon"]*dirr.data)*tau
+                dprop = sp_expm(dM, sparse=matrix_opt["sparse_exp"])
+                prop = self._exp(tau)
+                prop_grad = (dprop - prop)*(1/matrix_opt["epsilon"])
 
         elif matrix_opt["method"] == "first_order":
             if compute_expm:
@@ -646,20 +607,25 @@ class control_sparse(control_matrix):
                 prop = self._exp(tau)
             prop_grad = dirr.data * tau
             prop_grad += (self.data * dirr.data + dirr.data * self.data) \
-                            * tau * tau * 0.5
+                            * (tau * tau * 0.5)
 
         elif matrix_opt["method"] == "third_order":
             if compute_expm:
                 prop = self._exp(tau)
             prop_grad = dirr.data * tau
-            prop_grad += (self.data * dirr.data + dirr.data * self.data) \
-                            * (tau * tau * 0.5)
-            prop_grad += (self.data * self.data * dirr.data +
-                          dirr.data * self.data * self.data +
-                          self.data * dirr.data * self.data ) \
-                            * (tau * tau * tau * 0.16666666666666666)
+            A = self.data * dirr.data
+            B = dirr.data * self.data
+            prop_grad += (A + B)  * (tau * tau * 0.5)
+            prop_grad += (self.data * A + A * self.data + B * self.data ) * \
+                            (tau * tau * tau * 0.16666666666666666)
 
         if compute_expm:
-            return control_sparse(prop), control_sparse(prop_grad)
+            if matrix_opt["sparse2dense"]:
+                return control_dense(prop), control_dense(prop_grad)
+            else:
+                return control_sparse(prop), control_sparse(prop_grad)
         else:
-            return control_sparse(prop_grad)
+            if matrix_opt["sparse2dense"]:
+                return control_dense(prop_grad)
+            else:
+                return control_sparse(prop_grad)

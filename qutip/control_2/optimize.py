@@ -93,6 +93,17 @@ import scipy.optimize as spopt
 # QuTiP
 from qutip import Qobj
 
+
+import importlib
+import importlib.util
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/stats.py"
+spec = importlib.util.spec_from_file_location("stats", moduleName)
+stats = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(stats)
+Stats = stats.Stats
+
+
+
 class solverEnd(Exception):
     pass
 
@@ -100,9 +111,9 @@ termination_conditions = {}
 termination_conditions["fid_goal"] = None
 termination_conditions["fid_err_targ"] = 1e-7
 termination_conditions["min_gradient_norm"] = 1e-7
-termination_conditions["max_wall_time"] = 1*60.0
-termination_conditions["max_fid_func_calls"] = 10000 # 1e6
-termination_conditions["max_iterations"] = 1e6
+termination_conditions["max_wall_time"] = 10*60.0
+termination_conditions["max_fid_func_calls"] = 1e6
+termination_conditions["max_iterations"] = 10000
 
 method_options = {}
 method_options["ftol"] = 1e-5
@@ -242,7 +253,10 @@ class Optimizer(object):
         self.gradFunc = grad
         self.x_shape = x0.shape
         self.x0 = x0.flatten()
-        self.stats = stats
+        if stats is not None:
+            self.stats = stats
+        else:
+            self.stats = Stats(1,1)
         self.dyn_stats = dyn_stats
         self.reset()
 
@@ -255,13 +269,26 @@ class Optimizer(object):
 
         self.bounds = None
 
-        # termination
-        self.termination_conditions = termination_conditions
-        self.method_options = method_options
+        # termination conditions
+        self.termination_conditions = {}
+        self.termination_conditions["fid_goal"] = None
+        self.termination_conditions["fid_err_targ"] = 1e-7
+        self.termination_conditions["min_gradient_norm"] = 1e-7
+        self.termination_conditions["max_wall_time"] = 10*60.0
+        self.termination_conditions["max_fid_func_calls"] = 1e6
+        self.termination_conditions["max_iterations"] = 10000
+        self.termination_conditions.update(termination_conditions)
 
-        method_options["maxfun"] = termination_conditions["max_fid_func_calls"]
-        method_options["gtol"] = termination_conditions["min_gradient_norm"]
-        method_options["maxiter"] = termination_conditions["max_iterations"]
+        self.method_options = {}
+        self.method_options["ftol"] = 1e-5
+        self.method_options["disp"] = False
+        self.method_options.update(method_options)
+        self.method_options["maxfun"] = \
+                self.termination_conditions["max_fid_func_calls"]
+        self.method_options["gtol"] = \
+                self.termination_conditions["min_gradient_norm"]
+        self.method_options["maxiter"] = \
+                self.termination_conditions["max_iterations"]
 
         self.wall_time_optim_start = 0.0
         self.num_iter = 0
@@ -355,7 +382,7 @@ class Optimizer(object):
 
         st_time = timeit.default_timer()
         self.wall_time_optimize_start = st_time
-        if self.stats is not None and self.stats.timings:
+        if True: #self.stats is not None and self.stats.timings:
             self.stats.wall_time_optim_start = st_time
             self.stats.num_grad_func_calls_per_iter = [0]
             self.stats.num_fidelity_func_calls_per_iter = [0]
@@ -394,7 +421,7 @@ class Optimizer(object):
         result.num_fid_func_calls = self.num_fid_func_calls
         result.wall_time = timeit.default_timer() - st_time
 
-        if self.stats is not None and self.stats.timings:
+        if True: #self.stats is not None and self.stats.timings:
             self.stats.wall_time_optim_end = timeit.default_timer()
             self.stats.wall_time_optim = timeit.default_timer() - st_time
             self.stats.wall_time_per_iter = \
@@ -417,7 +444,7 @@ class Optimizer(object):
         terminated if the target has been achieved.
         """
         self.num_fid_func_calls += 1
-        if self.stats is not None and self.stats.timings:
+        if True: #self.stats is not None and self.stats.timings:
             self.stats.num_fidelity_func_calls += 1
             self.stats.num_fidelity_func_calls_per_iter[self.num_iter] += 1
             t_start = timeit.default_timer()
@@ -425,7 +452,7 @@ class Optimizer(object):
         x_2d = x.reshape(self.x_shape)
         self.err = self.errorFunc(x_2d)
 
-        if self.stats is not None and self.stats.timings:
+        if True: #if self.stats is not None and self.stats.timings:
             self.stats.wall_time_fidelity_func += timeit.default_timer() - t_start
 
         #if self.err <= self.termination_conditions["fid_err_targ"]:
@@ -458,7 +485,7 @@ class Optimizer(object):
         condition
         """
         self.num_grad_func_calls += 1
-        if self.stats is not None and self.stats.timings:
+        if True: #if self.stats is not None and self.stats.timings:
             self.stats.num_grad_func_calls += 1
             self.stats.num_grad_func_calls_per_iter[self.num_iter] += 1
             t_start = timeit.default_timer()
@@ -466,7 +493,7 @@ class Optimizer(object):
         x_2d = x.reshape(self.x_shape)
         grad = self.gradFunc(x_2d)
 
-        if self.stats is not None and self.stats.timings:
+        if True: #if self.stats is not None and self.stats.timings:
             self.stats.wall_time_grad_func += timeit.default_timer() - t_start
 
         self.gradnorm = np.sum(grad*grad.conj())
@@ -483,7 +510,7 @@ class Optimizer(object):
         """
         self.num_iter += 1
         wall_time = timeit.default_timer() - self.wall_time_optimize_start
-        if self.stats is not None and self.stats.timings:
+        if True: #if self.stats is not None and self.stats.timings:
             self.stats.num_iter += 1
             #self.stats.num_grad_func_calls += 1
             self.stats.num_grad_func_calls_per_iter += [0]
@@ -492,7 +519,7 @@ class Optimizer(object):
 
         self.x1 = x.copy()
 
-        if self.stats is not None and self.stats.states:
+        if self.stats.states:
             x_2d = x.reshape(self.x_shape)
             self.dyn_stats(x_2d)
             self.err = self.errorFunc(x_2d)

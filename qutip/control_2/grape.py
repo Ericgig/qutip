@@ -1,5 +1,9 @@
 
 
+import numpy as np
+import qutip as qt
+
+
 import importlib
 import importlib.util
 
@@ -131,6 +135,54 @@ def grape_unitary_state(H, ctrls, target, initial, times=None, u_start=None,
     else:
         mode = "PSU"
     system.set_cost(mode=mode)
+    if times is not None:
+        system.set_times(times=times)
+    if u_start is not None:
+        system.set_initial_state(u_start)
+    if run:
+        result = system.run()
+        return result
+    else:
+        return system
+
+
+def opengrape_state(H, c_ops, target, initial,
+                    ctrls=[], c_ops_ctrls=[],
+                    times=None, u_start=None, u_limits=None, filter=None,
+                    phase_sensitive=False, run=True):
+    system = dynamic.dynamics()
+    L = qt.liouvillian(H, c_ops)
+    L_ctrls = []
+    L_ctrls += [qt.liouvillian(ctrl, []) for ctrl in ctrls]
+    L_ctrls += [qt.liouvillian(None, [ctrl]) for ctrl in c_ops_ctrls]
+    rho_0 = qt.mat2vec((initial*initial.dag()).full())
+    rho_t = qt.mat2vec((target*target.dag()).full())
+    system.set_physic(H=L, ctrls=L_ctrls, initial=rho_0, target=rho_t)
+    system.set_cost(mode="Diff")
+    if times is not None:
+        system.set_times(times=times)
+    if u_start is not None:
+        system.set_initial_state(u_start)
+    if run:
+        result = system.run()
+        return result
+    else:
+        return system
+
+
+def opengrape(H, c_ops, target,
+              ctrls=[], c_ops_ctrls=[],
+              times=None, u_start=None, u_limits=None, filter=None,
+              phase_sensitive=False, run=True):
+    system = dynamic.dynamics()
+    L = qt.liouvillian(H, c_ops)
+    L_ctrls = []
+    L_ctrls += [qt.liouvillian(ctrl, []) for ctrl in ctrls]
+    L_ctrls += [qt.liouvillian(None, [ctrl]) for ctrl in c_ops_ctrls]
+    rho_0 = qt.mat2vec((initial*initial.dag()).full())
+    rho_t = qt.mat2vec((target*target.dag()).full())
+    system.set_physic(H=L, ctrls=L_ctrls, target=rho_t)
+    system.set_cost(mode="Diff")
     if times is not None:
         system.set_times(times=times)
     if u_start is not None:

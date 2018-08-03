@@ -42,7 +42,7 @@ import numpy as np
 import scipy.linalg as la
 import scipy.sparse as sp
 # QuTiP
-from qutip import Qobj, td_Qobj
+from qutip import Qobj, td_Qobj, mat2vec
 #from qutip.sparse import sp_eigs, _dense_eigs
 import qutip.settings as settings
 # QuTiP logging
@@ -130,8 +130,11 @@ class dynamics:
         self.costcomp = []
         self.solver = None
         # Options
-        self.opt_mode = "speed"
-        self.option = {}
+        self.opt_mode = ("", "")
+        #self.options = {}
+        self.termination_conditions = optimize.termination_conditions
+        self.solver_method_options = optimize.method_options
+        self.matrix_options = matrix.matrix_opt.copy()
         self.mem = 0
         # Costcomp option
         self.mode = None
@@ -165,6 +168,7 @@ class dynamics:
         self._gradient_u = None
         self.error = np.inf
         self.fidelity_stats = []
+        self.u_limits = None
         # Result object
         self.result_phase = 1.
 
@@ -204,6 +208,51 @@ class dynamics:
                                 " dimensions do not match.")
 
         if isinstance(target, Qobj):
+            target = target.full()
+        if isinstance(target, np.ndarray):
+            if target.shape == self.shape:
+                self.target = target
+                self.state_evolution = False
+            else:
+                if len(target.shape) == 2 and \
+                    target.shape[0] == target.shape[1]:
+                        target = mat2vec(target)
+                elif len(target.shape) == 2:
+                    target = target.flatten()
+                if len(target) == self.shape[1]:
+                    self.state_evolution = True
+                    self.target = target
+                else:
+                    raise Exception("Dims of the target state and"
+                                    " Drift operator do not match.")
+        else:
+            raise Exception("The target state is expected to be "
+                            "a Qobj or an array.")
+
+        if initial is None:
+            pass
+        else:
+            if isinstance(initial, Qobj):
+                initial = initial.full()
+            if isinstance(initial, np.ndarray):
+                if target.shape == initial.shape:
+                    self.initial = initial
+                else:
+                    if len(initial.shape) == 2 and \
+                        initial.shape[0] == initial.shape[1]:
+                            initial = mat2vec(initial)
+                    elif len(initial.shape) == 2:
+                        initial = initial.flatten()
+                    if len(initial) == len(target):
+                        self.initial = initial
+                    else:
+                        raise Exception("Dims of the target state and"
+                                        " initial state do not match.")
+            else:
+                raise Exception("The initial state is expected to be a Qobj or "
+                                "np.array.")
+
+        """if isinstance(target, Qobj):
             if target.dims == self.dims:
                 self.target = target.full()
                 self.state_evolution = False
@@ -211,26 +260,29 @@ class dynamics:
                 self.target = target.full().flatten()
                 self.state_evolution = True
             else:
+                print(self.issuper)
+                print(self.dims)
+                print(target.shape)
+                print(target.dims)
                 raise Exception("Dims of the target state and"
                                 " Drift operator do not match.")
+
         elif isinstance(target, np.ndarray):
             if len(target) == np.prod(target.shape):
                 self.state_evolution = True
                 self.target = target.flatten()
-            if self.issuper and len(target)**2 == self.dims[1]:
+            if self.issuper and len(target) == np.prod(self.dims[1]):
                 self.state_evolution = True
                 self.target = target.flatten()
             elif len(target.shape) == 2 and target.shape == self.dims:
                 self.target = target
                 self.state_evolution = False
             else:
-                raise Exception("Dims of the target state and"
-                                " Drift operator do not match.")
-        else:
-            raise Exception("The target state is expected to be "
-                            "a Qobj or an array.")
+                print(self.issuper)
+                print(target.shape)
+                print(self.dims)
 
-        if initial is None:
+        f initial is None:
             pass
         elif isinstance(initial, Qobj):
             if not initial.dims == target.dims:
@@ -245,7 +297,7 @@ class dynamics:
                                 " initial state do not match.")
             self.initial = initial
         else:
-            raise Exception("The initial state is expected to be a Qobj.")
+            raise Exception("The initial state is expected to be a Qobj.")"""
 
     def set_filter(self, _filter, **kwargs):
         if isinstance(_filter, str):
@@ -259,6 +311,9 @@ class dynamics:
             self.filter = _filter
 
     def set_times(self, times=None, tau=None, T=0, t_step=0, num_x=0):
+        self.t_data = (times, tau, T, t_step, num_x)
+
+    def set_ulimit(self, times=None, tau=None, T=0, t_step=0, num_x=0):
         self.t_data = (times, tau, T, t_step, num_x)
 
     def set_stats(self, timings=1, states=1):
@@ -332,31 +387,45 @@ class dynamics:
     def _add_cost(self, cost_comp=None):
         self.other_cost.append(cost_comp)
 
-    def optimization(self, opt_mode="speed", mem=0, _tslotcomp=None):
-        if opt_mode in ["mem", "speed"]:
-            self.opt_mode = opt_mode
+    def optimization(self, opt_mode="yet", mat_mode="", tslot_mode="",
+                     mem=0, _tslotcomp=None):
+        if opt_mode == "mem":
+            self.opt_mode[0] = "sparse"
+            self.opt_mode[1] = "power"
+        elif opt_mode == "speed":
+            self.opt_mode[0] = "dense"
+            self.opt_mode[1] = "int"
 
-        if mem and isinstance(mem, (int, float)):
-            self.mem = mem
-        else:
-            #Not sure to want to get here yet
-            import psutil
-            self.mem = psutil.virtual_memory().free/1024/1024
+        if mat_mode in ["sparse", "dense"]:
+            self.opt_mode[0] = mat_mode
+        if tslot_mode in ["power", "int", "full"]:
+            self.opt_mode[1] = tslot_mode
+
+        self.mem = mem
 
         if _tslotcomp is not None:
             self.tslotcomp = _tslotcomp
 
+        """
+        if "" in self.opt_mode:
+            if mem and isinstance(mem, (int, float)):
+                self.mem = mem
+            else:
+                #Not sure to want to get here yet
+                import psutil
+                self.mem = psutil.virtual_memory().free/1024/1024
+        """
+
+    """
     def option(self, **kwargs):
         for k,v in kwargs.items():
-            if k in self.option:
-                self.option[k] = v
+            if k in self.options:
+                self.options[k] = v
+    """
 
     def prepare(self):
         if self.stats is None:
             self.set_stats()
-
-        #if not self.costs:
-        #    self.set_cost()
 
         if self.filter is None:
             self.filter = filters.pass_througth()
@@ -366,7 +435,6 @@ class dynamics:
                                            num_ctrl=self._num_ctrls)
 
         self._num_tslots = len(self.time)-1
-        #self._evo_time = self.time[-1]
         if np.allclose(np.diff(self.time), self.time[1]-self.time[0]):
             self._tau = matrix.falselist_cte(self.time[1]-self.time[0],
                                              self._num_tslots)
@@ -380,11 +448,18 @@ class dynamics:
         self._ctrl_amps = np.zeros((self._num_tslots, self._num_ctrls))
         self._gradient_u = np.zeros((self._num_tslots, self._num_ctrls))
 
+        matrix.matrix_opt.update(self.matrix_options)
+
         if self.tslotcomp is None:
-            if self.mode == "mem":
+            if "" == self.opt_mode:
+                pass
+
+            if self.opt_mode[0] == "sparse":
                 matrix_type = matrix.control_sparse
             else:
+                # fall back to dense for now
                 matrix_type = matrix.control_dense
+
             if isinstance(self.drift_dyn_gen, Qobj):
                 drift = matrix.falselist_cte(matrix_type(self.drift_dyn_gen),
                                              self._num_tslots)
@@ -404,10 +479,16 @@ class dynamics:
                     [td_Qobj(ctrl) for ctrl in self.ctrl_dyn_gen],
                     self._tau, matrix_type, self._num_tslots)
 
-            initial = self.initial
-            target = self.target
-            self.tslotcomp = tslotcomp.TSComp_Save_Power_all(drift, ctrls,
-                        initial, self._tau, self._num_tslots, self._num_ctrls)
+            if self.opt_mode[1] == "power":
+                self.tslotcomp = tslotcomp.TSComp_Power(drift, ctrls,
+                    self.initial, self._tau, self._num_tslots, self._num_ctrls)
+            elif self.opt_mode[1] == "int":
+                self.tslotcomp = tslotcomp.TSComp_Int(drift, ctrls,
+                    self.initial, self._tau, self._num_tslots, self._num_ctrls)
+            else:
+                # fall back to full save
+                self.tslotcomp = tslotcomp.TSComp_Save_Power_all(drift, ctrls,
+                    self.initial, self._tau, self._num_tslots, self._num_ctrls)
 
         if not self.costcomp:
             if self.state_evolution:
@@ -513,9 +594,10 @@ class dynamics:
     def _compute_state(self, x):
         """For a state x compute the cost"""
         #print(x[0,:], np.sum(x))
-        if self.stats is not None and self.stats.timings:
+        #if self.stats is not None and self.stats.timings:
             # Faster to just compute?
-            self.stats.num_fidelity_computes += 1
+        self.stats.num_fidelity_computes += 1
+
         self.x_ = x*1.
         self._ctrl_amps = self.filter(x)
         self.tslotcomp.set(self._ctrl_amps)
@@ -536,9 +618,9 @@ class dynamics:
 
     def _compute_grad(self):
         """For a state x compute the grandient"""
-        if self.stats is not None and self.stats.timings:
+        #if self.stats is not None and self.stats.timings:
             # Faster to just compute?
-            self.stats.num_grad_computes += 1
+        self.stats.num_grad_computes += 1
 
         """if stats:"""
         if True:

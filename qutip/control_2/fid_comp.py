@@ -62,6 +62,7 @@ import os
 import warnings
 import numpy as np
 import scipy.sparse as sp
+import itertools
 # import scipy.linalg as la
 import timeit
 # QuTiP
@@ -169,12 +170,12 @@ class FidCompState():
             for k, onto_evo, dU, U, fwd_evo in \
                         self.tslotcomp.reversed():
                 for j in range(n_ctrls):
-                    dfinal = onto_evo * dU[j] * fwd_evo
-                    grad[k, j] = -rhoProdTrace(self.target.data,
-                                               dfinal.data,
+                    dfinal = onto_evo @ (dU[j] * fwd_evo)
+                    grad[k, j] = -rhoProdTrace(self.target,
+                                               dfinal,
                                                self.dimensional_norm)
                 # only work on dense state, sparse state ok?
-            grad_normalized = grad
+            grad_normalized = np.real(grad)
 
         return grad_normalized
 
