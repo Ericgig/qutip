@@ -138,6 +138,7 @@ class Stats(object):
         # ammouth of data kept
         self.timings = timings
         self.states = states
+        self.options_list = []
         self.num_iter = 0                              # Optimizer
         # self.dyn_gen_name = "dynamics generator"
         # Duration attributes and calls, timings>=1
@@ -227,10 +228,15 @@ class Stats(object):
         """
         print("\n------------------------------------"
               "\n---- Control optimisation stats ----")
+        print("------------------------------------")
+        print("run setting and option:")
+        for line in self.options_list:
+            print(line)
         self.report_timings()
         self.report_func_calls()
         #self.report_amp_updates()
         self.report_iter_summary()
+
         print("------------------------------------")
 
     def report_timings(self):

@@ -57,7 +57,6 @@ class filter:
             elif isinstance(self.x_max, np.ndarray):
                 if self.x_max.shape != (self.num_x,self.num_ctrl):
                     raise Exception("shape of the amb_bound not right")
-
         else:
             self.x_max = np.array([[None]*self.num_ctrl]*self.num_x)
 
@@ -100,7 +99,6 @@ class filter:
         rez = opt.minimize(fun=diff, jac=gradiant, x0=xx)
         return rez.x.reshape(x_shape)
 
-
 class pass_througth(filter):
     def __init__(self):
         super().__init__()
@@ -136,7 +134,6 @@ class pass_througth(filter):
         self.times = time
         return (t_step, num_ctrl), time
 
-
 class fourrier(filter):
     """
         Pulse described as fourrier modes
@@ -151,7 +148,7 @@ class fourrier(filter):
     def __call__(self, x):
         u = np.zeros((self.t_step, self.num_ctrl))
         s = np.zeros((self.t_step*2-2, self.num_ctrl))
-        s[:self.num_x,:] = x
+        s[1:self.num_x+1,:] = x
         for j in range(self.num_ctrl):
             u[:,j] = fft(s[:,j]).imag[:self.t_step]
         return u
@@ -161,13 +158,12 @@ class fourrier(filter):
         s = np.zeros((self.t_step*2-2, self.num_ctrl))
         s[:self.t_step,:] = gradient
         for j in range(self.num_ctrl):
-            x[:,j] = fft(s[:,j]).imag[:self.num_x]
-        return x/self.t_step
+            x[:,j] = fft(s[:,j]).imag[1:self.num_x+1]
+        return x
 
     def init_timeslots(self, times=None, tau=None, T=1, t_step=None,
                              num_x=None, num_ctrl=1):
         self.num_ctrl = num_ctrl
-
         if times is not None:
             if not np.allclose(np.diff(times), times[1]-times[0]):
                 raise Exception("Times must be equaly distributed")
@@ -186,15 +182,37 @@ class fourrier(filter):
             self.t_step = num_x
         else:
             self.t_step = 10
-
         if num_x is None:
             self.num_x = self.t_step
         else:
             self.num_x = num_x
-
         return (self.num_x, self.num_ctrl), \
             np.linspace(0, T, self.t_step+1)
 
+    def _compute_xlim(self):
+        if self.x_max is None and self.x_min is None:
+            return
+        if self.x_max is not None:
+            if isinstance(self.x_max, list):
+                self.x_max = np.array(self.x_max)
+            if isinstance(self.x_max, (int, float)):
+                self.x_max = self.x_max*np.ones((self.num_x,self.num_ctrl))
+            elif isinstance(self.x_max, np.ndarray):
+                if self.x_max.shape != (self.num_x,self.num_ctrl):
+                    raise Exception("fourrier: wrong bounds shape")
+        else:
+            self.x_max = np.array([[None]*self.num_ctrl]*self.num_x)
+
+        if self.x_min is not None:
+            if isinstance(self.x_min, list):
+                self.x_min = np.array(self.x_min)
+            if isinstance(self.x_min, (int, float)):
+                self.x_min = self.x_min*np.ones((self.num_x,self.num_ctrl))
+            elif isinstance(self.x_min, np.ndarray):
+                if self.x_min.shape != (self.num_x,self.num_ctrl):
+                    raise Exception("fourrier: wrong bounds shape")
+        else:
+            self.x_min = np.array([[None]*self.num_ctrl]*self.num_x)
 
 class spline(filter):
     """
@@ -208,7 +226,6 @@ class spline(filter):
 
     def __call__(self, x):
         u = np.zeros((self.t_step, self.num_ctrl))
-
         for j in range(self.num_ctrl):
             for i in range(0,self.N//2):
                 tt = (i+0.5)*self.dt+0.5
@@ -232,7 +249,6 @@ class spline(filter):
                 u[tout,j] += x[self.num_x-2,j]*(1+tt*tt*(tt*1.5-2.5))
                 u[tout,j] += x[self.num_x-1,j]*tt*(0.5+tt*(2-tt*1.5))
 
-
             for i in range(self.N//2,self.N):
                 tt = (i+0.5)*self.dt-0.5
 
@@ -255,7 +271,6 @@ class spline(filter):
                 tout = self.num_x*self.N-1*self.N+i
                 u[tout,j] += x[self.num_x-2,j]*tt*(-0.5+tt*(1-tt*0.5))
                 u[tout,j] += x[self.num_x-1,j]*(1+tt*tt*(tt*1.5-2.5))
-
         return u
 
     def reverse(self, gradient):
@@ -286,7 +301,7 @@ class spline(filter):
                 gx[self.num_x-1,j] += u[tout,j]*tt*(0.5+tt*(2-tt*1.5))
 
         for j in range(self.num_ctrl):
-            for i in range(self.N):
+            for i in range(self.N//2,self.N):
                 tt = (i+0.5)*self.dt-0.5
 
                 gx[0,j] += u[i,j]*(1+tt*tt*(tt*1.5-2.5))
@@ -308,7 +323,7 @@ class spline(filter):
                 tout = self.num_x*self.N-1*self.N+i
                 gx[self.num_x-2,j]+= u[tout,j]*tt*(-0.5+tt*(1-tt*0.5))
                 gx[self.num_x-1,j]+= u[tout,j]*(1+tt*tt*(tt*1.5-2.5))
-        return gx/self.N/2
+        return gx#/self.N/2
 
     def init_timeslots(self, times=None, tau=None, T=1, t_step=None,
                        num_x=None, num_ctrl=1):
@@ -381,7 +396,6 @@ class spline(filter):
         else:
             self.x_min = np.array([[None]*self.num_ctrl]*self.num_x)
 
-
 class gaussian(filter):
     def __init__(self, overSampleRate):
         super().__init__()
@@ -439,8 +453,28 @@ class gaussian(filter):
         self.times = np.linspace(0, T, self.t_step+1)
         return (self.num_x, self.num_ctrl), self.times
 
+    def _compute_xlim(self):
+        if self.x_max is None and self.x_min is None:
+            return
 
+        if self.x_max is not None:
+            if isinstance(self.x_max, list):
+                self.x_max = np.array(self.x_max)
+            if isinstance(self.x_max, (int, float)):
+                self.x_max = self.x_max*np.ones((self.num_x,self.num_ctrl))
+            elif isinstance(self.x_max, np.ndarray):
+                if self.x_max.shape != (self.num_x,self.num_ctrl):
+                    raise Exception("shape of the amb_bound not right")
+        else:
+            self.x_max = np.array([[None]*self.num_ctrl]*self.num_x)
 
-
-def get_filter():
-    pass
+        if self.x_min is not None:
+            if isinstance(self.x_min, list):
+                self.x_min = np.array(self.x_min)
+            if isinstance(self.x_min, (int, float)):
+                self.x_min = self.x_min*np.ones((self.num_x,self.num_ctrl))
+            elif isinstance(self.x_min, np.ndarray):
+                if self.x_min.shape != (self.num_x,self.num_ctrl):
+                    raise Exception("shape of the amb_bound not right")
+        else:
+            self.x_min = np.array([[None]*self.num_ctrl]*self.num_x)

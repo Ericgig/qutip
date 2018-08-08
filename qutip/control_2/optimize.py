@@ -318,7 +318,7 @@ class Optimizer(object):
                 else:
                     self.method_options[key] = val
 
-    def set_bounds(self, l_bound, u_bound):
+    """def set_bounds(self, l_bound, u_bound):
         self.bounds = []
         for t in range(self.x_shape[0]):
             for c in range(self.x_shape[1]):
@@ -336,7 +336,10 @@ class Optimizer(object):
                 if not ub is None and np.isinf(ub):
                     ub = None
 
-                self.bounds.append((lb, ub))
+                self.bounds.append((lb, ub))"""
+
+    def add_bounds(self, bounds):
+        self.bounds = bounds
 
     def run_optimization(self, result):
         """
