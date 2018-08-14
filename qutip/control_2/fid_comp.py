@@ -63,15 +63,16 @@ import warnings
 import numpy as np
 import scipy.sparse as sp
 import itertools
-# import scipy.linalg as la
+from scipy.linalg import sqrtm, inv
 import timeit
 # QuTiP
-from qutip import Qobj
+from qutip import Qobj, mat2vec, vec2mat
 # QuTiP logging
 import qutip.logging_utils as logging
 logger = logging.get_logger()
 # QuTiP control modules
 import qutip.control.errors as errors
+
 
 def rhoProdTrace(rho0, rho1, N=None):
     if N is None:
@@ -80,6 +81,38 @@ def rhoProdTrace(rho0, rho1, N=None):
     for i,j in itertools.product(range(N),range(N)):
         trace += rho0[i*N+j]*rho1[j*N+i]
     return trace
+
+def rhoFidelityMatrix(sqrtRhoTarget, rhoFinal):
+    return sqrtm(sqrtRhoTarget @ rhoFinal @ sqrtRhoTarget)
+
+def drhoFidelityMatrix(dx, sqrt_x, sqrt_inv_x, N=2):
+    """
+    Derivative of sqrt(x), x matrix
+    I use iterative method:
+    d(x**.5*x**.5) = dx : ds*x**.5 + x**.5*ds = dx
+    ds = ds0 + ds1 = x**-0.5 *dx + dx*x**-0.5 + ds1
+    ds1*x**.5 + x**.5*ds1 = dx - (ds0*x**.5 + x**.5*ds0)
+    Numerical error accumulate with iteration, N=2,3 seems ideal.
+    """
+    ds = 0
+    dxx = dx.copy()
+    for _ in range(N-1):
+        dds = (sqrt_inv_x@dxx + dxx@sqrt_inv_x)*0.25
+        ds += dds
+        dxx -= sqrt_x@dds + dds@sqrt_x
+    ds += (sqrt_inv_x@dxx + dxx@sqrt_inv_x)*0.25
+    return np.trace(ds)
+
+def submatinv(m):
+    """
+    inverse of the matrix but only for the non-null line and column.
+    """
+    #np.ix_(np.abs(m.diagonal())>1e-7,np.abs(m.diagonal())>1e-7)
+    sub_ix = np.ix_(np.any(np.abs(m)>1e-7,axis=0),np.any(np.abs(m)>1e-7,axis=0))
+    minv = m.copy()
+    minv[sub_ix] = inv(m[sub_ix])
+    return minv
+
 
 class FidCompState():
     def __init__(self, tslotcomp, target, phase_option):
@@ -96,6 +129,8 @@ class FidCompState():
                 PSU - global phase ignored
                 PSU2 - global phase ignored
                 SU - global phase included
+                SuTr - simple rho trace
+                SuFid - density matrix fidelity as computed by qutip.fidelity
         """
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
@@ -113,6 +148,12 @@ class FidCompState():
             self.target_d = 1.
         elif self.SU == "SuTr":
             self.dimensional_norm = int(np.sqrt(target.data.shape[0]))
+        elif self.SU == "SuFid":
+            self.dimensional_norm = 1
+            if len(target.shape) == 1 or target.shapep[0] != target.shape[1]:
+                # ensure matrix form
+                self.target = vec2mat(target)
+            self.target_d = sqrtm(self.target)
         else:
             raise Exception("Invalid phase_option for FidCompState.")
 
@@ -131,9 +172,12 @@ class FidCompState():
             dvec = (self.target - self.final)
             cost = np.real( np.dot(dvec.conj(),dvec)) / self.dimensional_norm
         elif self.SU == "SuTr":
-            fidelity_prenorm = 0
             N = self.dimensional_norm
             fidelity_prenorm = rhoProdTrace(self.target, self.final, N)
+            cost = 1 - np.real(fidelity_prenorm)
+        elif self.SU == "SuFid":
+            self.fidmat = rhoFidelityMatrix(self.target_d, vec2mat(self.final))
+            fidelity_prenorm = np.trace(self.fidmat)
             cost = 1 - np.real(fidelity_prenorm)
         return cost
 
@@ -142,15 +186,15 @@ class FidCompState():
         n_ts = self.num_tslots
 
         #final = self.tslotcomp.state_T(n_ts)
-        fidelity_prenorm = np.dot(self.target_d,self.final)
         if self.SU == "Diff":
             self.target_d = (self.target - self.final).conj()
 
         # create n_ts x n_ctrls zero array for grad start point
         grad = np.zeros([n_ts, n_ctrls], dtype=complex)
 
-        if self.SU != "SuTr":
+        if self.SU not in ["SuTr", "SuFid"]:
             # loop through all ctrl timeslots calculating gradients
+            fidelity_prenorm = np.dot(self.target_d,self.final)
             for k, onto_evo, dU, U, fwd_evo in \
                             self.tslotcomp.reversed(target=self.target_d):
                 for j in range(n_ctrls):
@@ -171,10 +215,19 @@ class FidCompState():
                         self.tslotcomp.reversed():
                 for j in range(n_ctrls):
                     dfinal = onto_evo @ (dU[j] * fwd_evo)
-                    grad[k, j] = -rhoProdTrace(self.target,
-                                               dfinal,
+                    grad[k, j] = -rhoProdTrace(self.target, dfinal,
                                                self.dimensional_norm)
-                # only work on dense state, sparse state ok?
+            grad_normalized = np.real(grad)
+        elif self.SU == "SuFid":
+            fidmatinv = submatinv(self.fidmat)
+            for k, onto_evo, dU, U, fwd_evo in \
+                        self.tslotcomp.reversed():
+                for j in range(n_ctrls):
+                    dfinal = self.target_d @ \
+                             vec2mat(onto_evo @ (dU[j] * fwd_evo)) @ \
+                             self.target_d
+                    grad[k, j] = -drhoFidelityMatrix(dfinal, self.fidmat,
+                                                     fidmatinv)
             grad_normalized = np.real(grad)
 
         return grad_normalized
@@ -763,11 +816,14 @@ class FidCompAmp():
                 elif weight.shape[0] == self.num_ctrls:
                     weight = np.einsum('j,ij->ij', weight, shape)
                 else:
-                    raise Exception("weight shape not compatible with the amp shape")
+                    raise Exception("weight shape not compatible "
+                                    "with the amp shape")
             elif weight.shape != (self.num_tslots,self.num_ctrls):
-                raise Exception("weight shape not compatible with the amp shape")
+                raise Exception("weight shape not compatible "
+                                "with the amp shape")
         else:
-            raise ValueError("weight expected to be one of int, float, list, np.ndarray")
+            raise ValueError("weight expected to be one of int, "
+                             "float, list, np.ndarray")
         self.weight = weight
 
     def costs(self):
@@ -792,15 +848,19 @@ class FidCompDAmp():
                 elif weight.shape[0] == self.num_ctrls:
                     weight = np.einsum('j,ij->ij', weight, shape)
                 else:
-                    raise Exception("weight shape not compatible with the amp shape")
+                    raise Exception("weight shape not compatible "
+                                    "with the amp shape")
             elif weight.shape != (self.num_tslots-1, self.num_ctrls):
-                raise Exception("weight shape not compatible with the amp shape")
+                raise Exception("weight shape not compatible with "
+                                "the amp shape")
         else:
-            raise ValueError("weight expected to be one of int, float, list, np.ndarray")
+            raise ValueError("weight expected to be one of int, float,"
+                             " list, np.ndarray")
         self.weight = weight
 
     def costs(self):
-        return np.sum(np.diff(self.tslotcomp._ctrl_amps, axis=0)**2 * self.weight)
+        return np.sum(np.diff(self.tslotcomp._ctrl_amps, axis=0)**2 *\
+                      self.weight)
 
     def grad(self):
         diff = -2 * np.diff(self.tslotcomp._ctrl_amps, axis=0) * self.weight
