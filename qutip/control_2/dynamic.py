@@ -74,10 +74,10 @@ spec = importlib.util.spec_from_file_location("fidcomp", moduleName)
 fidcomp = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fidcomp)
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/filters.py"
-spec = importlib.util.spec_from_file_location("filters", moduleName)
-filters = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(filters)
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/transfer_functions.py"
+spec = importlib.util.spec_from_file_location("transfer_functions", moduleName)
+transfer_functions = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(transfer_functions)
 
 moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/stats.py"
 spec = importlib.util.spec_from_file_location("stats", moduleName)
@@ -100,7 +100,7 @@ from qutip.control.optimresult import OptimResult
 """
 import qutip.control_2.tslotcomp as tslotcomp
 import qutip.control_2.fidcomp as fidcomp
-import qutip.control_2.filters as filters
+import qutip.control_2.transfer_functions as transfer_functions
 import qutip.control_2.matrix as matrix
 import qutip.control_2.optimize as optimize
 from qutip.control_2.stats import Stats
@@ -125,7 +125,7 @@ class dynamics:
     def __init__(self):
         # Main object
         self.stats = None
-        self.filter = None
+        self.transfer_function = None
         self.tslotcomp = None
         self.costcomp = []
         self.solver = None
@@ -169,7 +169,8 @@ class dynamics:
         self._gradient_u = None
         self.error = np.inf
         self.fidelity_stats = []
-        self.u_limits = None
+        self.bound = None
+        self.amp_bound = None
         # Result object
         self.result_phase = 1.
 
@@ -201,7 +202,7 @@ class dynamics:
                 raise Exception("The ctrls operators are expected"
                                 " to be a list of Qobj or td_Qobj.")
             if isinstance(ctrl, td_Qobj):
-                c = c.cte
+                c = ctrl.cte
             else:
                 c = ctrl
             if not self.dims == c.dims:
@@ -300,22 +301,22 @@ class dynamics:
         else:
             raise Exception("The initial state is expected to be a Qobj.")"""
 
-    def set_filter(self, _filter, **kwargs):
-        if isinstance(_filter, str):
-            if _filter == "fourrier":
-                self.filter = filters.fourrier(**kwargs)
-            if _filter == "spline":
-                self.filter = filters.spline(**kwargs)
-            if _filter == "convolution":
-                self.filter = filters.convolution(**kwargs)
-        elif isinstance(_filter, filters.filter):
-            self.filter = _filter
+    def set_transfer_function(self, _transfer_function, **kwargs):
+        if isinstance(_transfer_function, str):
+            if _transfer_function == "fourrier":
+                self.transfer_function = transfer_functions.fourrier(**kwargs)
+            if _transfer_function == "spline":
+                self.transfer_function = transfer_functions.spline(**kwargs)
+            if _transfer_function == "convolution":
+                self.transfer_function = transfer_functions.convolution(**kwargs)
+        elif isinstance(_transfer_function, transfer_functions.transfer_function):
+            self.transfer_function = _transfer_function
 
-    def set_times(self, times=None, tau=None, T=0, t_step=0, num_x=0):
-        self.t_data = (times, tau, T, t_step, num_x)
+    def set_times(self, times=None):
+        self.t_data = times
 
-    def set_ulimit(self, times=None, tau=None, T=0, t_step=0, num_x=0):
-        self.t_data = (times, tau, T, t_step, num_x)
+    def set_amp_bound(self, amp_lbound=None, amp_ubound=None):
+        self.amp_bound = (amp_lbound, amp_ubound)
 
     def set_stats(self, timings=1, states=1):
         self.stats = Stats(timings, states)
@@ -342,7 +343,7 @@ class dynamics:
             Solve for solution that converge early (slower)
 
             False: Only compute the fidelity of the resulting state.
-            True: Sum the fidelity at every timestep. -- set by the filter
+            True: Sum the fidelity at every timestep. -- set by the transfer_function
             list: Sum the fidelity at desired timestep.
 
         weight :: number, [number]
@@ -425,24 +426,21 @@ class dynamics:
         if self.stats is None:
             self.set_stats()
 
-        if self.filter is None:
-            self.filter = filters.pass_througth()
-        self.set_amp_bound(set_ulimit[0], set_ulimit[1])
+        if self.transfer_function is None:
+            self.transfer_function = transfer_functions.pass_througth()
+        if self.amp_bound is not None:
+            self.transfer_function.set_amp_bound(amp_bound[0], amp_bound[1])
 
         self._x_shape, self.time = \
-                self.filter.init_timeslots(*self.t_data,
-                                           num_ctrl=self._num_ctrls)
+                self.transfer_function.set_times(self.t_data, num_ctrl=self._num_ctrls)
         self._num_tslots = len(self.time)-1
-        """if np.allclose(np.diff(self.time), self.time[1]-self.time[0]):
-            self._tau = matrix.falselist_cte(self.time[1]-self.time[0],
-                                             self._num_tslots)
-        else:"""
+        self.bound = self.transfer_function.get_xlimit()
         self._tau = np.diff(self.time)
 
-        # state and gradient before filter
+        # state and gradient before transfer_function
         self.x_ = np.zeros(self._x_shape)
         self.gradient_x = np.zeros(self._x_shape)
-        # state and gradient after filter
+        # state and gradient after transfer_function
         self._ctrl_amps = np.zeros((self._num_tslots, self._num_ctrls))
         self._gradient_u = np.zeros((self._num_tslots, self._num_ctrls))
 
@@ -547,26 +545,26 @@ class dynamics:
             if isinstance(self.psi0, list):
                 self.psi0 = np.array(self.psi0)
             if self.psi0.shape == self._x_shape:
-                # pre filter
+                # pre transfer_function
                 self.x0 = self.psi0
-                self.psi0 = self.filter(self.psi0)
+                self.psi0 = self.transfer_function(self.psi0)
             elif self.psi0.shape == (self._num_tslots, self._num_ctrls):
-                # post filter
-                self.x0 = self.filter.reverse_state(self.psi0)
+                # post transfer_function
+                self.x0 = self.transfer_function.reverse_state(self.psi0)
             else:
                 raise Exception("x0 bad shape")
         self.x_ = self.x0 * np.inf
         self.gradient_x = False
         self.solver = optimize.Optimizer(self._error, self._gradient, self.x0,
                                          self.stats, self._compute_stats)
-        self.solver.add_bounds(self.filter.get_xlimit())
+        self.solver.add_bounds(self.transfer_function.get_xlimit())
 
     def run(self):
         self.prepare()
         self.report()
         self.stats.options_list = self.options_list
         result = OptimResult()
-        result.initial_amps = self.filter(self.x0)
+        result.initial_amps = self.transfer_function(self.x0)
         result.initial_x = self.x0*1.
         result.initial_fid_err = self._error(self.x0)
         result.evo_full_initial = self.tslotcomp.state_T(self._num_tslots) *\
@@ -576,7 +574,7 @@ class dynamics:
 
         result.evo_full_final = self.tslotcomp.state_T(self._num_tslots) *\
                     self.result_phase
-        result.final_amps = self.filter(result.final_x)
+        result.final_amps = self.transfer_function(result.final_x)
 
         return result
 
@@ -619,7 +617,7 @@ class dynamics:
         self.stats.num_fidelity_computes += 1
 
         self.x_ = x*1.
-        self._ctrl_amps = self.filter(x)
+        self._ctrl_amps = self.transfer_function(x)
         self.tslotcomp.set(self._ctrl_amps)
         self.error = 0.
 
@@ -627,7 +625,7 @@ class dynamics:
         for costs in self.costcomp:
             error += [costs.costs()]
         self.error = sum(error)
-        self.fidelity_stats += error
+        self.fidelity_stats = error
 
     def _compute_grad(self):
         """For a state x compute the grandient"""
@@ -639,10 +637,10 @@ class dynamics:
         for i, costs in enumerate(self.costcomp):
             gradient_u_cost[:,:,i] = costs.grad()
             gradient_u += gradient_u_cost[:,:,i]
-        self.gradient_x = self.filter.reverse(gradient_u)
+        self.gradient_x = self.transfer_function.gradient_u2x(gradient_u)
 
         if self.stats.states >= 2:
-            self.grad_norm += np.sum(self.gradient_x*\
+            self.grad_norm = np.sum(self.gradient_x*\
                                                    self.gradient_x.conj())
         if self.stats.states >= 3:
             self.gradient_u_cost = gradient_u_cost

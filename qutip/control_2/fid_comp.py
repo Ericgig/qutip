@@ -481,7 +481,6 @@ class FidCompOperator():
         final = self.tslotcomp.state_T(n_ts)
         if self.mode=="TrDiff":
             evo_f_diff = self.target - final
-            #fid_err = self.scale_factor*np.real((evo_f_diff.dag()*evo_f_diff).tr())
             fid_err = self.scale_factor*np.real(np.sum(evo_f_diff.conj()*evo_f_diff))
         elif self.mode=="TrSq":
             fid = (self.target_d@final).trace()

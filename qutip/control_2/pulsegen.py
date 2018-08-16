@@ -50,6 +50,12 @@ import numpy as np
 import qutip.logging_utils as logging
 logger = logging.get_logger()
 
+class dynamics():
+    pass
+
+class Dynamics():
+    pass
+dynamics.Dynamics = Dynamics
 
 def create_pulse_gen(pulse_type='RND', dyn=None, pulse_params=None):
     """
@@ -240,11 +246,11 @@ class PulseGen(object):
         """
         logger.setLevel(lvl)
 
-    def __call__(self, tau, num_ctrl):
-        self.num_tslots = len(tau)
-        self.pulse_time = np.sum(tau)
-        self.tau = tau
-        u0 = np.zeros(self.num_tslots,num_ctrl)
+    def __call__(self, times, num_ctrl):
+        self.num_tslots = len(times)-1
+        self.pulse_time = times[-1]
+        self.tau = np.diff(times)
+        u0 = np.zeros((self.num_tslots, num_ctrl))
         for i in range(num_ctrl):
             u0[:,i] = self.gen_pulse()
         return u0
