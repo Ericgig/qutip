@@ -118,6 +118,7 @@ termination_conditions["max_iterations"] = 10000
 method_options = {}
 method_options["ftol"] = 1e-5
 method_options["disp"] = False
+#method_options['maxcor'] = 100 # Let default value unless specified
 
 class Optimizer(object):
     """
@@ -266,9 +267,9 @@ class Optimizer(object):
 
         self.method = 'L-BFGS-B'
         self.method_params = None
+        self.approx_grad = False
 
         self.bounds = None
-
         # termination conditions
         self.termination_conditions = {}
         self.termination_conditions["fid_goal"] = None
@@ -317,26 +318,12 @@ class Optimizer(object):
                     self.termination_conditions[key] = val
                 else:
                     self.method_options[key] = val
-
-    """def set_bounds(self, l_bound, u_bound):
-        self.bounds = []
-        for t in range(self.x_shape[0]):
-            for c in range(self.x_shape[1]):
-                if isinstance(l_bound, list):
-                    lb = l_bound[c]
-                else:
-                    lb = l_bound
-                if isinstance(self.amp_ubound, list):
-                    ub = u_bound[c]
-                else:
-                    ub = u_bound
-
-                if not lb is None and np.isinf(lb):
-                    lb = None
-                if not ub is None and np.isinf(ub):
-                    ub = None
-
-                self.bounds.append((lb, ub))"""
+        self.method_options["maxfun"] = \
+                        self.termination_conditions["max_fid_func_calls"]
+        self.method_options["gtol"] = \
+                        self.termination_conditions["min_gradient_norm"]
+        self.method_options["maxiter"] = \
+                        self.termination_conditions["max_iterations"]
 
     def add_bounds(self, bounds):
         self.bounds = bounds
@@ -369,35 +356,16 @@ class Optimizer(object):
         the final fidelity, time evolution, reason for termination etc
 
         """
-        # self.init_optim(term_conds)
-        # term_conds = self.termination_conditions
-        # dyn = self.dynamics
-        # cfg = self.config
-        # self.optim_var_vals = x0  # self._get_optim_var_vals()
-
-        """if self.stats is not None:
-            self.stats.wall_time_optim_start = st_time
-            self.stats.wall_time_optim_end = 0.0
-            self.stats.num_iter = 0"""
-
-        #self._build_method_options()
-        #result = self._create_result()
-
         st_time = timeit.default_timer()
         self.wall_time_optimize_start = st_time
-        if True: #self.stats is not None and self.stats.timings:
-            self.stats.wall_time_optim_start = st_time
-            self.stats.num_grad_func_calls_per_iter = [0]
-            self.stats.num_fidelity_func_calls_per_iter = [0]
-            self.stats.wall_time_per_iter = [0.]
-
-        """result.evo_full_initial = self.dynamics.full_evo.copy()
-        result.initial_fid_err = self.fid_err_func_wrapper(self.x0)
-        result.initial_amps = self.x0.reshape(self.x_shape).copy()"""
+        self.stats.wall_time_optim_start = st_time
+        self.stats.num_grad_func_calls_per_iter = [0]
+        self.stats.num_fidelity_func_calls_per_iter = [0]
+        self.stats.wall_time_per_iter = [0.]
 
         result.optimizer = self.method
 
-        if self.alg == 'CRAB':
+        if self.alg == 'CRAB' or self.approx_grad:
             jac=None
         else:
             jac=self.fid_err_grad_wrapper
@@ -424,10 +392,9 @@ class Optimizer(object):
         result.num_fid_func_calls = self.num_fid_func_calls
         result.wall_time = timeit.default_timer() - st_time
 
-        if True: #self.stats is not None and self.stats.timings:
-            self.stats.wall_time_optim_end = timeit.default_timer()
-            self.stats.wall_time_optim = timeit.default_timer() - st_time
-            self.stats.wall_time_per_iter = \
+        self.stats.wall_time_optim_end = timeit.default_timer()
+        self.stats.wall_time_optim = timeit.default_timer() - st_time
+        self.stats.wall_time_per_iter = \
                             np.diff(np.array(self.stats.wall_time_per_iter))
 
         return result
@@ -488,16 +455,15 @@ class Optimizer(object):
         condition
         """
         self.num_grad_func_calls += 1
-        if True: #if self.stats is not None and self.stats.timings:
-            self.stats.num_grad_func_calls += 1
-            self.stats.num_grad_func_calls_per_iter[self.num_iter] += 1
-            t_start = timeit.default_timer()
+
+        self.stats.num_grad_func_calls += 1
+        self.stats.num_grad_func_calls_per_iter[self.num_iter] += 1
+        t_start = timeit.default_timer()
 
         x_2d = x.reshape(self.x_shape)
         grad = self.gradFunc(x_2d)
 
-        if True: #if self.stats is not None and self.stats.timings:
-            self.stats.wall_time_grad_func += timeit.default_timer() - t_start
+        self.stats.wall_time_grad_func += timeit.default_timer() - t_start
 
         self.gradnorm = np.sum(grad*grad.conj())
         #if self.gradnorm < self.termination_conditions['min_gradient_norm']:
@@ -536,3 +502,40 @@ class Optimizer(object):
         if self.num_iter > self.termination_conditions['max_iterations']:
             self.termination_signal = "max_iterations"
             raise solverEnd()
+
+
+
+class OptimizerCrab(Optimizer):
+    """
+    Optimises the pulse using the CRAB algorithm [1].
+    It uses the scipy.optimize.minimize function with the method specified
+    by the optim_method attribute. See Optimizer.run_optimization for details
+    It minimises the fidelity error function with respect to the CRAB
+    basis function coefficients.
+
+    AJGP ToDo: Add citation here
+    """
+    """
+    Optimises the pulse using the CRAB algorithm [1, 2].
+    It uses the scipy.optimize.fmin function which is effectively a wrapper
+    for the Nelder-mead method.
+    It minimises the fidelity error function with respect to the CRAB
+    basis function coefficients.
+    This is the default Optimizer for CRAB.
+
+    Notes
+    -----
+    [1] P. Doria, T. Calarco & S. Montangero. Phys. Rev. Lett. 106,
+        190501 (2011).
+    [2] T. Caneva, T. Calarco, & S. Montangero. Phys. Rev. A 84, 022326 (2011).
+    """
+
+    def reset(self):
+        Optimizer.reset(self)
+        self.alg = 'CRAB'
+        self.num_optim_vars = 0
+        self.method = 'Nelder-Mead'
+        self.alg_params = None
+        self.method_options["xatol"] = 1e-4
+        self.method_options["fatol"] = 1e-4
+        self.method_options["adaptive"] = True
