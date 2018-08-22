@@ -429,7 +429,7 @@ class FidCompStateForbidden():
 
 
 class FidCompOperator():
-    def __init__(self, tslotcomp, target, mode="TrDiff", scale_factor=0):
+    def __init__(self, tslotcomp, target, mode="TrDiff"):
         """
         Computes fidelity error and gradient for general system dynamics
         by calculating the the fidelity error as the trace of the overlap
@@ -443,12 +443,7 @@ class FidCompOperator():
 
         Attributes
         ----------
-        scale_factor : float
-            The fidelity error calculated is of some arbitary scale. This
-            factor can be used to scale the fidelity error such that it may
-            represent some physical measure
-            If None is given then it is caculated as 1/2N, where N
-            is the dimension of the drift, when the Dynamics are initialised.
+
         """
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
@@ -528,7 +523,7 @@ class FidCompOperator():
         return  grad
 
 class FidCompOperatorEarly():
-    def __init__(self, tslotcomp, target, mode="TrDiff", scale_factor=0,
+    def __init__(self, tslotcomp, target, mode="TrDiff",
                  times=None, weight=None):
         """
         Computes fidelity error and gradient for general system dynamics
@@ -663,7 +658,7 @@ class FidCompOperatorEarly():
         return  grad
 
 class FidCompOperatorForbidden():
-    def __init__(self, tslotcomp, forbidden, mode="TrDiff", scale_factor=0,
+    def __init__(self, tslotcomp, forbidden, mode="TrDiff",
                  times=None, weight=None):
         """
         Computes fidelity error and gradient for general system dynamics

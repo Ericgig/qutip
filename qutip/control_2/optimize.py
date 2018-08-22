@@ -108,7 +108,7 @@ class solverEnd(Exception):
     pass
 
 termination_conditions = {}
-termination_conditions["fid_goal"] = None
+#termination_conditions["fid_goal"] = None
 termination_conditions["fid_err_targ"] = 1e-7
 termination_conditions["min_gradient_norm"] = 1e-7
 termination_conditions["max_wall_time"] = 10*60.0
@@ -116,7 +116,6 @@ termination_conditions["max_fid_func_calls"] = 1e6
 termination_conditions["max_iterations"] = 10000
 
 method_options = {}
-method_options["ftol"] = 1e-5
 method_options["disp"] = False
 #method_options['maxcor'] = 100 # Let default value unless specified
 
@@ -281,15 +280,18 @@ class Optimizer(object):
         self.termination_conditions.update(termination_conditions)
 
         self.method_options = {}
-        self.method_options["ftol"] = 1e-5
+        self.method_options["ftol"] = \
+                self.termination_conditions["fid_err_targ"]
+        self.method_options["gtol"] = \
+                self.termination_conditions["min_gradient_norm"]
         self.method_options["disp"] = False
-        self.method_options.update(method_options)
         self.method_options["maxfun"] = \
                 self.termination_conditions["max_fid_func_calls"]
         self.method_options["gtol"] = \
                 self.termination_conditions["min_gradient_norm"]
         self.method_options["maxiter"] = \
                 self.termination_conditions["max_iterations"]
+        self.method_options.update(method_options)
 
         self.wall_time_optim_start = 0.0
         self.num_iter = 0
@@ -303,7 +305,7 @@ class Optimizer(object):
         # self.disp_conv_msg = False
         # self.apply_params()
 
-    def apply_method_params(self, params):
+    def apply_method_params(self, params={}, method=None):
         """
         Loops through all the method_params
         (either passed here or the method_params attribute)
@@ -312,6 +314,9 @@ class Optimizer(object):
         is set. Otherwise it is assumed to a method_option for the
         scipy.optimize.minimize function
         """
+        if method is not None:
+            self.method = method
+
         if isinstance(params, dict):
             for key, val in params.items:
                 if key in self.termination_conditions:
@@ -531,11 +536,11 @@ class OptimizerCrab(Optimizer):
     """
 
     def reset(self):
+        self.method_options["xatol"] = 1e-4
+        self.method_options["fatol"] = 1e-4
+        self.method_options["adaptive"] = True
         Optimizer.reset(self)
         self.alg = 'CRAB'
         self.num_optim_vars = 0
         self.method = 'Nelder-Mead'
         self.alg_params = None
-        self.method_options["xatol"] = 1e-4
-        self.method_options["fatol"] = 1e-4
-        self.method_options["adaptive"] = True

@@ -304,7 +304,7 @@ class fourrier(transfer_functions):
         u(t) = sum_j x(j)*sin(pi*j*t/T); 1 <= j<= num_x
         The number of frequency is set at initialisation.
     """
-    def __init__(self, num_x):
+    def __init__(self, num_x=None):
         super().__init__()
         self.name = "Fourrier"
         self.num_x = num_x
@@ -361,6 +361,8 @@ class fourrier(transfer_functions):
         self.times = times
         self.xtimes = times
         self.t_step = len(times)-1
+        if self.num_x is None:
+            self.num_x = min([10,self.t_step//10])
         return (self.num_x, self.num_ctrls), self.times
 
     def _compute_xlim(self):
@@ -887,7 +889,6 @@ class PulseGenCrab(transfer_functions):
             return pulse
         else:
             return pulse
-
 
 class PulseGenCrabFourier(PulseGenCrab):
     """
