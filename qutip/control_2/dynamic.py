@@ -121,7 +121,6 @@ class dynamics:
             x: np.ndarray, state of the pulse
             return the error gradient
     """
-
     def __init__(self):
         # Main object
         self.stats = None
@@ -436,7 +435,8 @@ class dynamics:
         if self.transfer_function is None:
             self.transfer_function = transfer_functions.pass_througth()
         if self.amp_bound is not None:
-            self.transfer_function.set_amp_bound(amp_bound[0], amp_bound[1])
+            self.transfer_function.set_amp_bound(self.amp_bound[0],
+                                                 self.amp_bound[1])
 
         if self.t_data is None:
             self.t_data = np.linspace(0,1,11)
@@ -586,7 +586,6 @@ class dynamics:
 
         return result
 
-
     ### -------------------------- Computation part ---------------------------
     def _compute_stats(self, x):
         if not np.allclose(self.x_, x):
@@ -668,6 +667,7 @@ class dynamicsCRAB(dynamics):
         self.termination_conditions = optimize.termination_conditions
         self.solver_method_options = optimize.method_options
         self.matrix_options = matrix.matrix_opt.copy()
+        self.matrix_options["method"] = "approx"
         self.mem = 0
         self.opt_method = 'Nelder-Mead'
         # Costcomp option
@@ -696,6 +696,8 @@ class dynamicsCRAB(dynamics):
         # Initial controls array
         self.psi0 = None
         self.x0 = None
+        self.ramping_pulse = None
+        self.crab_pulse_params = {}
         # Running controls array
         self.x_ = None
         self._ctrl_amps = None
@@ -706,34 +708,74 @@ class dynamicsCRAB(dynamics):
         self.bound = None
         self.amp_bound = None
 
-    def set_transfer_function(self, _transfer_function, **kwargs):
-        if isinstance(_transfer_function, transfer_functions.transfer_function):
-            self.transfer_function = _transfer_function
+    def set_transfer_function(self, transfer_function):
+        if isinstance(transfer_function, transfer_functions.transfer_functions):
+            self.transfer_function = transfer_function
 
-    def set_crab_pulsegen(self, init_pulse, ramping_pulse, crab_pulse_params):
-        if isinstance(_transfer_function, transfer_functions.transfer_function):
-            self.transfer_function = _transfer_function
+    def set_crab_pulsegen(self, init_pulse=None, ramping_pulse=None,
+                                crab_pulse_params=None):
+        self.psi0 = init_pulse
+        self.ramping_pulse = ramping_pulse
+        self.crab_pulse_params = crab_pulse_params
 
-    def set_initial_state(self, u):
-        self.psi0 = u
+    def set_initial_state(self, u=None):
+        self.x0 = u
 
     def prepare(self):
         if self.stats is None:
             self.set_stats()
 
-        """if self.transfer_function is None:
-            self.transfer_function = transfer_functions.pass_througth()
-        if self.amp_bound is not None:
-            self.transfer_function.set_amp_bound(amp_bound[0], amp_bound[1])
-
         if self.t_data is None:
             self.t_data = np.linspace(0,1,11)
-        self._x_shape, self.time = \
-                self.transfer_function.set_times(self.t_data, num_ctrl=self._num_ctrls)"""
+        self._num_tslots = len(self.t_data)-1
+        self._tau = np.diff(self.t_data)
 
-        self._num_tslots = len(self.time)-1
+        if self.psi0 is None:
+            pass
+        else:
+            if callable(self.psi0):
+                self.psi0 = self.psi0(self._tau, self._num_ctrls)
+            if isinstance(self.psi0, list):
+                self.psi0 = np.array(self.psi0)
+            if self.psi0.shape == (self._num_tslots,) or \
+                    self.psi0.shape == (self._num_tslots, 1):
+                self.psi0 = np.einsum("i,j->ij", self.psi0,
+                                                 np.ones(self._num_ctrls))
+            elif self.psi0.shape == (self._num_tslots, self._num_ctrls):
+                pass
+            else:
+                raise Exception("Could not obtain a proper init_pulse")
+
+        if self.ramping_pulse is None:
+            pass
+        else:
+            if callable(self.ramping_pulse):
+                self.ramping_pulse = self.ramping_pulse(self._tau, self._num_ctrls)
+            if isinstance(self.ramping_pulse, list):
+                self.ramping_pulse = np.array(self.ramping_pulse)
+            if self.ramping_pulse.shape == (self._num_tslots,) or \
+                    self.ramping_pulse.shape == (self._num_tslots, 1):
+                self.ramping_pulse = np.einsum("i,j->ij",
+                                               self.ramping_pulse,
+                                               np.ones(self._num_ctrls))
+            elif self.ramping_pulse.shape == (self._num_tslots,
+                                              self._num_ctrls):
+                pass
+            else:
+                raise Exception("Could not obtain a proper ramping_pulse")
+
+        if self.transfer_function is None:
+            self.transfer_function = \
+                transfer_functions.PulseGenCrabFourier(guess_pulse=self.psi0,
+                    ramping_pulse=self.ramping_pulse, **self.crab_pulse_params)
+        if self.amp_bound is not None:
+            self.transfer_function.set_amp_bound(self.amp_bound[0],
+                                                 self.amp_bound[1])
+
+        self._x_shape, self.time = \
+                self.transfer_function.set_times(self.t_data, num_ctrl=self._num_ctrls)
         self.bound = self.transfer_function.get_xlimit()
-        self._tau = np.diff(self.time)
+
 
         # state and gradient before transfer_function
         self.x_ = np.zeros(self._x_shape)
@@ -787,17 +829,22 @@ class dynamicsCRAB(dynamics):
                     self.initial, self._tau, self._num_tslots, self._num_ctrls)
                 self.options_list += ["Using power evolution without "
                                      "saving operators for memory"]
+            elif self.opt_mode[1] == "save":
+                self.tslotcomp = tslotcomp.TSComp_Save_Power_all(drift, ctrls,
+                    self.initial, self._tau, self._num_tslots, self._num_ctrls)
+                self.options_list += ["Using power evolution "
+                                     "saving operators for speed"]
             elif self.opt_mode[1] == "int":
                 self.tslotcomp = tslotcomp.TSComp_Int(drift, ctrls,
                     self.initial, self._tau, self._num_tslots, self._num_ctrls)
                 self.options_list += ["Using differential equations evolution "
                                      "saving operators for memory"]
             else:
-                # fall back to full save
-                self.tslotcomp = tslotcomp.TSComp_Save_Power_all(drift, ctrls,
+                # fall back to integration
+                self.tslotcomp = tslotcomp.TSComp_Power(drift, ctrls,
                     self.initial, self._tau, self._num_tslots, self._num_ctrls)
-                self.options_list += ["Using power evolution "
-                                     "saving operators for speed"]
+                self.options_list += ["Using power evolution without "
+                                     "saving operators for memory"]
 
         if not self.costcomp:
             if self.state_evolution:
@@ -834,23 +881,8 @@ class dynamicsCRAB(dynamics):
                                           + self.mode]
         if self.other_cost:
             self.costcomp += self.other_cost
-        if self.psi0 is None:
-            self.x0 = np.random.rand(self._x_shape)
-            self.options_list = ["Setting random starting amplitude"]
-        else:
-            if isinstance(self.psi0, pulsegen.PulseGen):
-                self.psi0 = self.psi0(self._tau, self._num_ctrls)
-            if isinstance(self.psi0, list):
-                self.psi0 = np.array(self.psi0)
-            if self.psi0.shape == self._x_shape:
-                # pre transfer_function
-                self.x0 = self.psi0
-                self.psi0 = self.transfer_function(self.psi0)
-            elif self.psi0.shape == (self._num_tslots, self._num_ctrls):
-                # post transfer_function
-                self.x0 = self.transfer_function.reverse_state(self.psi0)
-            else:
-                raise Exception("x0 bad shape")
+
+        self.x0 = np.random.rand(self._x_shape)
         self.x_ = self.x0 * np.inf
         self.gradient_x = False
         self.solver = optimize.Optimizer(self._error, self._gradient, self.x0,

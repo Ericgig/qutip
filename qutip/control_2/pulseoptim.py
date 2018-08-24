@@ -93,7 +93,7 @@ import warnings
 
 # QuTiP
 from qutip import Qobj
-import qutip.logging_utils as logging
+"""import qutip.logging_utils as logging
 logger = logging.get_logger()
 # QuTiP control modules
 import qutip.control.optimconfig as optimconfig
@@ -105,7 +105,19 @@ import qutip.control.errors as errors
 import qutip.control.fidcomp as fidcomp
 import qutip.control.propcomp as propcomp
 import qutip.control.pulsegen as pulsegen
-#import qutip.control.pulsegencrab as pulsegencrab
+#import qutip.control.pulsegencrab as pulsegencrab"""
+
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/pulsegen.py"
+spec = importlib.util.spec_from_file_location("pulsegen", moduleName)
+pulsegen = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(pulsegen)
+
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/transfer_functions.py"
+spec = importlib.util.spec_from_file_location("transfer_functions", moduleName)
+transfer_functions = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(transfer_functions)
+
+
 
 warnings.simplefilter('always', DeprecationWarning) #turn off filter
 def _param_deprecation(message, stacklevel=3):
@@ -138,12 +150,13 @@ def _is_string(var):
 
     return False
 
+
 def _check_ctrls_container(ctrls):
     """
-    Check through the controls container.
-    Convert to an array if its a list of lists
-    return the processed container
-    raise type error if the container structure is invalid
+    #Check through the controls container.
+    #Convert to an array if its a list of lists
+    #return the processed container
+    #raise type error if the container structure is invalid
     """
     if isinstance(ctrls, (list, tuple)):
         # Check to see if list of lists
@@ -179,27 +192,53 @@ def _check_drift_dyn_gen(drift):
                     raise TypeError(
                         "drift should be a Qobj or a list of Qobj")
 
+def calc_omega(n):
+    """
+    Calculate the 2n x 2n Omega matrix
+    Used as dynamics generator phase to calculate symplectic propagators
+
+    Parameters
+    ----------
+    n : scalar(int)
+        number of modes in oscillator system
+
+    Returns
+    -------
+    array(float)
+        Symplectic phase Omega
+    """
+    omg = np.zeros((2*n, 2*n))
+    for i in range(0,2*n,2):
+        omg[i+1,i] = -1
+        omg[i,i+1] = 1
+    return omg
+
 
 
 def optimize_pulse(
         drift, ctrls, initial, target,
         num_tslots=None, evo_time=None, tau=None,
         amp_lbound=None, amp_ubound=None,
-        fid_err_targ=1e-10, min_grad=1e-10,
-        max_iter=500, max_wall_time=180,
-        alg='GRAPE', alg_params=None,
-        optim_params=None, optim_method='DEF', method_params=None,
-        optim_alg=None, max_metric_corr=None, accuracy_factor=None,
-        dyn_type='GEN_MAT', dyn_params=None,
-        prop_type='DEF', prop_params=None,
+        fid_err_targ=1e-10, min_grad=1e-10, max_iter=500, max_wall_time=180,
+
+        optim_method='DEF', method_params=None,
+        transfer_function_type='DEF', transfer_function_params={},
+        prop_type='DEF', mat_type='DEF', mat_params={},
         fid_type='DEF', fid_params=None,
-        phase_option=None, fid_err_scale_factor=None,
         tslot_type='DEF', tslot_params=None,
-        amp_update_mode=None,
         init_pulse_type='DEF', init_pulse_params=None,
+        log_level=logging.NOTSET, out_file_ext=None, gen_stats=False,
+        alg='GRAPE', symplectic="",
+        # old
+        optim_params=None, prop_params=None,
+        alg_params=None, dyn_type='GEN_MAT', dyn_params=None,
         pulse_scaling=1.0, pulse_offset=0.0,
-        ramping_pulse_type=None, ramping_pulse_params=None,
-        log_level=logging.NOTSET, out_file_ext=None, gen_stats=False):
+        ramping_pulse_type=None, ramping_pulse_params=None
+        #already old
+        # optim_alg=None, max_metric_corr=None, accuracy_factor=None,
+        # phase_option=None, amp_update_mode=None,
+        # fid_err_scale_factor=None,
+        ):
     """
     Optimise a control pulse to minimise the fidelity error.
     The dynamics of the system in any given timeslot are governed
@@ -442,66 +481,84 @@ def optimize_pulse(
     # so no need to do so here
     # However, the deprecation management is repeated here
     # so that the stack level is correct
-    if not optim_alg is None:
-        optim_method = optim_alg
-        _param_deprecation(
-            "The 'optim_alg' parameter is deprecated. "
-            "Use 'optim_method' instead")
 
-    if not max_metric_corr is None:
-        if isinstance(method_params, dict):
-            if not 'max_metric_corr' in method_params:
-                 method_params['max_metric_corr'] = max_metric_corr
-        else:
-            method_params = {'max_metric_corr':max_metric_corr}
-        _param_deprecation(
-            "The 'max_metric_corr' parameter is deprecated. "
-            "Use 'max_metric_corr' in method_params instead")
+    if alg is not 'GRAPE':
+        _param_deprecation("Use opt_pulse_crab_unitary for CRAB algorithm.")
 
-    if not accuracy_factor is None:
-        if isinstance(method_params, dict):
-            if not 'accuracy_factor' in method_params:
-                 method_params['accuracy_factor'] = accuracy_factor
-        else:
-            method_params = {'accuracy_factor':accuracy_factor}
-        _param_deprecation(
-            "The 'accuracy_factor' parameter is deprecated. "
-            "Use 'accuracy_factor' in method_params instead")
+    if alg_params is not None:
+        _param_deprecation("alg_params is deprecated.")
 
-    # phase_option
-    if not phase_option is None:
-        if isinstance(fid_params, dict):
-            if not 'phase_option' in fid_params:
-                 fid_params['phase_option'] = phase_option
-        else:
-            fid_params = {'phase_option':phase_option}
-        _param_deprecation(
-            "The 'phase_option' parameter is deprecated. "
-            "Use 'phase_option' in fid_params instead")
+    if optim_params is not None:
+        _param_deprecation("optim_params is deprecated.")
 
-    # fid_err_scale_factor
-    if not fid_err_scale_factor is None:
-        if isinstance(fid_params, dict):
-            if not 'fid_err_scale_factor' in fid_params:
-                 fid_params['scale_factor'] = fid_err_scale_factor
-        else:
-            fid_params = {'scale_factor':fid_err_scale_factor}
-        _param_deprecation(
-            "The 'fid_err_scale_factor' parameter is deprecated. "
-            "Use 'scale_factor' in fid_params instead")
+    if prop_params is not None:
+        mat_params.update(prop_params)
+        _param_deprecation("prop_params is deprecated, "
+                           "mat_params replace it for most option.")
 
-    # amp_update_mode
-    if not amp_update_mode is None:
-        amp_update_mode_up = _upper_safe(amp_update_mode)
-        if amp_update_mode_up == 'ALL':
-            tslot_type = 'UPDATE_ALL'
-        else:
-            tslot_type = amp_update_mode
-        _param_deprecation(
-            "The 'amp_update_mode' parameter is deprecated. "
-            "Use 'tslot_type' instead")
+    if fid_type is not None:
+        mat_params.update(fid_type)
+        _param_deprecation("fid_type is deprecated.")
 
-    optim = create_pulse_optimizer(
+    if ramping_pulse_type is not None:
+        _param_deprecation("ramping_pulse_type is only used for CRAB.")
+
+    if ramping_pulse_params is not None:
+        _param_deprecation("ramping_pulse_params is only used for CRAB.")
+
+    if pulse_scaling is not None:
+        init_pulse_params["scaling"] = pulse_scaling
+        _param_deprecation("pulse_scaling is now part of init_pulse_params.")
+
+    if pulse_offset is not None:
+        init_pulse_params["offset"] = pulse_offset
+        _param_deprecation("pulse_offset is now part of init_pulse_params.")
+
+    if dyn_type is not None:
+        if dyn_type == "SYMPL":
+            symplectic = "def"
+        _param_deprecation("dyn_type is deprecated, "
+                           "use symplectic='preop'/'postop' "
+                           "or optimize_pulse_unitary if needed.")
+
+    if dyn_params is not None:
+        if symplectic =="def" and '_phase_application' in dyn_params:
+            symplectic = dyn_params['_phase_application']
+        _param_deprecation("dyn_params is deprecated.")
+
+    if symplectic:
+        try:
+            H = td_Qobj(drift)
+            N = H.cte.shape[0]//2
+            H_td = True
+        except:
+            _check_drift_dyn_gen(drift)
+            N = H_d[0].shape[0]//2
+            H_td = False
+        omg = calc_omega(N)
+        if symplectic == 'preop':
+            if H_td:
+                drift = omg*H
+            else:
+                drift = [omg*H_ for H_ in drift]
+            try:
+                ctrls = [omg*td_Qobj(H_) for H_ in ctrls ]
+            except:
+                ctrls = np.array([[omg * H_ for H_ in H__]
+                                    for H__ in _check_ctrls_container(ctrls)])
+        if symplectic == 'preop':
+            omg *= -1
+            if H_td:
+                drift = H*omg
+            else:
+                drift = [H_*omg for H_ in drift]
+            try:
+                ctrls = [td_Qobj(H_)*omg for H_ in ctrls ]
+            except:
+                ctrls = np.array([[ H_*omg for H_ in H__]
+                                    for H__ in _check_ctrls_container(ctrls)])
+
+    """optim = create_pulse_optimizer(
         drift, ctrls, initial, target,
         num_tslots=num_tslots, evo_time=evo_time, tau=tau,
         amp_lbound=amp_lbound, amp_ubound=amp_ubound,
@@ -516,7 +573,26 @@ def optimize_pulse(
         pulse_scaling=pulse_scaling, pulse_offset=pulse_offset,
         ramping_pulse_type=ramping_pulse_type,
         ramping_pulse_params=ramping_pulse_params,
-        log_level=log_level, gen_stats=gen_stats)
+        log_level=log_level, gen_stats=gen_stats)"""
+
+    dyn = create_pulse_optimizer(
+          drift, ctrls, initial, target,
+          num_tslots=num_tslots, evo_time=evo_time, tau=tau,
+          amp_lbound=amp_lbound, amp_ubound=amp_ubound,
+          fid_err_targ=fid_err_targ, min_grad=min_grad,
+          max_iter=max_iter, max_wall_time=max_wall_time,
+          alg='GRAPE',
+
+          optim_method=optim_method, method_params=method_params,
+          transfer_function_type=transfer_function_type,
+          transfer_function_params=transfer_function_params,
+          fid_params=fid_params,
+          tslot_type=tslot_type, tslot_params=tslot_params,
+          prop_type=prop_type, mat_type=mat_type, mat_params=mat_params,
+          init_pulse_type=init_pulse_type, init_pulse_params=init_pulse_params,
+
+          #log_level=logging.NOTSET,
+          gen_stats=False):
 
     dyn = optim.dynamics
 
@@ -580,19 +656,26 @@ def optimize_pulse_unitary(
         H_d, H_c, U_0, U_targ,
         num_tslots=None, evo_time=None, tau=None,
         amp_lbound=None, amp_ubound=None,
-        fid_err_targ=1e-10, min_grad=1e-10,
-        max_iter=500, max_wall_time=180,
-        alg='GRAPE', alg_params=None,
-        optim_params=None, optim_method='DEF', method_params=None,
-        optim_alg=None, max_metric_corr=None, accuracy_factor=None,
-        phase_option='PSU',
-        dyn_params=None, prop_params=None, fid_params=None,
+        fid_err_targ=1e-10, min_grad=1e-10, max_iter=500, max_wall_time=180,
+
+        optim_method='DEF', method_params=None,
+        prop_type='DEF', mat_type='DEF', mat_params={},
+        fid_params=None,
         tslot_type='DEF', tslot_params=None,
-        amp_update_mode=None,
         init_pulse_type='DEF', init_pulse_params=None,
-        pulse_scaling=1.0, pulse_offset=0.0,
+        transfer_function_type='DEF', transfer_function_params={},
+
+        log_level=logging.NOTSET, out_file_ext=None, gen_stats=False,
+        phase_option='PSU', alg='GRAPE',
+        #old
+        alg_params=None, optim_params=None,
+        dyn_params=None, prop_params=None,
         ramping_pulse_type=None, ramping_pulse_params=None,
-        log_level=logging.NOTSET, out_file_ext=None, gen_stats=False):
+        pulse_scaling=1.0, pulse_offset=0.0
+        # already old
+        # optim_alg=None, max_metric_corr=None, accuracy_factor=None,
+        # amp_update_mode=None,
+        ):
 
     """
     Optimise a control pulse to minimise the fidelity error, assuming that
@@ -822,42 +905,36 @@ def optimize_pulse_unitary(
 
     # The deprecation management is repeated here
     # so that the stack level is correct
-    if not optim_alg is None:
-        optim_method = optim_alg
-        _param_deprecation(
-            "The 'optim_alg' parameter is deprecated. "
-            "Use 'optim_method' instead")
+    if alg is not 'GRAPE':
+        _param_deprecation("Use opt_pulse_crab_unitary for CRAB algorithm.")
 
-    if not max_metric_corr is None:
-        if isinstance(method_params, dict):
-            if not 'max_metric_corr' in method_params:
-                 method_params['max_metric_corr'] = max_metric_corr
-        else:
-            method_params = {'max_metric_corr':max_metric_corr}
-        _param_deprecation(
-            "The 'max_metric_corr' parameter is deprecated. "
-            "Use 'max_metric_corr' in method_params instead")
+    if alg_params is not None:
+        _param_deprecation("alg_params is deprecated.")
 
-    if not accuracy_factor is None:
-        if isinstance(method_params, dict):
-            if not 'accuracy_factor' in method_params:
-                 method_params['accuracy_factor'] = accuracy_factor
-        else:
-            method_params = {'accuracy_factor':accuracy_factor}
-        _param_deprecation(
-            "The 'accuracy_factor' parameter is deprecated. "
-            "Use 'accuracy_factor' in method_params instead")
+    if optim_params is not None:
+        _param_deprecation("optim_params is deprecated.")
 
-    # amp_update_mode
-    if not amp_update_mode is None:
-        amp_update_mode_up = _upper_safe(amp_update_mode)
-        if amp_update_mode_up == 'ALL':
-            tslot_type = 'UPDATE_ALL'
-        else:
-            tslot_type = amp_update_mode
-        _param_deprecation(
-            "The 'amp_update_mode' parameter is deprecated. "
-            "Use 'tslot_type' instead")
+    if dyn_params is not None:
+        _param_deprecation("dyn_params is deprecated.")
+
+    if prop_params is not None:
+        mat_params.update(prop_params)
+        _param_deprecation("prop_params is deprecated, "
+                           "mat_params replace it for most option.")
+
+    if ramping_pulse_type is not None:
+        _param_deprecation("ramping_pulse_type is only used for CRAB.")
+
+    if ramping_pulse_params is not None:
+        _param_deprecation("ramping_pulse_params is only used for CRAB.")
+
+    if pulse_scaling is not None:
+        init_pulse_params["scaling"] = pulse_scaling
+        _param_deprecation("pulse_scaling is now part of init_pulse_params.")
+
+    if pulse_offset is not None:
+        init_pulse_params["offset"] = pulse_offset
+        _param_deprecation("pulse_offset is now part of init_pulse_params.")
 
     # phase_option is still valid for this method
     # pass it via the fid_params
@@ -868,22 +945,33 @@ def optimize_pulse_unitary(
             if not 'phase_option' in fid_params:
                 fid_params['phase_option'] = phase_option
 
+    try:
+        H_d = td_Qobj(H_d)
+        H_d *= -1j
+    except:
+        _check_drift_dyn_gen(H_d)
+        for H_i in H_d:
+            H_i *= -1j
 
-    return optimize_pulse(
-            drift=H_d, ctrls=H_c, initial=U_0, target=U_targ,
+    try:
+        ctrls = [td_Qobj(H_)* -1j for H_ in H_c ]
+    except:
+        ctrls = _check_ctrls_container(H_c) * -1j
+
+    dyn =  create_pulse_optimizer(
+            drift=H_d, ctrls=ctrls, initial=U_0, target=U_targ,
             num_tslots=num_tslots, evo_time=evo_time, tau=tau,
             amp_lbound=amp_lbound, amp_ubound=amp_ubound,
             fid_err_targ=fid_err_targ, min_grad=min_grad,
             max_iter=max_iter, max_wall_time=max_wall_time,
-            alg=alg, alg_params=alg_params, optim_params=optim_params,
+            alg=alg,
             optim_method=optim_method, method_params=method_params,
-            dyn_type='UNIT', dyn_params=dyn_params,
-            prop_params=prop_params, fid_params=fid_params,
+            transfer_function_type=transfer_function_type,
+            transfer_function_params=transfer_function_params,
+            prop_type=prop_type, mat_type=mat_type, mat_params=mat_params,
+            fid_params=fid_params,
             init_pulse_type=init_pulse_type, init_pulse_params=init_pulse_params,
-            pulse_scaling=pulse_scaling, pulse_offset=pulse_offset,
-            ramping_pulse_type=ramping_pulse_type,
-            ramping_pulse_params=ramping_pulse_params,
-            log_level=log_level, out_file_ext=out_file_ext,
+            #log_level=log_level, out_file_ext=out_file_ext,
             gen_stats=gen_stats)
 
 def opt_pulse_crab(
@@ -1460,6 +1548,8 @@ def opt_pulse_crab_unitary(
         ramping_pulse_params=ramping_pulse_params,
         log_level=log_level, out_file_ext=out_file_ext, gen_stats=gen_stats)
 
+
+
 def create_pulse_optimizer(
         drift, ctrls, initial, target,
         num_tslots=None, evo_time=None, tau=None,
@@ -1473,8 +1563,8 @@ def create_pulse_optimizer(
         tslot_type='DEF', tslot_params={},
         prop_type='DEF', mat_type='DEF', mat_params={},
 
-        init_pulse_type=None, init_pulse_params=None,
-        ramping_pulse_type=None, ramping_pulse_params=None,
+        init_pulse='DEF', init_pulse_params=None,
+        ramping_pulse='DEF', ramping_pulse_params=None,
 
         #log_level=logging.NOTSET,
         gen_stats=False):
@@ -1868,11 +1958,11 @@ def create_pulse_optimizer(
             ramping_pgen.tau = np.diff(times)
             ramping_pgen.num_tslots = len(times)-1
             ramping_pgen.pulse_time = times[-1]
-            #dyn.set_initial_state(pgen)
+            ramping_pulse = ramping_pgen
         elif callable(ramping_pulse):
-            #dyn.set_initial_state(ramping_pulse)
+            pass # dyn.set_initial_state(ramping_pulse)
         elif isinstance(ramping_pulse, (list, np.ndarray)):
-            #dyn.set_initial_state(np.array(ramping_pulse))
+            ramping_pulse = (np.array(ramping_pulse))
 
         if isinstance(init_pulse, str):
             # Create a pulse generator of the type specified
@@ -1883,11 +1973,11 @@ def create_pulse_optimizer(
             pgen.pulse_time = times[-1]
             pgen.lbound = amp_lbound
             pgen.ubound = amp_ubound
-            # dyn.set_initial_state(pgen)
+            init_pulse = pgen
         elif callable(init_pulse):
-            # dyn.set_initial_state(init_pulse)
+            pass # dyn.set_initial_state(init_pulse)
         elif isinstance(init_pulse, (list, np.ndarray)):
-            # dyn.set_initial_state(np.array(init_pulse))
+            init_pulse = (np.array(init_pulse))
 
         crab_pulse_params = {}
         if "num_x" in crab_params:
@@ -1898,6 +1988,9 @@ def create_pulse_optimizer(
             crab_pulse_params["randomize_freqs"] = crab_params["randomize_freqs"]
         if "guess_pulse_action" in crab_params:
             crab_pulse_params["guess_pulse_action"] = crab_params["guess_pulse_action"]
+        dyn.set_crab_pulsegen(init_pulse=init_pulse,
+                              ramping_pulse=ramping_pulse,
+                              crab_pulse_params=crab_pulse_params)
 
     if False: #log_level <= logging.DEBUG:
         logger.debug(
@@ -1911,4 +2004,4 @@ def create_pulse_optimizer(
             "\n    pulsegen: " + pgen.__class__.__name__)
 
 
-    return optim
+    return dyn

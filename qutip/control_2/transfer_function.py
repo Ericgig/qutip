@@ -174,7 +174,14 @@ class transfer_functions:
             if isinstance(self.x_max, (int, float)):
                 self.x_max = self.x_max*np.ones((self.num_x,self.num_ctrls))
             elif isinstance(self.x_max, np.ndarray):
-                if self.x_max.shape != (self.num_x,self.num_ctrls):
+                if self.x_max.shape == (self.num_x,self.num_ctrls):
+                    pass
+                elif self.x_max.shape == (self.num_x) or
+                        self.x_max.shape == (self.num_x, 1):
+                    self.x_max = np.einsum("i,j->ij",
+                                                 np.ones(self.num_x),
+                                                 self.x_max)
+                else:
                     raise Exception("shape of the amb_ubound not right")
         else:
             self.x_max = np.array([[None]*self.num_ctrls]*self.num_x)
@@ -185,7 +192,14 @@ class transfer_functions:
             if isinstance(self.x_min, (int, float)):
                 self.x_min = self.x_min*np.ones((self.num_x,self.num_ctrls))
             elif isinstance(self.x_min, np.ndarray):
-                if self.x_min.shape != (self.num_x,self.num_ctrls):
+                if self.x_min.shape == (self.num_x,self.num_ctrls):
+                    pass
+                elif self.x_min.shape == (self.num_x) or
+                        self.x_min.shape == (self.num_x, 1):
+                    self.x_min = np.einsum("i,j->ij",
+                                                 np.ones(self.num_x),
+                                                 self.x_min)
+                else:
                     raise Exception("shape of the amb_lbound not right")
         else:
             self.x_min = np.array([[None]*self.num_ctrls]*self.num_x)
@@ -752,8 +766,9 @@ class PulseGenCrab(transfer_functions):
         self.x_max = None
         self.x_min = None
         self._bound_scale_cond = None
-        self._bound_mean = 0.0
-        self._bound_scale = 0.0
+        self._bound_mean = []
+        self._bound_scale = []
+        self.scaling = 1.0
 
         self.guess_pulse = guess_pulse
         self.ramping_pulse = ramping_pulse
@@ -774,6 +789,7 @@ class PulseGenCrab(transfer_functions):
         if self.guess_pulse.shape != (nt, self.num_ctrls):
             self.guess_pulse = np.einsum("i,j->ij", self.guess_pulse,
                                                     np.ones(self.num_ctrls))
+        self._init_bounds()
         return (self.num_x, self.num_ctrls), self.times
 
     def _apply_ramping_pulse(self, pulse):
@@ -803,15 +819,14 @@ class PulseGenCrab(transfer_functions):
         * For some transfer functions (fourrier)
           take the bound on the optimisation variables.
         """
-        if amp_lbound is not None and not \
-                isinstance(amp_lbound, (int, float)):
-            raise Exception("bounds must be a real")
         if amp_ubound is not None and not \
-                isinstance(amp_ubound, (int, float)):
-            raise Exception("bounds must be a real")
+                isinstance(amp_ubound, (int, float, list, np.ndarray)):
+            raise Exception("bounds must be a real or a list of real numbers")
+        if amp_ubound is not None and not \
+                isinstance(amp_ubound, (int, float, list, np.ndarray)):
+            raise Exception("bounds must be a real or a list of real numbers")
         self.x_min = amp_lbound
         self.x_max = amp_ubound
-        self._init_bounds()
 
     def _init_bounds(self):
         if self.x_min is None and self.x_max is None:
@@ -819,41 +834,74 @@ class PulseGenCrab(transfer_functions):
             self._bound_scale_cond = None
 
         elif self.x_min is None:
+            if isinstance(self.x_max, (int, float)):
+                self.x_max = [self.x_max]*self.num_ctrls
+            if len(self.x_max) != self.num_ctrls:
+                raise Exception("Bound for CRAB, "
+                                "must be one or a list of num_ctrls values")
             # only upper bound
             self.apply_bound = True
-            if self.x_max > 0:
-                self._bound_mean = 0.0
-                self._bound_scale = self.x_max
-            else:
-                self._bound_scale = self.scaling*self.num_coeffs + \
-                            self.get_guess_pulse_scale()
-                self._bound_mean = -abs(self._bound_scale) + self.x_max
             self._bound_scale_cond = "_BSC_GT_MEAN"
+            for xmax in self.x_max:
+                if xmax > 0:
+                    self._bound_mean += [0.0]
+                    self._bound_scale += [xmax]
+                else:
+                    self._bound_scale += [self.scaling*self.num_coeffs + \
+                                self.get_guess_pulse_scale()]
+                    self._bound_mean += [-abs(self._bound_scale) + xmax]
 
         elif self.x_max is None:
+            if isinstance(self.x_min, (int, float)):
+                self.x_min = [self.x_min]*self.num_ctrls
+            if len(self.x_min) != self.num_ctrls:
+                raise Exception("Bound for CRAB, "
+                                "must be one or a list of num_ctrls values")
             # only lower bound
             self.apply_bound = True
-            if self.x_min < 0:
-                self._bound_mean = 0.0
-                self._bound_scale = abs(self.x_min)
-            else:
-                self._bound_scale = self.scaling*self.num_coeffs + \
-                            self.get_guess_pulse_scale()
-                self._bound_mean = abs(self._bound_scale) + self.x_min
             self._bound_scale_cond = "_BSC_LT_MEAN"
+            for xmin in self.x_min:
+                if xmin < 0:
+                    self._bound_mean += [0.0]
+                    self._bound_scale += [abs(xmin)]
+                else:
+                    self._bound_scale += [self.scaling*self.num_coeffs + \
+                                self.get_guess_pulse_scale()]
+                    self._bound_mean += [abs(self._bound_scale) + xmin]
 
         else:
+            if isinstance(self.x_min, (int, float)):
+                self.x_min = [self.x_min]*self.num_ctrls
+            if len(self.x_min) != self.num_ctrls:
+                raise Exception("Bound for CRAB, "
+                                "must be one or a list of num_ctrls values")
+            if isinstance(self.x_max, (int, float)):
+                self.x_max = [self.x_max]*self.num_ctrls
+            if len(self.x_max) != self.num_ctrls:
+                raise Exception("Bound for CRAB, "
+                                "must be one or a list of num_ctrls values")
             # lower and upper bounds
             self.apply_bound = True
-            if self.x_min == 0:
-                # can touch the lower bound
-                self._bound_mean = 0.0
-                self._bound_scale = self.x_max
-                self._bound_scale_cond = "_BSC_ALL_LT0"
-            else:
-                self._bound_mean = 0.5*(self.x_max + self.x_min)
-                self._bound_scale = 0.5*(self.x_max - self.x_min)
-                self._bound_scale_cond = "_BSC_ALL"
+            self._bound_scale_cond = "_BSC_ALL_LT0"
+            for xmin, xmax in zip(self.x_min, self.x_max):
+                if xmin == 0:
+                    # can touch the lower bound
+                    self._bound_mean += [0.0]
+                    self._bound_scale += [xmax]
+                else:
+                    self._bound_mean += [0.5*(xmax + xmin)]
+                    self._bound_scale += [0.5*(xmax - xmin)]
+                    self._bound_scale_cond = "_BSC_ALL"
+
+        self._bound_mean = np.array(self._bound_mean)
+        self._bound_mean = np.einsum("i,j->ij",
+                                     np.ones(len(self.times)),
+                                     self._bound_mean)
+        self._bound_scale = np.array(self._bound_scale)
+        self._bound_scale = np.einsum("i,j->ij",
+                                      np.ones(len(self.times)),
+                                      self._bound_scale)
+
 
     def get_guess_pulse_scale(self):
         scale = 0.0
@@ -869,26 +917,25 @@ class PulseGenCrab(transfer_functions):
         if self._bound_scale_cond == "_BSC_ALL":
             pulse = (pulse-self._bound_mean)/self._bound_scale
             pulse = np.tanh(pulse)*self._bound_scale + self._bound_mean
-            return pulse
+
         elif self._bound_scale_cond == "_BSC_ALL_LT0":
             pulse[pulse<0.0] = 0.
             pulse = ( np.tanh(pulse/self._bound_scale)
                                   *self._bound_scale)
-            return pulse
+
         elif self._bound_scale_cond == "_BSC_GT_MEAN":
             scale_where = pulse > self._bound_mean
             pulse[scale_where] = (pulse[scale_where]-self._bound_mean)/self._bound_scale
             pulse[scale_where] = (np.tanh(pulse[scale_where])*self._bound_scale
                                         + self._bound_mean)
-            return pulse
+
         elif self._bound_scale_cond == "_BSC_LT_MEAN":
             scale_where = pulse < self._bound_mean
             pulse[scale_where] = (pulse[scale_where]-self._bound_mean)/self._bound_scale
             pulse[scale_where] = (np.tanh(pulse[scale_where])*self._bound_scale
                                         + self._bound_mean)
-            return pulse
-        else:
-            return pulse
+
+        return pulse
 
 class PulseGenCrabFourier(PulseGenCrab):
     """
