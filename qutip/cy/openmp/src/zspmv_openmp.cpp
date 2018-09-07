@@ -3,11 +3,11 @@
 //    Copyright (c) 2011 and later, QuSTaR.
 //   All rights reserved.
 //
-//    Redistribution and use in source and binary forms, with or without 
-//    modification, are permitted provided that the following conditions are 
+//    Redistribution and use in source and binary forms, with or without
+//    modification, are permitted provided that the following conditions are
 //    met:
 //
-//   1. Redistributions of source code must retain the above copyright notice, 
+//   1. Redistributions of source code must retain the above copyright notice,
 //       this list of conditions and the following disclaimer.
 //
 //    2. Redistributions in binary form must reproduce the above copyright
@@ -18,16 +18,16 @@
 //       of its contributors may be used to endorse or promote products derived
 //       from this software without specific prior written permission.
 //
-//    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
+//    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 //    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-//    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
-//    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
-//    HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
-//    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
-//    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
-//    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
-//    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
-//    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+//    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+//    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+//    HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+//    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+//    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+//    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+//    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+//    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 //    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //#############################################################################
 #include <complex>
@@ -35,14 +35,14 @@
 
 #if defined(__GNUC__) && defined(__SSE3__) // Using GCC or CLANG and SSE3
 #include <pmmintrin.h>
-void zspmvpy_openmp(const std::complex<double> * __restrict__ data, const int * __restrict__ ind,
-            const int * __restrict__ ptr,
+void zspmvpy_openmp(const std::complex<double> * __restrict__ data, const long * __restrict__ ind,
+            const long * __restrict__ ptr,
             const std::complex<double> * __restrict__ vec, const std::complex<double> a,
-            std::complex<double> * __restrict__ out, const unsigned int nrows,
+            std::complex<double> * __restrict__ out, const unsigned long nrows,
             const unsigned int nthr)
 {
     size_t row, jj;
-    unsigned int row_start, row_end;
+    unsigned long row_start, row_end;
     __m128d num1, num2, num3, num4;
     #pragma omp parallel for \
         private(row,num1,num2,num3,num4,row_start,row_end,jj) \
@@ -76,14 +76,14 @@ void zspmvpy_openmp(const std::complex<double> * __restrict__ data, const int * 
     }
 }
 #elif defined(__GNUC__) // Using GCC or CLANG but no SSE3
-void zspmvpy_openmp(const std::complex<double> * __restrict__ data, const int * __restrict__ ind,
-            const int * __restrict__ ptr,
+void zspmvpy_openmp(const std::complex<double> * __restrict__ data, const long * __restrict__ ind,
+            const long * __restrict__ ptr,
             const std::complex<double> * __restrict__ vec, const std::complex<double> a,
-            std::complex<double> * __restrict__ out, const unsigned int nrows,
+            std::complex<double> * __restrict__ out, const unsigned long nrows,
             const unsigned int nthr)
 {
     size_t row, jj;
-    unsigned int row_start, row_end;
+    unsigned long row_start, row_end;
     std::complex<double> dot;
     #pragma omp parallel for \
         private(row,dot,row_start,row_end,jj) \
@@ -103,14 +103,14 @@ void zspmvpy_openmp(const std::complex<double> * __restrict__ data, const int * 
 }
 #elif defined(_MSC_VER) && defined(__AVX__) // Visual Studio with AVX
 #include <pmmintrin.h>
-void zspmvpy_openmp(const std::complex<double> * __restrict data, const int * __restrict ind,
-            const int * __restrict ptr,
+void zspmvpy_openmp(const std::complex<double> * __restrict data, const long * __restrict ind,
+            const long * __restrict ptr,
             const std::complex<double> * __restrict vec, const std::complex<double> a,
-            std::complex<double> * __restrict out, const int nrows,
+            std::complex<double> * __restrict out, const long nrows,
             const unsigned int nthr)
 {
-    int row, jj;
-    int row_start, row_end;
+    long row, jj;
+    long row_start, row_end;
     __m128d num1, num2, num3, num4;
     #pragma omp parallel for \
         private(row,num1,num2,num3,num4,row_start,row_end,jj) \
@@ -144,14 +144,14 @@ void zspmvpy_openmp(const std::complex<double> * __restrict data, const int * __
     }
 }
 #elif defined(_MSC_VER) // Visual Studio no AVX
-void zspmvpy_openmp(const std::complex<double> * __restrict data, const int * __restrict ind,
-            const int * __restrict ptr,
+void zspmvpy_openmp(const std::complex<double> * __restrict data, const long * __restrict ind,
+            const long * __restrict ptr,
             const std::complex<double> * __restrict vec, const std::complex<double> a,
-            std::complex<double> * __restrict out, const int nrows,
+            std::complex<double> * __restrict out, const long nrows,
             const unsigned int nthr)
 {
-    int row, jj;
-    int row_start, row_end;
+    long row, jj;
+    long row_start, row_end;
     std::complex<double> dot;
     #pragma omp parallel for \
         private(row,dot,row_start,row_end,jj) \
@@ -170,14 +170,14 @@ void zspmvpy_openmp(const std::complex<double> * __restrict data, const int * __
     }
 }
 #else // Everything else
-void zspmvpy_openmp(const std::complex<double> * data, const int * ind,
-            const int * ptr,
+void zspmvpy_openmp(const std::complex<double> * data, const long * ind,
+            const long * ptr,
             const std::complex<double> * vec, const std::complex<double> a,
-            std::complex<double> * out, const unsigned int nrows,
+            std::complex<double> * out, const unsigned long nrows,
             const unsigned int nthr)
 {
     size_t row, jj;
-    unsigned int row_start, row_end;
+    unsigned long row_start, row_end;
     std::complex<double> dot;
     #pragma omp parallel for \
         private(row,dot,row_start,row_end,jj) \
