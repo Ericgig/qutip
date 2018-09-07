@@ -450,7 +450,7 @@ def _steadystate_direct_sparse(L, ss_args):
 
     else:  # Use MKL solver
         if len(ss_args['info']['perm']) != 0:
-            in_perm = np.arange(n**2, dtype=np.int32)
+            in_perm = np.arange(n**2, dtype=np.int64)
         else:
             in_perm = None
         _direct_start = time.time()

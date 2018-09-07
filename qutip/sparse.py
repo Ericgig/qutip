@@ -72,7 +72,10 @@ def sp_inf_norm(A):
     """
     Infinity norm for sparse matrix
     """
-    return zcsr_inf_norm(A.data, A.indices, 
+    if A.indices.dtype != np.int64:
+        A.indices = A.indices.astype(np.int64)
+        A.indptr = A.indptr.astype(np.int64)
+    return zcsr_inf_norm(A.data, A.indices,
                 A.indptr, A.shape[0], A.shape[1])
 
 
@@ -100,7 +103,10 @@ def sp_one_norm(A):
     """
     One norm for sparse matrix
     """
-    return zcsr_one_norm(A.data, A.indices, 
+    if A.indices.dtype != np.int64:
+        A.indices = A.indices.astype(np.int64)
+        A.indptr = A.indptr.astype(np.int64)
+    return zcsr_one_norm(A.data, A.indices,
                 A.indptr, A.shape[0], A.shape[1])
 
 
@@ -130,10 +136,13 @@ def sp_reshape(A, shape, format='csr'):
     """
     if not hasattr(shape, '__len__') or len(shape) != 2:
         raise ValueError('Shape must be a list of two integers')
-    
+
     if format == 'csr':
+        if A.indices.dtype != np.int64:
+            A.indices = A.indices.astype(np.int64)
+            A.indptr = A.indptr.astype(np.int64)
         return zcsr_reshape(A, shape[0], shape[1])
-    
+
     C = A.tocoo()
     nrows, ncols = C.shape
     size = nrows * ncols
@@ -383,10 +392,13 @@ def sp_eigs(data, isherm, vecs=True, sparse=False, sort='low',
 
 def sp_expm(A, sparse=False):
     """
-    Sparse matrix exponential.    
+    Sparse matrix exponential.
     """
+    if A.indices.dtype != np.int64:
+        A.indices = A.indices.astype(np.int64)
+        A.indptr = A.indptr.astype(np.int64)
     if _isdiag(A.indices, A.indptr, A.shape[0]):
-        A = sp.diags(np.exp(A.diagonal()), shape=A.shape, 
+        A = sp.diags(np.exp(A.diagonal()), shape=A.shape,
                     format='csr', dtype=complex)
         return A
     if sparse:
@@ -394,7 +406,7 @@ def sp_expm(A, sparse=False):
     else:
         E = spla.expm(A.toarray())
     return sp.csr_matrix(E)
-    
+
 
 
 def sp_permute(A, rperm=(), cperm=(), safe=True):
@@ -421,15 +433,18 @@ def sp_permute(A, rperm=(), cperm=(), safe=True):
         CSR or CSC matrix with permuted rows/columns.
 
     """
-    rperm = np.asarray(rperm, dtype=np.int32)
-    cperm = np.asarray(cperm, dtype=np.int32)
+    rperm = np.asarray(rperm, dtype=np.int64)
+    cperm = np.asarray(cperm, dtype=np.int64)
     nrows = A.shape[0]
     ncols = A.shape[1]
     if len(rperm) == 0:
-        rperm = np.arange(nrows, dtype=np.int32)
+        rperm = np.arange(nrows, dtype=np.int64)
     if len(cperm) == 0:
-        cperm = np.arange(ncols, dtype=np.int32)
+        cperm = np.arange(ncols, dtype=np.int64)
     if safe:
+        if A.indices.dtype != np.int64:
+            A.indices = A.indices.astype(np.int64)
+            A.indptr = A.indptr.astype(np.int64)
         if len(np.setdiff1d(rperm, np.arange(nrows))) != 0:
             raise Exception('Invalid row permutation array.')
         if len(np.setdiff1d(cperm, np.arange(ncols))) != 0:
@@ -476,15 +491,18 @@ def sp_reverse_permute(A, rperm=(), cperm=(), safe=True):
         CSR or CSC matrix with permuted rows/columns.
 
     """
-    rperm = np.asarray(rperm, dtype=np.int32)
-    cperm = np.asarray(cperm, dtype=np.int32)
+    rperm = np.asarray(rperm, dtype=np.int64)
+    cperm = np.asarray(cperm, dtype=np.int64)
     nrows = A.shape[0]
     ncols = A.shape[1]
     if len(rperm) == 0:
-        rperm = np.arange(nrows, dtype=np.int32)
+        rperm = np.arange(nrows, dtype=np.int64)
     if len(cperm) == 0:
-        cperm = np.arange(ncols, dtype=np.int32)
+        cperm = np.arange(ncols, dtype=np.int64)
     if safe:
+        if A.indices.dtype != np.int64:
+            A.indices = A.indices.astype(np.int64)
+            A.indptr = A.indptr.astype(np.int64)
         if len(np.setdiff1d(rperm, np.arange(nrows))) != 0:
             raise Exception('Invalid row permutation array.')
         if len(np.setdiff1d(cperm, np.arange(ncols))) != 0:
@@ -533,6 +551,9 @@ def sp_bandwidth(A):
     """
     nrows = A.shape[0]
     ncols = A.shape[1]
+    if A.indices.dtype != np.int64:
+        A.indices = A.indices.astype(np.int64)
+        A.indptr = A.indptr.astype(np.int64)
 
     if A.getformat() == 'csr':
         return _sparse_bandwidth(A.indices, A.indptr, nrows)
@@ -556,14 +577,21 @@ def sp_profile(A):
     A : csr_matrix, csc_matrix
         Input matrix
     """
+    if A.indices.dtype != np.int64:
+        A.indices = A.indices.astype(np.int64)
+        A.indptr = A.indptr.astype(np.int64)
     if sp.isspmatrix_csr(A):
         up = _sparse_profile(A.indices, A.indptr, A.shape[0])
         A = A.tocsc()
+        A.indices = A.indices.astype(np.int64)
+        A.indptr = A.indptr.astype(np.int64)
         lp = _sparse_profile(A.indices, A.indptr, A.shape[0])
 
     elif sp.isspmatrix_csc(A):
         lp = _sparse_profile(A.indices, A.indptr, A.shape[0])
         A = A.tocsr()
+        A.indices = A.indices.astype(np.int64)
+        A.indptr = A.indptr.astype(np.int64)
         up = _sparse_profile(A.indices, A.indptr, A.shape[0])
 
     else:
@@ -574,18 +602,21 @@ def sp_profile(A):
 
 def sp_isdiag(A):
     """Determine if sparse CSR matrix is diagonal.
-    
+
     Parameters
     ----------
     A : csr_matrix, csc_matrix
         Input matrix
-        
+
     Returns
     -------
     isdiag : int
         True if matix is diagonal, False otherwise.
-    
+
     """
     if not sp.isspmatrix_csr(A):
         raise TypeError('Input sparse matrix must be in CSR format.')
+    if A.indices.dtype != np.int64:
+        A.indices = A.indices.astype(np.int64)
+        A.indptr = A.indptr.astype(np.int64)
     return _isdiag(A.indices, A.indptr, A.shape[0])

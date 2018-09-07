@@ -10,5 +10,5 @@ ctypedef cnp.int32_t ITYPE_t
 CTYPE = np.complex128
 ctypedef cnp.complex128_t CTYPE_t
 
-CTYPE = np.int64
+LTYPE = np.int64
 ctypedef cnp.int64_t LTYPE_t

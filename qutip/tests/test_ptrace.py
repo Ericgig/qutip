@@ -42,12 +42,12 @@ def test_ptrace_rand():
         bdat,bd,bs = _pt(A, [1,2])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
+
         B = A.ptrace([0,2])
         bdat,bd,bs = _pt(A, [0,2])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
+
         B = A.ptrace([0,1])
         bdat,bd,bs = _pt(A, [0,1])
         C = Qobj(bdat,dims=bd)
@@ -60,18 +60,18 @@ def test_ptrace_rand():
         bdat,bd,bs = _pt(A, [1,2])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
+
         B = A.ptrace([0,2])
         bdat,bd,bs = _pt(A, [0,2])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
+
         B = A.ptrace([0,1])
         bdat,bd,bs = _pt(A, [0,1])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
-        
+
+
     for k in range(10):
         A = tensor(rand_ket(2),rand_ket(2),rand_ket(2),
                     rand_ket(2),rand_ket(2),rand_ket(2))
@@ -79,17 +79,17 @@ def test_ptrace_rand():
         bdat,bd,bs = _pt(A, [3,2])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
+
         B = A.ptrace([0,2])
         bdat,bd,bs = _pt(A, [0,2])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
+
         B = A.ptrace([0,1])
         bdat,bd,bs = _pt(A, [0,1])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
+
 
 
     for k in range(10):
@@ -98,12 +98,12 @@ def test_ptrace_rand():
         bdat,bd,bs = _pt(A, [0])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
+
         B = A.ptrace([1])
         bdat,bd,bs = _pt(A, [1])
         C = Qobj(bdat,dims=bd)
         assert_(B==C)
-        
+
         B = A.ptrace([0,2])
         bdat,bd,bs = _pt(A, [0,2])
         C = Qobj(bdat,dims=bd)

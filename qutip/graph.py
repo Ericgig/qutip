@@ -35,8 +35,8 @@ This module contains a collection of graph theory routines used mainly
 to reorder matrices for iterative steady state solvers.
 """
 
-__all__ = ['graph_degree', 'column_permutation', 'breadth_first_search', 
-            'reverse_cuthill_mckee', 'maximum_bipartite_matching', 
+__all__ = ['graph_degree', 'column_permutation', 'breadth_first_search',
+            'reverse_cuthill_mckee', 'maximum_bipartite_matching',
             'weighted_bipartite_matching']
 
 import numpy as np
@@ -47,14 +47,14 @@ from qutip.cy.graph_utils import (
     _weighted_bipartite_matching)
 
 
-def graph_degree(A):
+def graph_degree(B):
     """
     Returns the degree for the nodes (rows) of a symmetric
     graph in sparse CSR or CSC format, or a qobj.
 
     Parameters
     ----------
-    A : qobj, csr_matrix, csc_matrix
+    B : qobj, csr_matrix, csc_matrix
         Input quantum object or csr_matrix.
 
     Returns
@@ -63,12 +63,18 @@ def graph_degree(A):
         Array of integers giving the degree for each node (row).
 
     """
-    if not (sp.isspmatrix_csc(A) or sp.isspmatrix_csr(A)):
+    if not (sp.isspmatrix_csc(B) or sp.isspmatrix_csr(B)):
         raise TypeError('Input must be CSC or CSR sparse matrix.')
+    if B.indices.dtype != np.int32:
+        A = B.copy()
+        A.indices = A.indices.astype(np.int32)
+        A.indptr = A.indptr.astype(np.int32)
+    else:
+        A = B
     return np.asarray(_node_degrees(A.indices, A.indptr, A.shape[0]))
 
 
-def breadth_first_search(A, start):
+def breadth_first_search(B, start):
     """
     Breadth-First-Search (BFS) of a graph in CSR or CSC matrix format starting
     from a given node (row).  Takes Qobjs and CSR or CSC matrices as inputs.
@@ -78,7 +84,7 @@ def breadth_first_search(A, start):
 
     Parameters
     ----------
-    A : csc_matrix, csr_matrix
+    B : csc_matrix, csr_matrix
         Input graph in CSC or CSR matrix format
     start : int
         Staring node for BFS traversal.
@@ -91,6 +97,12 @@ def breadth_first_search(A, start):
         Level of the nodes in the order that they are traversed.
 
     """
+    if B.indices.dtype != np.int32:
+        A = B.copy()
+        A.indices = A.indices.astype(np.int32)
+        A.indptr = A.indptr.astype(np.int32)
+    else:
+        A = B
     if not (sp.isspmatrix_csc(A) or sp.isspmatrix_csr(A)):
         raise TypeError('Input must be CSC or CSR sparse matrix.')
 
@@ -104,11 +116,11 @@ def breadth_first_search(A, start):
 
 def column_permutation(A):
     """
-    Finds the non-symmetric column permutation of A such that the columns 
+    Finds the non-symmetric column permutation of A such that the columns
     are given in ascending order according to the number of nonzero entries.
-    This is sometimes useful for decreasing the fill-in of sparse LU 
+    This is sometimes useful for decreasing the fill-in of sparse LU
     factorization.
-    
+
     Parameters
     ----------
     A : csc_matrix
@@ -118,7 +130,7 @@ def column_permutation(A):
     -------
     perm : array
         Array of permuted row and column indices.
-    
+
     """
     if not sp.isspmatrix_csc(A):
         A = sp.csc_matrix(A)
@@ -127,7 +139,7 @@ def column_permutation(A):
     return perm
 
 
-def reverse_cuthill_mckee(A, sym=False):
+def reverse_cuthill_mckee(B, sym=False):
     """
     Returns the permutation array that orders a sparse CSR or CSC matrix
     in Reverse-Cuthill McKee ordering. Since the input matrix must be
@@ -142,7 +154,7 @@ def reverse_cuthill_mckee(A, sym=False):
 
     Parameters
     ----------
-    A : csc_matrix, csr_matrix
+    B : csc_matrix, csr_matrix
         Input sparse CSC or CSR sparse matrix format.
     sym : bool {False, True}
         Flag to set whether input matrix is symmetric.
@@ -162,20 +174,27 @@ def reverse_cuthill_mckee(A, sym=False):
     E. Cuthill and J. McKee, "Reducing the Bandwidth of Sparse Symmetric
     Matrices", ACM '69 Proceedings of the 1969 24th national conference,
     (1969).
-    
+
     """
-    if not (sp.isspmatrix_csc(A) or sp.isspmatrix_csr(A)):
+    if not (sp.isspmatrix_csc(B) or sp.isspmatrix_csr(B)):
         raise TypeError('Input must be CSC or CSR sparse matrix.')
 
-    nrows = A.shape[0]
+    nrows = B.shape[0]
 
     if not sym:
-        A = A + A.transpose()
+        B = B + B.transpose()
+
+    if B.indices.dtype != np.int32:
+        A = B.copy()
+        A.indices = A.indices.astype(np.int32)
+        A.indptr = A.indptr.astype(np.int32)
+    else:
+        A = B
 
     return _reverse_cuthill_mckee(A.indices, A.indptr, nrows)
 
 
-def maximum_bipartite_matching(A, perm_type='row'):
+def maximum_bipartite_matching(B, perm_type='row'):
     """
     Returns an array of row or column permutations that removes nonzero
     elements from the diagonal of a nonsingular square CSC sparse matrix. Such
@@ -187,7 +206,7 @@ def maximum_bipartite_matching(A, perm_type='row'):
 
     Parameters
     ----------
-    A : sparse matrix
+    B : sparse matrix
         Input matrix
 
     perm_type : str {'row', 'column'}
@@ -208,21 +227,27 @@ def maximum_bipartite_matching(A, perm_type='row'):
     I. S. Duff, K. Kaya, and B. Ucar, "Design, Implementation, and
     Analysis of Maximum Transversal Algorithms", ACM Trans. Math. Softw.
     38, no. 2, (2011).
-    
+
     """
-    nrows = A.shape[0]
-    if A.shape[0] != A.shape[1]:
+    nrows = B.shape[0]
+    if B.shape[0] != B.shape[1]:
         raise ValueError(
             'Maximum bipartite matching requires a square matrix.')
 
-    if sp.isspmatrix_csr(A) or sp.isspmatrix_coo(A):
-        A = A.tocsc()
-    elif not sp.isspmatrix_csc(A):
+    if sp.isspmatrix_csr(B) or sp.isspmatrix_coo(B):
+        B = B.tocsc()
+    elif not sp.isspmatrix_csc(B):
         raise TypeError("matrix must be in CSC, CSR, or COO format.")
 
     if perm_type == 'column':
-        A = A.transpose().tocsc()
+        B = B.transpose().tocsc()
 
+    if B.indices.dtype != np.int32:
+        A = B.copy()
+        A.indices = A.indices.astype(np.int32)
+        A.indptr = A.indptr.astype(np.int32)
+    else:
+        A = B
     perm = _maximum_bipartite_matching(A.indices, A.indptr, nrows)
 
     if np.any(perm == -1):
@@ -231,7 +256,7 @@ def maximum_bipartite_matching(A, perm_type='row'):
     return perm
 
 
-def weighted_bipartite_matching(A, perm_type='row'):
+def weighted_bipartite_matching(B, perm_type='row'):
     """
     Returns an array of row permutations that attempts to maximize
     the product of the ABS values of the diagonal elements in
@@ -243,7 +268,7 @@ def weighted_bipartite_matching(A, perm_type='row'):
 
     Parameters
     ----------
-    A : csc_matrix
+    B : csc_matrix
         Input matrix
 
     perm_type : str {'row', 'column'}
@@ -272,21 +297,27 @@ def weighted_bipartite_matching(A, perm_type='row'):
     Matrix Anal. and Applics. 20, no. 4, 889 (1997).
 
     """
-   
-    nrows = A.shape[0]
-    if A.shape[0] != A.shape[1]:
+    nrows = B.shape[0]
+    if B.shape[0] != B.shape[1]:
         raise ValueError('weighted_bfs_matching requires a square matrix.')
 
-    if sp.isspmatrix_csr(A) or sp.isspmatrix_coo(A):
-        A = A.tocsc()
-    elif not sp.isspmatrix_csc(A):
+    if sp.isspmatrix_csr(B) or sp.isspmatrix_coo(B):
+        B = B.tocsc()
+    elif not sp.isspmatrix_csc(B):
         raise TypeError("matrix must be in CSC, CSR, or COO format.")
 
     if perm_type == 'column':
-        A = A.transpose().tocsc()
+        B = B.transpose().tocsc()
+
+    if B.indices.dtype != np.int32:
+        A = B.copy()
+        A.indices = A.indices.astype(np.int32)
+        A.indptr = A.indptr.astype(np.int32)
+    else:
+        A = B
 
     perm = _weighted_bipartite_matching(
-                    np.asarray(np.abs(A.data), dtype=float), 
+                    np.asarray(np.abs(A.data), dtype=float),
                     A.indices, A.indptr, nrows)
 
     if np.any(perm == -1):

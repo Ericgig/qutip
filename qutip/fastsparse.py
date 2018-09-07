@@ -49,20 +49,23 @@ class fast_csr_matrix(csr_matrix):
             if shape is None:
                 raise Exception('Shape must be given when building zero matrix.')
             self.data = np.array([], dtype=complex)
-            self.indices = np.array([], dtype=np.int32)
-            self.indptr = np.zeros(shape[0]+1, dtype=np.int32)
+            self.indices = np.array([], dtype=np.int64)
+            self.indptr = np.zeros(shape[0]+1, dtype=np.int64)
             self._shape = tuple(int(s) for s in shape)
-            
+
         else:
             if args[0].shape[0] and args[0].dtype != complex:
                 raise TypeError('fast_csr_matrix allows only complex data.')
-            if args[1].shape[0] and args[1].dtype != np.int32:
-                raise TypeError('fast_csr_matrix allows only int32 indices.')
-            if args[2].shape[0] and args[1].dtype != np.int32:
-                raise TypeError('fast_csr_matrix allows only int32 indptr.')
+            if args[1].shape[0] and (args[1].dtype != np.int32 and
+                                     args[1].dtype != np.int64):
+                raise TypeError('fast_csr_matrix allows only int indices.')
+            if args[2].shape[0] and (args[2].dtype != np.int32 and
+                                     args[2].dtype != np.int64):
+                print(args[2].dtype)
+                raise TypeError('fast_csr_matrix allows only int indptr.')
             self.data = np.array(args[0], dtype=complex, copy=copy)
-            self.indices = np.array(args[1], dtype=np.int32, copy=copy)
-            self.indptr = np.array(args[2], dtype=np.int32, copy=copy)
+            self.indices = np.array(args[1], dtype=np.int64, copy=copy)
+            self.indptr = np.array(args[2], dtype=np.int64, copy=copy)
             if shape is None:
                 self._shape = tuple([len(self.indptr)-1]*2)
             else:
@@ -73,7 +76,7 @@ class fast_csr_matrix(csr_matrix):
 
     def _binopt(self, other, op):
         """
-        Do the binary operation fn to two sparse matrices using 
+        Do the binary operation fn to two sparse matrices using
         fast_csr_matrix only when other is also a fast_csr_matrix.
         """
         # e.g. csr_plus_csr, csr_minus_csr, etc.
@@ -116,7 +119,7 @@ class fast_csr_matrix(csr_matrix):
         else:
             A = csr_matrix((data, indices, indptr), dtype=data.dtype, shape=self.shape)
         return A
-    
+
     def multiply(self, other):
         """Point-wise multiplication by another matrix, vector, or
         scalar.
@@ -174,7 +177,7 @@ class fast_csr_matrix(csr_matrix):
                 return self._mul_scalar(other.flat[0])
         # Anything else.
         return np.multiply(self.todense(), other)
-    
+
     def _mul_sparse_matrix(self, other):
         """
         Do the sparse matrix mult returning fast_csr_matrix only
@@ -187,7 +190,7 @@ class fast_csr_matrix(csr_matrix):
         if isinstance(other, fast_csr_matrix):
             A = zcsr_mult(self, other, sorted=1)
             return A
-        
+
         other = csr_matrix(other)  # convert to this format
         idx_dtype = get_index_dtype((self.indptr, self.indices,
                                      other.indptr, other.indices),
@@ -325,7 +328,7 @@ class fast_csr_matrix(csr_matrix):
             return all_true - res
         else:
             raise ValueError("Operands could not be compared.")
-        
+
     def _with_data(self,data,copy=True):
         """Returns a matrix with the same sparsity structure as self,
         but with different data.  By default the structure arrays
@@ -340,33 +343,33 @@ class fast_csr_matrix(csr_matrix):
         else:
             return fast_csr_matrix((data,self.indices,self.indptr),
                                    shape=self.shape,dtype=data.dtype)
-    
+
     def transpose(self):
         """
         Returns the transpose of the matrix, keeping
         it in fast_csr format.
         """
         return zcsr_transpose(self)
-    
+
     def trans(self):
         """
         Same as transpose
         """
         return zcsr_transpose(self)
-    
+
     def getH(self):
         """
         Returns the conjugate-transpose of the matrix, keeping
         it in fast_csr format.
         """
         return zcsr_adjoint(self)
-    
+
     def adjoint(self):
         """
         Same as getH
         """
         return zcsr_adjoint(self)
-    
+
 
 def csr2fast(A, copy=False):
     if (not isinstance(A, fast_csr_matrix)) or copy:
@@ -383,8 +386,8 @@ def fast_identity(N):
     fast_csr format.
     """
     data = np.ones(N, dtype=complex)
-    ind = np.arange(N, dtype=np.int32)
-    ptr = np.arange(N+1, dtype=np.int32)
+    ind = np.arange(N, dtype=np.int64)
+    ptr = np.arange(N+1, dtype=np.int64)
     ptr[-1] = N
     return fast_csr_matrix((data,ind,ptr),shape=(N,N))
 
@@ -394,8 +397,8 @@ def fast_identity(N):
 #--------------------
 def _all_true(shape):
     A = csr_matrix((np.ones(np.prod(shape), dtype=np.bool_),
-                np.tile(np.arange(shape[1],dtype=np.int32),shape[0]),
-                np.arange(0,np.prod(shape)+1,shape[1],dtype=np.int32)),
+                np.tile(np.arange(shape[1],dtype=np.int64),shape[0]),
+                np.arange(0,np.prod(shape)+1,shape[1],dtype=np.int64)),
                 shape=shape)
     return A
 

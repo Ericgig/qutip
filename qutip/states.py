@@ -105,8 +105,8 @@ def basis(N, n=0, offset=0):
         raise ValueError("basis vector index need to be in n <= N-1")
 
     data = np.array([1], dtype=complex)
-    ind = np.array([0], dtype=np.int32)
-    ptr = np.array([0]*((n - offset)+1)+[1]*(N-(n-offset)),dtype=np.int32)
+    ind = np.array([0], dtype=np.int64)
+    ptr = np.array([0]*((n - offset)+1)+[1]*(N-(n-offset)),dtype=np.int64)
 
     return Qobj(fast_csr_matrix((data,ind,ptr), shape=(N,1)), isherm=False)
 

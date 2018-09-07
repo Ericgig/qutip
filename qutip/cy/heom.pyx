@@ -36,18 +36,18 @@ cimport cython
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def cy_pad_csr(object A, int row_scale, int col_scale, int insertrow=0, int insertcol=0):
-    cdef int nrowin = A.shape[0]
-    cdef int ncolin = A.shape[1]
-    cdef int nnz = A.indptr[nrowin]
-    cdef int nrowout = nrowin*row_scale
-    cdef int ncolout = ncolin*col_scale
+def cy_pad_csr(object A, long row_scale, long col_scale, long insertrow=0, long insertcol=0):
+    cdef long nrowin = A.shape[0]
+    cdef long ncolin = A.shape[1]
+    cdef long nnz = A.indptr[nrowin]
+    cdef long nrowout = nrowin*row_scale
+    cdef long ncolout = ncolin*col_scale
     cdef size_t kk
-    cdef int temp, temp2
-    cdef int[::1] ind = A.indices
-    cdef int[::1] ptr_in = A.indptr
-    cdef cnp.ndarray[int, ndim=1, mode='c'] ptr_out = np.zeros(nrowout+1,dtype=np.int32)
-    
+    cdef long temp, temp2
+    cdef long[::1] ind = A.indices
+    cdef long[::1] ptr_in = A.indptr
+    cdef cnp.ndarray[long, ndim=1, mode='c'] ptr_out = np.zeros(nrowout+1,dtype=np.int64)
+
     A._shape = (nrowout, ncolout)
     if insertcol == 0:
         pass
@@ -57,8 +57,8 @@ def cy_pad_csr(object A, int row_scale, int col_scale, int insertrow=0, int inse
             ind[kk] += temp
     else:
         raise ValueError("insertcol must be >= 0 and < col_scale")
-        
-    
+
+
     if insertrow == 0:
         temp = ptr_in[nrowin]
         for kk in range(nrowin):
@@ -70,7 +70,7 @@ def cy_pad_csr(object A, int row_scale, int col_scale, int insertrow=0, int inse
         temp = (row_scale - 1) * nrowin
         for kk in range(temp, nrowout+1):
             ptr_out[kk] = ptr_in[kk-temp]
-    
+
     elif insertrow > 0 and insertrow < row_scale - 1:
         temp = insertrow*nrowin
         for kk in range(temp, temp+nrowin):
@@ -78,10 +78,10 @@ def cy_pad_csr(object A, int row_scale, int col_scale, int insertrow=0, int inse
         temp = kk+1
         temp2 = ptr_in[nrowin]
         for kk in range(temp, nrowout+1):
-            ptr_out[kk] = temp2     
+            ptr_out[kk] = temp2
     else:
         raise ValueError("insertrow must be >= 0 and < row_scale")
 
     A.indptr = ptr_out
-    
+
     return A

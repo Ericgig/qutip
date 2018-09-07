@@ -1525,8 +1525,8 @@ def _generate_A_ops_Euler(sc, L, dt):
     out1 += [[] for n in range(A_len - 1)]
 
     # XXX: fix this!
-    out1[0][0].indices = np.array(out1[0][0].indices, dtype=np.int32)
-    out1[0][0].indptr = np.array(out1[0][0].indptr, dtype=np.int32)
+    out1[0][0].indices = np.array(out1[0][0].indices, dtype=np.int64)
+    out1[0][0].indptr = np.array(out1[0][0].indptr, dtype=np.int64)
 
     return out1
 
@@ -1549,8 +1549,8 @@ def _generate_A_ops_Milstein(sc, L, dt):
     out1 += [[] for n in range(A_len - 1)]
 
     # XXX: fix this!
-    out1[0][0].indices = np.array(out1[0][0].indices, dtype=np.int32)
-    out1[0][0].indptr = np.array(out1[0][0].indptr, dtype=np.int32)
+    out1[0][0].indices = np.array(out1[0][0].indices, dtype=np.int64)
+    out1[0][0].indptr = np.array(out1[0][0].indptr, dtype=np.int64)
 
     return out1
 

@@ -67,8 +67,12 @@ def test_graph_bfs():
     A = rand_dm(25, 0.5)
     A = A.data
     A.data = np.real(A.data)
+    B = A.copy()
+    B.data = B.data.real
+    B.indices = B.indices.astype(np.int32)
+    B.indptr = B.indptr.astype(np.int32)
     seed = np.random.randint(24)
-    arr1 = BFO(A, seed)[0]
+    arr1 = BFO(B, seed)[0]
     arr2 = breadth_first_search(A, seed)[0]
     assert_equal((arr1 - arr2).all(), 0)
 

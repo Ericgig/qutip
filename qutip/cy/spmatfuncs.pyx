@@ -3,11 +3,11 @@
 #    Copyright (c) 2011 and later, Paul D. Nation and Robert J. Johansson.
 #    All rights reserved.
 #
-#    Redistribution and use in source and binary forms, with or without 
-#    modification, are permitted provided that the following conditions are 
+#    Redistribution and use in source and binary forms, with or without
+#    modification, are permitted provided that the following conditions are
 #    met:
 #
-#    1. Redistributions of source code must retain the above copyright notice, 
+#    1. Redistributions of source code must retain the above copyright notice,
 #       this list of conditions and the following disclaimer.
 #
 #    2. Redistributions in binary form must reproduce the above copyright
@@ -18,16 +18,16 @@
 #       of its contributors may be used to endorse or promote products derived
 #       from this software without specific prior written permission.
 #
-#    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
+#    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 #    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-#    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
-#    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
-#    HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
-#    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
-#    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
-#    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
-#    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
-#    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+#    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+#    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+#    HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+#    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+#    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+#    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 import numpy as np
@@ -37,8 +37,8 @@ cimport libc.math
 from libcpp cimport bool
 
 cdef extern from "src/zspmv.hpp" nogil:
-    void zspmvpy(double complex *data, int *ind, int *ptr, double complex *vec, 
-                double complex a, double complex *out, int nrows)
+    void zspmvpy(double complex *data, long *ind, long *ptr, double complex *vec,
+                double complex a, double complex *out, long nrows)
 
 include "complex_math.pxi"
 
@@ -48,34 +48,42 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] spmv(
         object super_op,
         complex[::1] vec):
     """
-    Sparse matrix, dense vector multiplication.  
+    Sparse matrix, dense vector multiplication.
     Here the vector is assumed to have one-dimension.
     Matrix must be in CSR format and have complex entries.
-    
+
     Parameters
     ----------
     super_op : csr matrix
     vec : array
         Dense vector for multiplication.  Must be one-dimensional.
-    
+
     Returns
     -------
     out : array
         Returns dense array.
-    
+
     """
-    return spmv_csr(super_op.data, super_op.indices, super_op.indptr, vec)
+    cdef long[::1] idx
+    cdef long[::1] ptr
+    if super_op.indices.dtype != np.int64:
+      idx = super_op.indices.astype(np.int64)
+      ptr = super_op.indptr.astype(np.int64)
+    else:
+      idx = super_op.indices
+      ptr = super_op.indptr
+    return spmv_csr(super_op.data, idx, ptr, vec)
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef cnp.ndarray[complex, ndim=1, mode="c"] spmv_csr(complex[::1] data,
-            int[::1] ind, int[::1] ptr, complex[::1] vec):
+            long[::1] ind, long[::1] ptr, complex[::1] vec):
     """
-    Sparse matrix, dense vector multiplication.  
+    Sparse matrix, dense vector multiplication.
     Here the vector is assumed to have one-dimension.
     Matrix must be in CSR format and have complex entries.
-    
+
     Parameters
     ----------
     data : array
@@ -86,14 +94,14 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] spmv_csr(complex[::1] data,
         Pointers for sparse matrix data.
     vec : array
         Dense vector for multiplication.  Must be one-dimensional.
-    
+
     Returns
     -------
     out : array
         Returns dense array.
-    
+
     """
-    cdef unsigned int num_rows = ptr.shape[0] - 1
+    cdef unsigned long num_rows = ptr.shape[0] - 1
     cdef cnp.ndarray[complex, ndim=1, mode="c"] out = np.zeros((num_rows), dtype=np.complex)
     zspmvpy(&data[0], &ind[0], &ptr[0], &vec[0], 1.0, &out[0], num_rows)
     return out
@@ -101,10 +109,10 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] spmv_csr(complex[::1] data,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def spmvpy_csr(complex[::1] data,
-            int[::1] ind, int[::1] ptr, complex[::1] vec, 
+            long[::1] ind, long[::1] ptr, complex[::1] vec,
             complex alpha, complex[::1] out):
     """
-    Sparse matrix, dense vector multiplication.  
+    Sparse matrix, dense vector multiplication.
     Here the vector is assumed to have one-dimension.
     Matrix must be in CSR format and have complex entries.
 
@@ -124,18 +132,18 @@ def spmvpy_csr(complex[::1] data,
         Output array
 
     """
-    cdef unsigned int num_rows = vec.shape[0]
+    cdef unsigned long num_rows = vec.shape[0]
     zspmvpy(&data[0], &ind[0], &ptr[0], &vec[0], alpha, &out[0], num_rows)
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline void spmvpy(complex * data, int * ind, int * ptr,
+cdef inline void spmvpy(complex * data, long * ind, long * ptr,
             complex * vec,
             complex a,
             complex * out,
-            unsigned int nrows):
-    
+            unsigned long nrows):
+
     zspmvpy(data, ind, ptr, vec, a, out, nrows)
 
 
@@ -143,13 +151,13 @@ cdef inline void spmvpy(complex * data, int * ind, int * ptr,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_rhs(
-        double t, 
+        double t,
         complex[::1] rho,
         complex[::1] data,
-        int[::1] ind,
-        int[::1] ptr):
+        long[::1] ind,
+        long[::1] ptr):
 
-    cdef unsigned int nrows = rho.shape[0]
+    cdef unsigned long nrows = rho.shape[0]
     cdef cnp.ndarray[complex, ndim=1, mode="c"] out = \
         np.zeros(nrows, dtype=complex)
     zspmvpy(&data[0], &ind[0], &ptr[0], &rho[0], 1.0, &out[0], nrows)
@@ -160,13 +168,21 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_rhs(
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_psi_func_td(
-        double t, 
-        cnp.ndarray[complex, ndim=1, mode="c"] psi, 
+        double t,
+        cnp.ndarray[complex, ndim=1, mode="c"] psi,
         object H_func,
         object args):
 
     H = H_func(t, args).data
-    return -1j * spmv_csr(H.data, H.indices, H.indptr, psi)
+    cdef long[::1] idx
+    cdef long[::1] ptr
+    if H.indices.dtype != np.int64:
+      idx = H.indices.astype(np.int64)
+      ptr = H.indptr.astype(np.int64)
+    else:
+      idx = H.indices
+      ptr = H.indptr
+    return -1j * spmv_csr(H.data, idx, ptr, psi)
 
 
 @cython.boundscheck(False)
@@ -178,7 +194,15 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_psi_func_td_with_state(
         object args):
 
     H = H_func(t, psi, args)
-    return -1j * spmv_csr(H.data, H.indices, H.indptr, psi)
+    cdef long[::1] idx
+    cdef long[::1] ptr
+    if H.indices.dtype != np.int64:
+      idx = H.indices.astype(np.int64)
+      ptr = H.indptr.astype(np.int64)
+    else:
+      idx = H.indices
+      ptr = H.indptr
+    return -1j * spmv_csr(H.data, idx, ptr, psi)
 
 
 @cython.boundscheck(False)
@@ -191,7 +215,15 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_rho_func_td(
         object args):
     cdef object L
     L = L0 + L_func(t, args).data
-    return spmv_csr(L.data, L.indices, L.indptr, rho)
+    cdef long[::1] idx
+    cdef long[::1] ptr
+    if L.indices.dtype != np.int64:
+      idx = L.indices.astype(np.int64)
+      ptr = L.indptr.astype(np.int64)
+    else:
+      idx = L.indices
+      ptr = L.indptr
+    return spmv_csr(L.data, idx, ptr, rho)
 
 
 @cython.boundscheck(False)
@@ -199,11 +231,17 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_rho_func_td(
 cpdef cy_expect_psi(object A, complex[::1] vec, bool isherm):
 
     cdef complex[::1] data = A.data
-    cdef int[::1] ind = A.indices
-    cdef int[::1] ptr = A.indptr
+    cdef long[::1] ind
+    cdef long[::1] ptr
+    if A.indices.dtype != np.int64:
+      ind = A.indices.astype(np.int64)
+      ptr = A.indptr.astype(np.int64)
+    else:
+      ind = A.indices
+      ptr = A.indptr
 
     cdef size_t row, jj
-    cdef int nrows = vec.shape[0]
+    cdef long nrows = vec.shape[0]
     cdef complex expt = 0, temp, cval
 
     for row in range(nrows):
@@ -222,13 +260,13 @@ cpdef cy_expect_psi(object A, complex[::1] vec, bool isherm):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef cy_expect_psi_csr(complex[::1] data,
-                        int[::1] ind,
-                        int[::1] ptr, 
+                        long[::1] ind,
+                        long[::1] ptr,
                         complex[::1] vec,
                         bool isherm):
 
     cdef size_t row, jj
-    cdef int nrows = vec.shape[0]
+    cdef long nrows = vec.shape[0]
     cdef complex expt = 0, temp, cval
 
     for row in range(nrows):
@@ -249,10 +287,17 @@ cpdef cy_expect_psi_csr(complex[::1] data,
 cpdef cy_expect_rho_vec(object super_op,
                         complex[::1] rho_vec,
                         int herm):
+    cdef long[::1] idx
+    cdef long[::1] ptr
+    if super_op.indices.dtype != np.int64:
+      idx = super_op.indices.astype(np.int64)
+      ptr = super_op.indptr.astype(np.int64)
+    else:
+      idx = super_op.indices
+      ptr = super_op.indptr
 
     return cy_expect_rho_vec_csr(super_op.data,
-                                 super_op.indices,
-                                 super_op.indptr,
+                                 idx, ptr,
                                  rho_vec,
                                  herm)
 
@@ -260,15 +305,15 @@ cpdef cy_expect_rho_vec(object super_op,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef cy_expect_rho_vec_csr(complex[::1] data,
-                             int[::1] idx,
-                             int[::1] ptr,
+                             long[::1] idx,
+                             long[::1] ptr,
                              complex[::1] rho_vec,
                              int herm):
-    
+
     cdef size_t row
-    cdef int jj,row_start,row_end
-    cdef int num_rows = rho_vec.shape[0]
-    cdef int n = <int>libc.math.sqrt(num_rows)
+    cdef long jj,row_start,row_end
+    cdef long num_rows = rho_vec.shape[0]
+    cdef long n = <long>libc.math.sqrt(num_rows)
     cdef complex dot = 0.0
 
     for row from 0 <= row < num_rows by n+1:
@@ -276,7 +321,7 @@ cpdef cy_expect_rho_vec_csr(complex[::1] data,
         row_end = ptr[row+1]
         for jj from row_start <= jj < row_end:
             dot += data[jj]*rho_vec[idx[jj]]
- 
+
     if herm == 0:
         return dot
     else:
@@ -287,21 +332,33 @@ cpdef cy_expect_rho_vec_csr(complex[::1] data,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef cy_spmm_tr(object op1, object op2, int herm):
-    
+
     cdef size_t row
     cdef complex tr = 0.0
 
-    cdef int col1, row1_idx_start, row1_idx_end
+    cdef long col1, row1_idx_start, row1_idx_end
     cdef complex[::1] data1 = op1.data
-    cdef int[::1] idx1 = op1.indices
-    cdef int[::1] ptr1 = op1.indptr
+    cdef long[::1] idx1
+    cdef long[::1] ptr1
+    if op1.indices.dtype != np.int64:
+      idx1 = op1.indices.astype(np.int64)
+      ptr1 = op1.indptr.astype(np.int64)
+    else:
+      idx1 = op1.indices
+      ptr1 = op1.indptr
 
-    cdef int col2, row2_idx_start, row2_idx_end
+    cdef long col2, row2_idx_start, row2_idx_end
     cdef complex[::1] data2 = op2.data
-    cdef int[::1] idx2 = op2.indices
-    cdef int[::1] ptr2 = op2.indptr
+    cdef long[::1] idx2
+    cdef long[::1] ptr2
+    if op2.indices.dtype != np.int64:
+      idx2 = op2.indices.astype(np.int64)
+      ptr2 = op2.indptr.astype(np.int64)
+    else:
+      idx2 = op2.indices
+      ptr2 = op2.indptr
 
-    cdef int num_rows = ptr1.shape[0]-1
+    cdef long num_rows = ptr1.shape[0]-1
 
     for row in range(num_rows):
 
@@ -318,7 +375,7 @@ cpdef cy_spmm_tr(object op1, object op2, int herm):
                 if col2 == row:
                     tr += data1[row1_idx] * data2[row2_idx]
                     break
- 
+
     if herm == 0:
         return tr
     else:
@@ -328,16 +385,27 @@ cpdef cy_spmm_tr(object op1, object op2, int herm):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def expect_csr_ket(object A, object B, int isherm):  
+def expect_csr_ket(object A, object B, int isherm):
 
-    cdef complex[::1] Adata = A.data 
-    cdef int[::1] Aind = A.indices
-    cdef int[::1] Aptr = A.indptr 
+    cdef complex[::1] Adata = A.data
+    cdef long[::1] Aind
+    cdef long[::1] Aptr
+    if A.indices.dtype != np.int64:
+      Aind = A.indices.astype(np.int64)
+      Aptr = A.indptr.astype(np.int64)
+    else:
+      Aind = A.indices
+      Aptr = A.indptr
+
     cdef complex[::1] Bdata = B.data
-    cdef int[::1] Bptr = B.indptr
-    cdef int nrows = A.shape[0]
+    cdef long[::1] Bptr
+    cdef long nrows = A.shape[0]
+    if B.indices.dtype != np.int64:
+      Bptr = B.indptr.astype(np.int64)
+    else:
+      Bptr = B.indptr
 
-    cdef int j
+    cdef long j
     cdef size_t ii, jj
     cdef double complex cval=0, row_sum, expt = 0
 
@@ -366,20 +434,38 @@ cpdef double complex zcsr_mat_elem(object A, object left, object right, bool bra
     is bra then bra_ket = 1, else set bra_ket = 0.
     """
     cdef complex[::1] Adata = A.data
-    cdef int[::1] Aind = A.indices
-    cdef int[::1] Aptr = A.indptr
-    cdef int nrows = A.shape[0]
+    cdef long[::1] Aind
+    cdef long[::1] Aptr
+    cdef long nrows = A.shape[0]
+    if A.indices.dtype != np.int64:
+      Aind = A.indices.astype(np.int64)
+      Aptr = A.indptr.astype(np.int64)
+    else:
+      Aind = A.indices
+      Aptr = A.indptr
 
     cdef complex[::1] Ldata = left.data
-    cdef int[::1] Lind = left.indices
-    cdef int[::1] Lptr = left.indptr
-    cdef int Lnnz = Lind.shape[0]
+    cdef long[::1] Lind
+    cdef long[::1] Lptr
+    if left.indices.dtype != np.int64:
+      Lind = left.indices.astype(np.int64)
+      Lptr = left.indptr.astype(np.int64)
+    else:
+      Lind = left.indices
+      Lptr = left.indptr
+    cdef long Lnnz = Lind.shape[0]
 
     cdef complex[::1] Rdata = right.data
-    cdef int[::1] Rind = right.indices
-    cdef int[::1] Rptr = right.indptr
+    cdef long[::1] Rind
+    cdef long[::1] Rptr
+    if right.indices.dtype != np.int64:
+      Rind = right.indices.astype(np.int64)
+      Rptr = right.indptr.astype(np.int64)
+    else:
+      Rind = right.indices
+      Rptr = right.indptr
 
-    cdef int j, go, head=0
+    cdef long j, go, head=0
     cdef size_t ii, jj, kk
     cdef double complex cval=0, row_sum, mat_elem=0
 
@@ -403,5 +489,5 @@ cpdef double complex zcsr_mat_elem(object A, object left, object right, bool bra
                 if (Rptr[j] - Rptr[j+1]) != 0:
                     row_sum += Adata[jj]*Rdata[Rptr[j]]
             mat_elem += cval*row_sum
-    
+
     return mat_elem
