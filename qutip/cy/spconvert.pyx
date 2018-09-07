@@ -210,9 +210,6 @@ def zcsr_reshape(object A not None, long new_rows, long new_cols):
 
     cdef CSR_Matrix inmat = CSR_from_scipy(A)
     cdef COO_Matrix mat
-    print("after")
-    import time
-    #time.sleep(1)
     CSR_to_COO(&mat, &inmat)
     cdef CSR_Matrix out
     cdef div_t new_inds

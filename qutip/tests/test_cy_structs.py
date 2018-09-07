@@ -57,6 +57,8 @@ def test_coo2csr_struct():
     for k in range(20):
         A = rand_dm(5,0.5).data
         B = A.tocoo()
+        B.row = B.row.astype(np.int64)
+        B.col = B.col.astype(np.int64)
         C = _test_coo2csr_struct(B)
         assert_(not (A!=C).data.any())
 
@@ -70,7 +72,7 @@ def test_indices_sort():
         B.sort_indices()
         _test_sorting(A)
         assert_(np.all(A.data == B.data))
-        assert_(np.all(A.indices == B.indices))   
+        assert_(np.all(A.indices == B.indices))
 
 
 def test_coo2csr_inplace_nosort():
@@ -78,28 +80,34 @@ def test_coo2csr_inplace_nosort():
     for k in range(20):
         A = rand_dm(5,0.5).data
         B = A.tocoo()
+        B.row = B.row.astype(np.int64)
+        B.col = B.col.astype(np.int64)
         C = _test_coo2csr_inplace_struct(B, sorted = 0)
         assert_(not (A!=C).data.any())
-        
+
 
 def test_coo2csr_inplace_sort():
     "Cython structs : COO to CSR inplace (sorted)"
     for k in range(20):
         A = rand_dm(5,0.5).data
         B = A.tocoo()
+        B.row = B.row.astype(np.int64)
+        B.col = B.col.astype(np.int64)
         C = _test_coo2csr_inplace_struct(B, sorted = 1)
         assert_(not (A!=C).data.any())
-        
-        
+
+
 def test_csr2coo():
     "Cython structs : CSR to COO"
     for k in range(20):
         A = rand_dm(5,0.5).data
         B = A.tocoo()
+        B.row = B.row.astype(np.int64)
+        B.col = B.col.astype(np.int64)
         C = _test_csr2coo_struct(A)
         assert_(not (B!=C).data.any())
-        
-         
+
+
 
 if __name__ == "__main__":
     run_module_suite()

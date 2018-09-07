@@ -422,7 +422,7 @@ cdef void COO_to_CSR(CSR_Matrix * out, COO_Matrix * mat):
         out.indptr[kk] = out.indptr[kk-1]
     out.indptr[0] = 0
 
-#import time
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void CSR_to_COO(COO_Matrix * out, CSR_Matrix * mat):
@@ -432,23 +432,14 @@ cdef void CSR_to_COO(COO_Matrix * out, CSR_Matrix * mat):
     cdef long k1, k2
     cdef size_t jj, kk
     init_COO(out, mat.nnz, mat.nrows, mat.ncols)
-    #print(mat.nnz, mat.nrows, mat.ncols)
-    #time.sleep(1)
     for kk in range(mat.nnz):
         out.data[kk] = mat.data[kk]
         out.cols[kk] = mat.indices[kk]
-    #print(kk, mat.nrows)
-    #time.sleep(1)
     for kk in range(mat.nrows-1,0,-1):
         k1 = mat.indptr[kk+1]
         k2 = mat.indptr[kk]
-        #print(kk, k2, k1)
-        #time.sleep(0.05)
         for jj in range(k2, k1):
             out.rows[jj] = kk
-    #print(jj)
-    #time.sleep(1)
-
 
 
 @cython.boundscheck(False)
@@ -570,17 +561,12 @@ cdef CSR_Matrix CSR_from_scipy(object A):
     cdef long nnz = A.indptr[nrows]
     cdef long[::1] ind # = A.indices
     cdef long[::1] ptr # = A.indptr
-    if A.indices.dtype != np.int64:
-      #print(nrows)
-      #print(ncols)
-      mat.indices_data = A.indices.astype(np.int64)
+    if False: #A.indices.dtype != np.int64:
+      pass
+      """mat.indices_data = A.indices.astype(np.int64)
       mat.indptr_data = A.indptr.astype(np.int64)
       mat.indices = &mat.indices_data[0]
-      #print(mat.indices[0], mat.indices_data[0])
-      #print(mat.indices[A.indices.shape[0]-1], mat.indices_data[A.indices.shape[0]-1])
-      mat.indptr = &mat.indptr_data[0]
-      #print(mat.indptr[0], mat.indptr_data[0])
-      #print(mat.indptr[nnz], mat.indptr_data[nnz])
+      mat.indptr = &mat.indptr_data[0]"""
     else:
       ind = A.indices
       ptr = A.indptr
@@ -620,11 +606,12 @@ cdef COO_Matrix COO_from_scipy(object A):
     else:
       rows = A.row
       cols = A.col"""
-    if A.row.dtype != np.int64:
-      mat.rows_data = A.row.astype(np.int64)
-      mat.cols_data = A.col.astype(np.int64)
-      mat.rows = &mat.rows_data[0]
-      mat.cols = &mat.cols_data[0]
+    if False: #A.row.dtype != np.int64:
+      pass
+      #mat.rows_data = A.row.astype(np.int64)
+      #mat.cols_data = A.col.astype(np.int64)
+      #mat.rows = &mat.rows_data[0]
+      #mat.cols = &mat.cols_data[0]
     else:
       rows = A.row
       cols = A.col

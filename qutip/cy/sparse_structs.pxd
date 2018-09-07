@@ -36,8 +36,8 @@ cdef struct _csr_mat:
     double complex * data
     long * indices
     long * indptr
-    long[::1] indices_data
-    long[::1] indptr_data
+    #long[::1] indices_data
+    #long[::1] indptr_data
     long nnz
     long nrows
     long ncols
@@ -49,8 +49,8 @@ cdef struct _coo_mat:
     double complex * data
     long * rows
     long * cols
-    long[::1] rows_data
-    long[::1] cols_data
+    #long[::1] rows_data
+    #long[::1] cols_data
     long nnz
     long nrows
     long ncols
