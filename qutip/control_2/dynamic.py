@@ -327,10 +327,12 @@ class dynamics:
         mode :: str
             Tag of the fidelity computation
             State evolution:
-                "SU":   real(<target,final>)
-                "PSU":  abs(<target,final>)
-                "PSU2": abs(<target,final>)**2
-                "Diff": abs(target-final)**2
+                "SU":    real(<target,final>)
+                "PSU":   abs(<target,final>)
+                "PSU2":  abs(<target,final>)**2
+                "Diff":  abs(target-final)**2
+                "SuTr":  tr(target*final)
+                "SuFid": density matrix fidelity as computed by qutip.fidelity
 
             Operator evolution:
                 "TrDiff":   real(<target,final>)
@@ -425,6 +427,7 @@ class dynamics:
         """
 
     def report(self):
+        # Todo: print to logger
         for line in self.options_list:
             print(line)
 
@@ -543,8 +546,10 @@ class dynamics:
                                                              self.mode)]
                     self.options_list += ["Cost computer: FidCompOperator "
                                           + self.mode]
+
         if self.other_cost:
             self.costcomp += self.other_cost
+
         if self.psi0 is None:
             self.x0 = np.random.rand(self._x_shape)
             self.options_list = ["Setting random starting amplitude"]
@@ -564,6 +569,7 @@ class dynamics:
                 raise Exception("x0 bad shape")
         self.x_ = self.x0 * np.inf
         self.gradient_x = False
+
         self.solver = optimize.Optimizer(self._error, self._gradient, self.x0,
                                          self.stats, self._compute_stats)
         self.solver.add_bounds(self.transfer_function.get_xlimit())

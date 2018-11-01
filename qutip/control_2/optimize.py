@@ -509,7 +509,6 @@ class Optimizer(object):
             raise solverEnd()
 
 
-
 class OptimizerCrab(Optimizer):
     """
     Optimises the pulse using the CRAB algorithm [1].

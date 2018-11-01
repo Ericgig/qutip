@@ -79,7 +79,7 @@ def rhoProdTrace(rho0, rho1, N=None):
         N = int(np.sqrt(rho0.shape[0]))
     trace = 0.
     for i,j in itertools.product(range(N),range(N)):
-        trace += rho0[i*N+j]*rho1[j*N+i]
+        trace += rho0[i*N+j] * rho1[j*N+i]
     return trace
 
 def rhoFidelityMatrix(sqrtRhoTarget, rhoFinal):
@@ -129,6 +129,7 @@ class FidCompState():
                 PSU - global phase ignored
                 PSU2 - global phase ignored
                 SU - global phase included
+                Diff - global phase included
                 SuTr - simple rho trace
                 SuFid - density matrix fidelity as computed by qutip.fidelity
         """
@@ -247,6 +248,7 @@ class FidCompStateEarly():
                 PSU - global phase ignored
                 PSU2 - global phase ignored
                 SU - global phase included
+                Diff - global phase included
         """
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
@@ -344,6 +346,7 @@ class FidCompStateForbidden():
                 PSU - global phase ignored
                 PSU2 - global phase ignored
                 SU - global phase included
+                Diff - global phase included
         """
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl

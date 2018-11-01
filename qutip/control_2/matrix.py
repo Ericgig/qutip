@@ -93,13 +93,13 @@ class falselist2d_cte:
     """
     def __init__(self, data, N):
         self.data = data
-        self.shape = (N,len(data))
+        self.shape = (N, len(data))
 
-    def __getitem__(self, t):
-        return self.data[t[1]]
+    def __getitem__(self, key):
+        return self.data[key[1]]
 
     def __len__(self):
-        return len(self.shape[0]*self.shape[1])
+        return len(self.shape[0] * self.shape[1])
 
 class falselist2d_func:
     """

@@ -186,15 +186,28 @@ class TimeslotComputer(object):
                 self._dyn_gen[t] += self._ctrl_amps[t,i] * self.ctrl[t, i]
 
     def state_T(self, T_target):
+        """
+        return the state at given time T_target (int)
+        """
         pass
 
     def forward(self, T_targets):
+        """
+        generator for the states at given times given by T_targets (list of ints)
+        """
         pass
 
     def reversed(self, target=False):
+        """
+        generator for T, back_probagator, [Dprop/Dctrl] at T, prop at T, fwd_probagator
+        """
         pass
 
     def reversed_cumulative(self, target=False, times=None, phase=None):
+        """
+        generator for T, back_probagator, [Dprop/Dctrl] at T, prop at T, fwd_probagator
+        but back_probagator = sum( final(T_i)*prop(T_i-1)...*prop(T+1) for T_i in T_targets
+        """
         pass
 
 
