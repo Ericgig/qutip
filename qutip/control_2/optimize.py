@@ -318,7 +318,7 @@ class Optimizer(object):
             self.method = method
 
         if isinstance(params, dict):
-            for key, val in params.items:
+            for key, val in params.items():
                 if key in self.termination_conditions:
                     self.termination_conditions[key] = val
                 else:

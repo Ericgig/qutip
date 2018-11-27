@@ -74,7 +74,7 @@ spec = importlib.util.spec_from_file_location("fidcomp", moduleName)
 fidcomp = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fidcomp)
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/transfer_functions.py"
+moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/transfer_function.py"
 spec = importlib.util.spec_from_file_location("transfer_functions", moduleName)
 transfer_functions = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(transfer_functions)
@@ -444,7 +444,7 @@ class dynamics:
         if self.t_data is None:
             self.t_data = np.linspace(0,1,11)
         self._x_shape, self.time = \
-                self.transfer_function.set_times(self.t_data, num_ctrl=self._num_ctrls)
+                self.transfer_function.set_times(self.t_data, num_ctrls=self._num_ctrls)
         self._num_tslots = len(self.time)-1
         self.bound = self.transfer_function.get_xlimit()
         self._tau = np.diff(self.time)
@@ -588,7 +588,11 @@ class dynamics:
         self.solver.run_optimization(result)
 
         result.evo_full_final = self.tslotcomp.state_T(self._num_tslots)
+        result.plotPulse = lambda : self.transfer_function.plotPulse(result.final_x)
+        result.final_amps = self.transfer_function.originalTimesAmps(result.final_x)
         result.final_amps = self.transfer_function(result.final_x)
+        result.final_smooted_amps, result.smooted_times = \
+                self.transfer_function.interpolatedAmpsAndTimes(result.final_x)
 
         return result
 

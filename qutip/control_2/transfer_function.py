@@ -176,7 +176,7 @@ class transfer_functions:
             elif isinstance(self.x_max, np.ndarray):
                 if self.x_max.shape == (self.num_x,self.num_ctrls):
                     pass
-                elif self.x_max.shape == (self.num_x) or
+                elif self.x_max.shape == (self.num_x) or \
                         self.x_max.shape == (self.num_x, 1):
                     self.x_max = np.einsum("i,j->ij",
                                                  np.ones(self.num_x),
@@ -194,7 +194,7 @@ class transfer_functions:
             elif isinstance(self.x_min, np.ndarray):
                 if self.x_min.shape == (self.num_x,self.num_ctrls):
                     pass
-                elif self.x_min.shape == (self.num_x) or
+                elif self.x_min.shape == (self.num_x) or \
                         self.x_min.shape == (self.num_x, 1):
                     self.x_min = np.einsum("i,j->ij",
                                                  np.ones(self.num_x),
@@ -216,6 +216,18 @@ class transfer_functions:
             plt.bar(t, u[:,i], dt)
             plt.bar(xt, x[:,i], dxt, fill=False)
             plt.show()
+
+    def originalTimesAmps(self, x):
+        """
+        Amps as a function to the given times.
+        """
+        return x, self.xtimes
+
+    def interpolatedAmpsAndTimes(self, x):
+        """
+        Amps as a function to the given times.
+        """
+        return self(x), self.times
 
     def get_xlimit(self):
         """
@@ -270,7 +282,7 @@ class transfer_functions:
             if amplitudes.shape[1] != self.num_ctrls:
                 raise Exception("amplitudes' shape must be (Nt, num_ctrls)")
 
-            if times == target_time:
+            if np.all(times == target_time):
                 target = amplitudes
             else:
                 target = np.zeros((len(target_time),self.num_ctrls))
@@ -414,6 +426,12 @@ class fourrier(transfer_functions):
             plt.bar(t, u[:,i], dt)
             plt.title("Amplidutes")
             plt.show()
+
+    def originalTimesAmps(self, x):
+        """
+        Amps as a function to the given times.
+        """
+        return self(x), self.xtimes
 
 class spline(transfer_functions):
     """

@@ -17,7 +17,7 @@ spec = importlib.util.spec_from_file_location("optimize", moduleName)
 optimize = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(optimize)"""
 
-def grape_unitary(H, ctrls, target=None, times=None,
+def grape_unitary(H, ctrls, target, times=None,
                   u_start=None, u_limits=None, phase_sensitive=False,
                   run=True):
     """

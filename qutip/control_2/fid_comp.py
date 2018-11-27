@@ -454,6 +454,8 @@ class FidCompOperator():
         self.target = target
         self.mode = mode
 
+        scale_factor = 0 # Remove ? ToDo
+
         if mode=="TrDiff":
             if not scale_factor:
                 self.scale_factor = 1.0 / (2.0*self.target.data.shape[0])
@@ -553,6 +555,8 @@ class FidCompOperatorEarly():
         self.num_tslots = self.tslotcomp.n_t
         self.target = target
         self.mode = mode
+
+        scale_factor = 0 # Remove ? ToDo
 
         if times is None:
             times = np.arange(self.num_tslots, dtype=int)[::-1]+1
@@ -688,6 +692,8 @@ class FidCompOperatorForbidden():
         self.num_tslots = self.tslotcomp.n_t
         self.target = forbidden
         self.mode = mode
+
+        scale_factor = 0 # Remove ? ToDo
 
         if times is None:
             times = np.arange(self.num_tslots, dtype=int)[::-1]+1
