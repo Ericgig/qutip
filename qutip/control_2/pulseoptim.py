@@ -546,7 +546,7 @@ def optimize_pulse(
             except:
                 ctrls = np.array([[omg * H_ for H_ in H__]
                                     for H__ in _check_ctrls_container(ctrls)])
-        if symplectic == 'preop':
+        else: #if symplectic == 'preop':
             omg *= -1
             if H_td:
                 drift = H*omg

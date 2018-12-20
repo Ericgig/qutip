@@ -90,14 +90,15 @@ import timeit
 # QuTiP
 from qutip import Qobj
 # QuTiP control modules
-import qutip.control.errors as errors
-import qutip.control.dump as qtrldump
+# import qutip.control.errors as errors
+# import qutip.control.dump as qtrldump
 # QuTiP logging
 import qutip.logging_utils as logging
 logger = logging.get_logger()
 
 import importlib
 import importlib.util
+
 moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/matrix.py"
 spec = importlib.util.spec_from_file_location("mat", moduleName)
 mat = importlib.util.module_from_spec(spec)
@@ -105,11 +106,12 @@ spec.loader.exec_module(mat)
 control_dense = mat.control_dense
 control_sparse = mat.control_sparse
 
+"""
 def _is_unitary(prop):
-    """
+    ""
     Checks whether operator A is unitary
     A can be either Qobj or ndarray
-    """
+    ""
     if isinstance(A, Qobj):
         unitary = np.allclose(np.eye(A.shape[0]), A*A.dag().full(),
                     atol=self.unitarity_tol)
@@ -126,27 +128,29 @@ def _calc_unitary_err(prop):
     return err
 
 def unitarity_check(props):
-    """
+    ""
     Checks whether all propagators are unitary
-    """
+    ""
     for k in range(self.num_tslots):
         if not self._is_unitary(self._prop[k]):
             pass
+"""
 
 shape_c = [(0,0)]
-def d2c(d_vec, N=0):
+def _d2c(d_vec, N=0):
     if N==0:
         N=len(d_vec)//2
     c_vec = d_vec[:N]+1j*d_vec[N:]
-    try:
+    return c_vec.reshape(shape_c[0])
+    """try:
         return c_vec.reshape(shape_c[0])
     except:
         print(N)
         print(d_vec)
         print(c_vec)
-        print(shape_c[0])
+        print(shape_c[0])"""
 
-def c2d(c_vec, N=0):
+def _c2d(c_vec, N=0):
     shape_c[0] = c_vec.shape
     c_vec = c_vec.flatten()
     if N==0:
@@ -159,7 +163,41 @@ def c2d(c_vec, N=0):
 
 class TimeslotComputer(object):
     """
-    Base class for all Timeslot Computers
+    Base class for Timeslot Computers
+
+    Parameters
+    ----------
+    H : control_matrix
+        drift operator
+    ctrl : array/falselist_2d of control_matrix
+        ctrls operator as an array of shape n_t, num_ctrl.
+    initial : np.array
+        state at the begining of the evolution
+    tau : list of double
+        interval of each
+    n_t : int
+        number of time slice
+    num_ctrl : int
+        number of control operators
+
+    Methods
+    -------
+    set(u):
+        Take the control amplitudes
+    state_T(T):
+        Return the state at a time slice.
+    forward(Ts):
+        Yield the states at each time slice in the list.
+    reversed(target=False)
+        Yield a tuple composed of:
+            timeslice number,
+            backward propagations from target,
+            propagators derrivative for each control operator,
+            propagators,
+            forward propagations
+        for each timeslice.
+    reversed_cumulative(target=False, times=None, phase=None)
+        reversed with multiple target times.
     """
     def __init__(self, H, ctrl, initial, tau, n_t, num_ctrl):
         self.id_text = 'TS_COMP_BASE'
@@ -448,10 +486,10 @@ class TSComp_Int(TimeslotComputer):
         self.T = 0
         dt = min(self.tau)/10
         def f(x,t):
-            x_complex = d2c(x)
+            x_complex = _d2c(x)
             ti = np.searchsorted(self.times[1:-1],t+dt)
             try:
-                return c2d((self._dyn_gen[ti]*x_complex))
+                return _c2d((self._dyn_gen[ti]*x_complex))
             except:
                 print(t,ti,self.times)
                 print(self._dyn_gen[ti]*x_complex)
@@ -476,10 +514,10 @@ class TSComp_Int(TimeslotComputer):
         self._compute_gen()
         self.T = T_target
         res = sc.integrate.odeint(self.int_func,
-                                  c2d(self.initial),
+                                  _c2d(self.initial),
                                   self.times)
-        self.final = d2c(res[-1])
-        self.fwd = [d2c(state) for state in res]
+        self.final = _d2c(res[-1])
+        self.fwd = [_d2c(state) for state in res]
         return self.final
 
     def forward(self, T_targets):
@@ -488,12 +526,12 @@ class TSComp_Int(TimeslotComputer):
         self.T = T_targets[-1]
         times = self.times[:self.T+1]
         res = sc.integrate.odeint(self.int_func,
-                                  c2d(self.initial),
+                                  _c2d(self.initial),
                                   times)
-        self.final = d2c(res[-1])
-        self.fwd = [d2c(state) for state in res]
+        self.final = _d2c(res[-1])
+        self.fwd = [_d2c(state) for state in res]
         for i in T_targets:
-            yield d2c(res[i])
+            yield _d2c(res[i])
 
     def reversed(self, target=None):
         if target is None:
@@ -507,11 +545,11 @@ class TSComp_Int(TimeslotComputer):
                 back = target.conj()
 
         times = self.times[::-1]
-        back = sc.integrate.odeint(self.int_func, c2d(back), times)
+        back = sc.integrate.odeint(self.int_func, _c2d(back), times)
         for t in range(self.T-1,-1,-1):
             _dU = [self._dyn_gen[t].dexp(self.ctrl[t,i], self.tau[t])
                                 for i in range(self.num_ctrl)]
-            yield t, d2c(back[self.T-1-t]).conj(), _dU, None, self.fwd[t]
+            yield t, _d2c(back[self.T-1-t]).conj(), _dU, None, self.fwd[t]
 
     def reversed_cumulative(self, target=None, times=None, phase=None):
         if times is None:
@@ -538,14 +576,14 @@ class TSComp_Int(TimeslotComputer):
         ode_times = self.times[self.T-1::-1]
         i = 0
         ind = times.shape[0]-2
-        #back = sc.integrate.odeint(self.int_func, c2d(back), ode_times)
-        #back = [d2c(_back) for _back in back][::-1]
+        #back = sc.integrate.odeint(self.int_func, _c2d(back), ode_times)
+        #back = [_d2c(_back) for _back in back][::-1]
 
         for t in range(self.T-1,-1,-1):
             _dU = [self._dyn_gen[t].dexp(self.ctrl[t,i], self.tau[t])
                                 for i in range(self.num_ctrl)]
             yield t, back.conj(), _dU, None, self.fwd[t]
-            back = d2c(sc.integrate.odeint(self.int_func, c2d(back),
+            back = _d2c(sc.integrate.odeint(self.int_func, _c2d(back),
                                            ode_times[i:i+2])[-1])
             i += 1
             if t in times:
@@ -577,7 +615,7 @@ class TSComp_Int(TimeslotComputer):
                 ind = 0
                 back = back + target*phase[ind]
                 ode_times = range(times[ii], times[ii]-1, -1)
-                back = d2c(sc.integrate.odeint(self.int_func,
-                                               c2d(back),
+                back = _d2c(sc.integrate.odeint(self.int_func,
+                                               _c2d(back),
                                                ode_times)[-1])
         """

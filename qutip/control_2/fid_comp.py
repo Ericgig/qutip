@@ -74,7 +74,9 @@ logger = logging.get_logger()
 import qutip.control.errors as errors
 
 
-def rhoProdTrace(rho0, rho1, N=None):
+def _rhoProdTrace(rho0, rho1, N=None):
+    """tr(rho1*rho0)
+    """
     if N is None:
         N = int(np.sqrt(rho0.shape[0]))
     trace = 0.
@@ -82,10 +84,10 @@ def rhoProdTrace(rho0, rho1, N=None):
         trace += rho0[i*N+j] * rho1[j*N+i]
     return trace
 
-def rhoFidelityMatrix(sqrtRhoTarget, rhoFinal):
+def _rhoFidelityMatrix(sqrtRhoTarget, rhoFinal):
     return sqrtm(sqrtRhoTarget @ rhoFinal @ sqrtRhoTarget)
 
-def drhoFidelityMatrix(dx, sqrt_x, sqrt_inv_x, N=2):
+def _drhoFidelityMatrix(dx, sqrt_x, sqrt_inv_x, N=2):
     """
     Derivative of sqrt(x), x matrix
     I use iterative method:
@@ -103,9 +105,9 @@ def drhoFidelityMatrix(dx, sqrt_x, sqrt_inv_x, N=2):
     ds += (sqrt_inv_x@dxx + dxx@sqrt_inv_x)*0.25
     return np.trace(ds)
 
-def submatinv(m):
+def _submatinv(m):
     """
-    inverse of the matrix but only for the non-null line and column.
+    Inverse of the matrix but only for the non-null line and column.
     """
     #np.ix_(np.abs(m.diagonal())>1e-7,np.abs(m.diagonal())>1e-7)
     sub_ix = np.ix_(np.any(np.abs(m)>1e-7,axis=0),np.any(np.abs(m)>1e-7,axis=0))
@@ -113,6 +115,40 @@ def submatinv(m):
     minv[sub_ix] = inv(m[sub_ix])
     return minv
 
+class FidComp():
+    """
+    Parameters
+    ----------
+    tslotcomp : TimeslotComputer
+
+    target / forbidden : np.array
+
+    phase_option / mode :
+
+    times : list of double
+
+    weight : double / list of double
+
+    Attributes
+    ----------
+
+    Methods
+    -------
+    costs():
+
+    costs_t():
+
+    grad():
+
+    """
+    def __init__(self):
+        pass
+    def costs(self):
+        pass
+    def costs_t(self):
+        pass
+    def grad(self):
+        pass
 
 class FidCompState():
     def __init__(self, tslotcomp, target, phase_option):
@@ -174,10 +210,10 @@ class FidCompState():
             cost = np.real( np.dot(dvec.conj(),dvec)) / self.dimensional_norm
         elif self.SU == "SuTr":
             N = self.dimensional_norm
-            fidelity_prenorm = rhoProdTrace(self.target, self.final, N)
+            fidelity_prenorm = _rhoProdTrace(self.target, self.final, N)
             cost = 1 - np.real(fidelity_prenorm)
         elif self.SU == "SuFid":
-            self.fidmat = rhoFidelityMatrix(self.target_d, vec2mat(self.final))
+            self.fidmat = _rhoFidelityMatrix(self.target_d, vec2mat(self.final))
             fidelity_prenorm = np.trace(self.fidmat)
             cost = 1 - np.real(fidelity_prenorm)
         return cost
@@ -216,18 +252,18 @@ class FidCompState():
                         self.tslotcomp.reversed():
                 for j in range(n_ctrls):
                     dfinal = onto_evo @ (dU[j] * fwd_evo)
-                    grad[k, j] = -rhoProdTrace(self.target, dfinal,
+                    grad[k, j] = -_rhoProdTrace(self.target, dfinal,
                                                self.dimensional_norm)
             grad_normalized = np.real(grad)
         elif self.SU == "SuFid":
-            fidmatinv = submatinv(self.fidmat)
+            fidmatinv = _submatinv(self.fidmat)
             for k, onto_evo, dU, U, fwd_evo in \
                         self.tslotcomp.reversed():
                 for j in range(n_ctrls):
                     dfinal = self.target_d @ \
                              vec2mat(onto_evo @ (dU[j] * fwd_evo)) @ \
                              self.target_d
-                    grad[k, j] = -drhoFidelityMatrix(dfinal, self.fidmat,
+                    grad[k, j] = -_drhoFidelityMatrix(dfinal, self.fidmat,
                                                      fidmatinv)
             grad_normalized = np.real(grad)
 

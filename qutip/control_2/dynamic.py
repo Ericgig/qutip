@@ -35,7 +35,6 @@
 # @author: Alexander Pitchford
 # @author: Eric Giguère
 
-
 import os
 import warnings
 import numpy as np
@@ -112,14 +111,29 @@ class dynamics:
 
     * Other object do the actual computation to cover the multiple situations.
 
-    methods:
-        _error(x):
-            x: np.ndarray, state of the pulse
-            return 1-fidelity
-
-        _gradient(x):
-            x: np.ndarray, state of the pulse
-            return the error gradient
+    Methods
+    -------
+    set_physic(H, ctrls, initial=None, target=None)
+        Set the Hamiltonian, controled operators,
+        initial and target states/operator.
+    set_initial_state(u)
+        Set the pulse guess at the start of the optimization.
+    set_transfer_function(_transfer_function, **kwargs)
+        Set the function connecting the optimization varianble and the pulses.
+    set_times(times=None)
+        Set the times of the pulse.
+    set_amp_bound(amp_lbound=None, amp_ubound=None)
+        Add maximums and minimums to the pulse
+    set_stats(timings=1, states=1)
+        Choose how much statistics to saves.
+    set_cost(mode=None, early=False, weight=None)
+        Choose how the fidelity is computed.
+    report()
+        Print the options.
+    run()
+        Do the pulse optimization.
+    optimization(opt_mode="yet", mat_mode="", tslot_mode="")
+        Choose option relating to memory usage.
     """
     def __init__(self):
         # Main object
@@ -431,7 +445,28 @@ class dynamics:
         for line in self.options_list:
             print(line)
 
-    def prepare(self):
+    def run(self):
+        self._prepare()
+        self.report()
+        self.stats.options_list = self.options_list
+        result = OptimResult()
+        result.initial_amps = self.transfer_function(self.x0)
+        result.initial_x = self.x0*1.
+        result.initial_fid_err = self._error(self.x0)
+        result.evo_full_initial = self.tslotcomp.state_T(self._num_tslots)
+
+        self.solver.run_optimization(result)
+
+        result.evo_full_final = self.tslotcomp.state_T(self._num_tslots)
+        result.plotPulse = lambda : self.transfer_function.plotPulse(result.final_x)
+        result.final_amps = self.transfer_function.originalTimesAmps(result.final_x)
+        result.final_amps = self.transfer_function(result.final_x)
+        result.final_smooted_amps, result.smooted_times = \
+                self.transfer_function.interpolatedAmpsAndTimes(result.final_x)
+
+        return result
+
+    def _prepare(self):
         if self.stats is None:
             self.set_stats()
 
@@ -575,28 +610,7 @@ class dynamics:
         self.solver.add_bounds(self.transfer_function.get_xlimit())
         self.solver.apply_method_params(method=self.opt_method)
 
-    def run(self):
-        self.prepare()
-        self.report()
-        self.stats.options_list = self.options_list
-        result = OptimResult()
-        result.initial_amps = self.transfer_function(self.x0)
-        result.initial_x = self.x0*1.
-        result.initial_fid_err = self._error(self.x0)
-        result.evo_full_initial = self.tslotcomp.state_T(self._num_tslots)
-
-        self.solver.run_optimization(result)
-
-        result.evo_full_final = self.tslotcomp.state_T(self._num_tslots)
-        result.plotPulse = lambda : self.transfer_function.plotPulse(result.final_x)
-        result.final_amps = self.transfer_function.originalTimesAmps(result.final_x)
-        result.final_amps = self.transfer_function(result.final_x)
-        result.final_smooted_amps, result.smooted_times = \
-                self.transfer_function.interpolatedAmpsAndTimes(result.final_x)
-
-        return result
-
-    ### -------------------------- Computation part ---------------------------
+    ### -------------------------- Computation part --------------------------
     def _compute_stats(self, x):
         if not np.allclose(self.x_, x):
             self.gradient_x = False
@@ -731,7 +745,7 @@ class dynamicsCRAB(dynamics):
     def set_initial_state(self, u=None):
         self.x0 = u
 
-    def prepare(self):
+    def _prepare(self):
         if self.stats is None:
             self.set_stats()
 

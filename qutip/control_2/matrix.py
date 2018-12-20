@@ -48,6 +48,21 @@ class falselist_cte:
     in the same way. This is a constant which poses as a list.
     May be useless since a list of the same elements N times is probably
     faster and do not use that much memory.
+
+    Parameters
+    ----------
+    data : object
+        The value contained in the falselist
+    N : int
+        The length of the imitated list.
+
+    Attributes
+    ----------
+    data : object
+        The value contained in the falselist
+    shape : tuple of int
+        The length of the imitated list.
+
     """
     def __init__(self, data, N):
         self.data = data
@@ -63,10 +78,33 @@ class falselist_func:
     """
     To remove special cases in the code, I want to use td_Qobj and lists of
     control_matrix in the same way. This poses as a list but contain a td_Qobj
-    and return a control_matrix corresponding to the time
+    and return a control_matrix at the time of corresponding index.
     May be useless since a list of the same elements N times is probably
     faster and do not use that much memory.
     10% slower than a td_Qobj.
+
+    Parameters
+    ----------
+    data : td_Qobj
+        Continuous function to use as a list.
+    tau : float
+        Time between list elements.
+    template : control_matrix subclass
+        class to return the Qobj data as: sparse or dense matrix
+    N : int
+        The length of the imitated list.
+
+    Attributes
+    ----------
+    data : object
+        The value contained in the falselist
+    times : float
+        Time of each list elements.
+    template : control_matrix subclass
+        class to return the Qobj data as: sparse or dense matrix
+    shape : tuple of int
+        The length of the imitated list.
+
     """
     def __init__(self, data, tau, template, N):
         self.data = data
@@ -90,6 +128,20 @@ class falselist2d_cte:
     in the same way. This is a constant which poses as a list.
     May be useless since a list of the same elements N times is probably
     faster and do not use that much memory.
+
+    Parameters
+    ----------
+    data : list
+        1d list of to poses as a 2d list.
+    N : int
+        The length of the imitated list.
+
+    Attributes
+    ----------
+    data : object
+        The value contained in the falselist
+    shape : tuple of int
+        The length of the imitated list.
     """
     def __init__(self, data, N):
         self.data = data
@@ -109,6 +161,28 @@ class falselist2d_func:
     May be useless since a list of the same elements N times is probably
     faster and do not use that much memory.
     10% slower than a td_Qobj.
+
+    Parameters
+    ----------
+    data : td_Qobj
+        Continuous function to use as a list.
+    tau : float
+        Time between list elements.
+    template : control_matrix subclass
+        class to return the Qobj data as: sparse or dense matrix
+    N : int
+        The length of the imitated list.
+
+    Attributes
+    ----------
+    data : object
+        The value contained in the falselist
+    times : float
+        Time of each list elements.
+    template : control_matrix subclass
+        class to return the Qobj data as: sparse or dense matrix
+    shape : tuple of int
+        The length of the imitated list.
     """
     def __init__(self, data, tau, template, N):
         self.data = data
@@ -137,9 +211,34 @@ matrix_opt = {
     "sparse_exp":True}
 
 class control_matrix:
+    """
+    Matrix for qutip/control.
+    Offer a identical interface to use space and dense matrices.
+    This is parent function which define the interface.
+
+    Parameters
+    ----------
+    obj : matrix-like : td_Qobj, sp.csr_matrix, np,array 2d
+        matrix
+
+    Methods
+    -------
+    dag:
+        Adjoint (dagger) of matrix.
+    tr:
+        Trace of matrix.
+    prop(tau):
+        The exponential of the matrix
+    dexp(dirr, tau, compute_expm=False)
+        The deriative of the exponential in the given dirrection
+
+    """
     def __init__(self, obj=None):
         self._size = 0
         self.clean()
+
+    def copy(self):
+        pass
 
     def clean(self):
         self._factormatrix = None
@@ -147,6 +246,26 @@ class control_matrix:
         self._eig_vec = None
         self._eig_vec_dag = None
         self._prop = None
+
+    def __imul__(self, other):
+        """dummy"""
+        return self
+
+    def __mul__(self, other):
+        """dummy"""
+        return self
+
+    def __rmul__(self, other):
+        """dummy"""
+        return self
+
+    def __iadd__(self, other):
+        """dummy"""
+        return self
+
+    def __isub__(self, other):
+        """dummy"""
+        return self
 
     def __add__(self, other):
         out = self.copy()
@@ -158,17 +277,77 @@ class control_matrix:
         out -= other
         return out
 
-    """
-    def __mul__(self, other):
-        out = self.copy()
-        out *= other
-        return out
+    def dag(self):
+        """Adjoint (dagger) of the matrix
+        Returns
+        -------
+        dag : control_matrix
+            Adjoint of matrix
 
-    def __radd__(self, other):
-        out = self.copy()
-        out += other
-        return out
-    """
+        Notes
+        -----
+        Dummy
+        """
+        return self
+
+    def tr(self):
+        """Trace of the matrix
+        Returns
+        -------
+        trace : complex
+
+        Notes
+        -----
+        Dummy
+        """
+        return 0j
+
+    def prop(self, tau):
+        """Propagator in the time interval
+
+        Parameters
+        ----------
+        tau : double
+            time interval
+
+        Returns
+        -------
+        prop : control_matrix
+            exp(self*tau)
+
+        Notes
+        -----
+        Dummy
+        """
+        return self*tau+self*tau*self*tau/2+1
+
+    def dexp(self, dirr, tau, compute_expm=False):
+        """The deriative of the exponential in the given dirrection
+
+        Parameters
+        ----------
+        dirr : control_matrix
+
+        Returns
+        -------
+        prop : control_matrix
+            exp(self*tau) (Optional, if compute_expm)
+        derr : control_matrix
+            (exp((self+dirr*dt)*tau)-exp(self*tau)) / dt
+
+        Notes
+        -----
+        Dummy
+        """
+        dt = 1/1000
+        prop = self.prop(tau)
+        dprop = (self + dirr*dt).prop(tau)
+        derr = (dprop-prop) * 1000
+        if compute_expm:
+            return prop, derr
+        else:
+            return derr
+
 
 class control_dense(control_matrix):
     def __init__(self, obj=None):
@@ -319,7 +498,7 @@ class control_dense(control_matrix):
             self._prop = prop
         return prop
 
-    def prop(self,tau):
+    def prop(self, tau):
         return control_dense(self._exp(tau))
 
     def dexp(self, dirr, tau, compute_expm=False):
