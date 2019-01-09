@@ -68,10 +68,10 @@ import timeit
 # QuTiP
 from qutip import Qobj, mat2vec, vec2mat
 # QuTiP logging
-import qutip.logging_utils as logging
-logger = logging.get_logger()
+# import qutip.logging_utils as logging
+# logger = logging.get_logger()
 # QuTiP control modules
-import qutip.control.errors as errors
+# import qutip.control.errors as errors
 
 
 def _rhoProdTrace(rho0, rho1, N=None):
@@ -115,31 +115,39 @@ def _submatinv(m):
     minv[sub_ix] = inv(m[sub_ix])
     return minv
 
+
 class FidComp():
     """
     Parameters
     ----------
     tslotcomp : TimeslotComputer
+        Object that compute the forward/backward evolution and probagator.
 
     target / forbidden : np.array
+        State or operator which is which the evolution is compared to.
 
     phase_option / mode :
+        Tag for the compute method.
 
-    times : list of double
+    times : list of int
+        Indice of the timeslices at which to compute the costs.
+        Available for ...Early and ...Forbidden variations.
 
     weight : double / list of double
-
-    Attributes
-    ----------
+        List of relative importance of the costs of each timeslices.
+        Or weight of amplitude related cost. (FidCompAmp, FidCompDAmp)
 
     Methods
     -------
     costs():
-
+        Compute the fidelity and return the costs.
+        The state is updated at the tslotcomp level.
     costs_t():
-
+        For each times, return the weighted costs.
+        Available for ...Early and ...Forbidden variations.
     grad():
-
+        Gradient for each controls operator.
+        For FidCompState(mode=SuFid), call costs first
     """
     def __init__(self):
         pass
@@ -151,24 +159,24 @@ class FidComp():
         pass
 
 class FidCompState():
-    def __init__(self, tslotcomp, target, phase_option):
-        """
-        Computes fidelity error and gradient assuming unitary dynamics, e.g.
-        closed qubit systems
-        Note fidelity and gradient calculations were taken from DYNAMO
-        (see file header)
+    """
+    Computes fidelity error and gradient assuming unitary dynamics, e.g.
+    closed qubit systems
+    Note fidelity and gradient calculations were taken from DYNAMO
+    (see file header)
 
-        Attributes
-        ----------
-        phase_option : string
-            determines how global phase is treated in fidelity calculations:
-                PSU - global phase ignored
-                PSU2 - global phase ignored
-                SU - global phase included
-                Diff - global phase included
-                SuTr - simple rho trace
-                SuFid - density matrix fidelity as computed by qutip.fidelity
-        """
+    Parameters
+    ----------
+    phase_option : string
+        determines how global phase is treated in fidelity calculations:
+            PSU - global phase ignored
+            PSU2 - global phase ignored
+            SU - global phase included
+            Diff - global phase included
+            SuTr - simple rho trace
+            SuFid - density matrix fidelity as computed by qutip.fidelity
+    """
+    def __init__(self, tslotcomp, target, phase_option):
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
@@ -270,22 +278,22 @@ class FidCompState():
         return grad_normalized
 
 class FidCompStateEarly():
-    def __init__(self, tslotcomp, target, phase_option, times=None, weight=None):
-        """
-        Computes fidelity error and gradient assuming unitary dynamics, e.g.
-        closed qubit systems
-        Note fidelity and gradient calculations were taken from DYNAMO
-        (see file header)
+    """
+    Computes fidelity error and gradient assuming unitary dynamics, e.g.
+    closed qubit systems
+    Note fidelity and gradient calculations were taken from DYNAMO
+    (see file header)
 
-        Attributes
-        ----------
-        phase_option : string
-            determines how global phase is treated in fidelity calculations:
-                PSU - global phase ignored
-                PSU2 - global phase ignored
-                SU - global phase included
-                Diff - global phase included
-        """
+    Attributes
+    ----------
+    phase_option : string
+        determines how global phase is treated in fidelity calculations:
+            PSU - global phase ignored
+            PSU2 - global phase ignored
+            SU - global phase included
+            Diff - global phase included
+    """
+    def __init__(self, tslotcomp, target, phase_option, times=None, weight=None):
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
@@ -368,22 +376,22 @@ class FidCompStateEarly():
         return np.real(grad)
 
 class FidCompStateForbidden():
-    def __init__(self, tslotcomp, forbidden, phase_option, times=None, weight=None):
-        """
-        Computes fidelity error and gradient assuming unitary dynamics, e.g.
-        closed qubit systems
-        Note fidelity and gradient calculations were taken from DYNAMO
-        (see file header)
+    """
+    Computes fidelity error and gradient assuming unitary dynamics, e.g.
+    closed qubit systems
+    Note fidelity and gradient calculations were taken from DYNAMO
+    (see file header)
 
-        Attributes
-        ----------
-        phase_option : string
-            determines how global phase is treated in fidelity calculations:
-                PSU - global phase ignored
-                PSU2 - global phase ignored
-                SU - global phase included
-                Diff - global phase included
-        """
+    Attributes
+    ----------
+    phase_option : string
+        determines how global phase is treated in fidelity calculations:
+            PSU - global phase ignored
+            PSU2 - global phase ignored
+            SU - global phase included
+            Diff - global phase included
+    """
+    def __init__(self, tslotcomp, forbidden, phase_option, times=None, weight=None):
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
@@ -468,22 +476,22 @@ class FidCompStateForbidden():
 
 
 class FidCompOperator():
+    """
+    Computes fidelity error and gradient for general system dynamics
+    by calculating the the fidelity error as the trace of the overlap
+    of the difference between the target and evolution resulting from
+    the pulses with the transpose of the same.
+    This should provide a distance measure for dynamics described by matrices
+    Note the gradient calculation is taken from:
+    'Robust quantum gates for open systems via optimal control:
+    Markovian versus non-Markovian dynamics'
+    Frederik F Floether, Pierre de Fouquieres, and Sophie G Schirmer
+
+    Attributes
+    ----------
+
+    """
     def __init__(self, tslotcomp, target, mode="TrDiff"):
-        """
-        Computes fidelity error and gradient for general system dynamics
-        by calculating the the fidelity error as the trace of the overlap
-        of the difference between the target and evolution resulting from
-        the pulses with the transpose of the same.
-        This should provide a distance measure for dynamics described by matrices
-        Note the gradient calculation is taken from:
-        'Robust quantum gates for open systems via optimal control:
-        Markovian versus non-Markovian dynamics'
-        Frederik F Floether, Pierre de Fouquieres, and Sophie G Schirmer
-
-        Attributes
-        ----------
-
-        """
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
@@ -564,28 +572,28 @@ class FidCompOperator():
         return  grad
 
 class FidCompOperatorEarly():
+    """
+    Computes fidelity error and gradient for general system dynamics
+    by calculating the the fidelity error as the trace of the overlap
+    of the difference between the target and evolution resulting from
+    the pulses with the transpose of the same.
+    This should provide a distance measure for dynamics described by matrices
+    Note the gradient calculation is taken from:
+    'Robust quantum gates for open systems via optimal control:
+    Markovian versus non-Markovian dynamics'
+    Frederik F Floether, Pierre de Fouquieres, and Sophie G Schirmer
+
+    Attributes
+    ----------
+    scale_factor : float
+    The fidelity error calculated is of some arbitary scale. This
+    factor can be used to scale the fidelity error such that it may
+    represent some physical measure
+    If None is given then it is caculated as 1/2N, where N
+    is the dimension of the drift, when the Dynamics are initialised.
+    """
     def __init__(self, tslotcomp, target, mode="TrDiff",
                  times=None, weight=None):
-        """
-        Computes fidelity error and gradient for general system dynamics
-        by calculating the the fidelity error as the trace of the overlap
-        of the difference between the target and evolution resulting from
-        the pulses with the transpose of the same.
-        This should provide a distance measure for dynamics described by matrices
-        Note the gradient calculation is taken from:
-        'Robust quantum gates for open systems via optimal control:
-        Markovian versus non-Markovian dynamics'
-        Frederik F Floether, Pierre de Fouquieres, and Sophie G Schirmer
-
-        Attributes
-        ----------
-        scale_factor : float
-            The fidelity error calculated is of some arbitary scale. This
-            factor can be used to scale the fidelity error such that it may
-            represent some physical measure
-            If None is given then it is caculated as 1/2N, where N
-            is the dimension of the drift, when the Dynamics are initialised.
-        """
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
@@ -701,28 +709,28 @@ class FidCompOperatorEarly():
         return  grad
 
 class FidCompOperatorForbidden():
+    """
+    Computes fidelity error and gradient for general system dynamics
+    by calculating the the fidelity error as the trace of the overlap
+    of the difference between the target and evolution resulting from
+    the pulses with the transpose of the same.
+    This should provide a distance measure for dynamics described by matrices
+    Note the gradient calculation is taken from:
+    'Robust quantum gates for open systems via optimal control:
+    Markovian versus non-Markovian dynamics'
+    Frederik F Floether, Pierre de Fouquieres, and Sophie G Schirmer
+
+    Attributes
+    ----------
+    scale_factor : float
+    The fidelity error calculated is of some arbitary scale. This
+    factor can be used to scale the fidelity error such that it may
+    represent some physical measure
+    If None is given then it is caculated as 1/2N, where N
+    is the dimension of the drift, when the Dynamics are initialised.
+    """
     def __init__(self, tslotcomp, forbidden, mode="TrDiff",
                  times=None, weight=None):
-        """
-        Computes fidelity error and gradient for general system dynamics
-        by calculating the the fidelity error as the trace of the overlap
-        of the difference between the target and evolution resulting from
-        the pulses with the transpose of the same.
-        This should provide a distance measure for dynamics described by matrices
-        Note the gradient calculation is taken from:
-        'Robust quantum gates for open systems via optimal control:
-        Markovian versus non-Markovian dynamics'
-        Frederik F Floether, Pierre de Fouquieres, and Sophie G Schirmer
-
-        Attributes
-        ----------
-        scale_factor : float
-            The fidelity error calculated is of some arbitary scale. This
-            factor can be used to scale the fidelity error such that it may
-            represent some physical measure
-            If None is given then it is caculated as 1/2N, where N
-            is the dimension of the drift, when the Dynamics are initialised.
-        """
         self.tslotcomp = tslotcomp
         self.num_ctrls = self.tslotcomp.num_ctrl
         self.num_tslots = self.tslotcomp.n_t
