@@ -1,3 +1,5 @@
+#!python
+#cython: language_level=3
 # This file is part of QuTiP: Quantum Toolbox in Python.
 #
 #    Copyright (c) 2011 and later, The QuTiP Project.
@@ -40,6 +42,7 @@ cdef void _zcsr_mult(CSR_Matrix * A, CSR_Matrix * B, CSR_Matrix * C)
 
 
 cdef void _zcsr_kron(CSR_Matrix * A, CSR_Matrix * B, CSR_Matrix * C)
+
 
 cdef void _zcsr_kron_core(double complex * dataA, long * indsA, long * indptrA,
                      double complex * dataB, long * indsB, long * indptrB,

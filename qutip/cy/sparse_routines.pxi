@@ -1,3 +1,5 @@
+#!python
+#cython: language_level=3
 # This file is part of QuTiP: Quantum Toolbox in Python.
 #
 #    Copyright (c) 2011 and later, The QuTiP Project.
@@ -104,7 +106,6 @@ cdef inline long int_min(long a, long b) nogil:
 
 cdef inline long int_max(long a, long b) nogil:
     return a if a > b else b
-
 
 @cython.boundscheck(False)
 @cython.wraparound(False)

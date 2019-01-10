@@ -1,3 +1,5 @@
+#!python
+#cython: language_level=3
 # This file is part of QuTiP: Quantum Toolbox in Python.
 #
 #    Copyright (c) 2011 and later, The QuTiP Project.
@@ -241,7 +243,7 @@ cdef double complex * ZGEMM(double complex * A, double complex * B,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void ZGEMV(double complex * A, double complex * vec,
-                        double complex * out,
+                       double complex * out,
                        long Arows_, long Acols_, int transA = 0,
                        double complex alpha=1, double complex beta=1):
     cdef char tA

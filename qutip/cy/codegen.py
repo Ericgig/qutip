@@ -167,6 +167,7 @@ class Codegen():
                            "long[::1] idx%d," % k +
                            "long[::1] ptr%d" % k)
 
+
         kk = len(self.h_tdterms)
         for jj in range(len(self.c_td_splines)):
             input_vars += (",\n        " +
@@ -377,7 +378,8 @@ def cython_preamble(use_openmp=False):
     else:
         openmp_string=''
 
-    return ["""\
+    return ["""#!python
+#cython: language_level=3
 # This file is generated automatically by QuTiP.
 # (C) 2011 and later, QuSTaR
 

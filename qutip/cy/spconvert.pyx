@@ -1,3 +1,5 @@
+#!python
+#cython: language_level=3
 # This file is part of QuTiP: Quantum Toolbox in Python.
 #
 #    Copyright (c) 2011 and later, The QuTiP Project.
@@ -239,7 +241,6 @@ def cy_index_permute(long [::1] idx_arr,
 
     cdef long ndims = dims.shape[0]
     cdef long ii, n, dim, idx, orderr
-
     #the fastest way to allocate memory for a temporary array
     cdef long * multi_idx = <long*> malloc(sizeof(long) * ndims)
 

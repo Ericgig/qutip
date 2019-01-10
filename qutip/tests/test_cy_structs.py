@@ -34,7 +34,7 @@ import numpy as np
 import scipy.sparse as sp
 from qutip import rand_dm
 from qutip.fastsparse import fast_csr_matrix
-from qutip.cy.testing import (_test_sorting, _test_coo2csr_inplace_struct,
+from qutip.cy.checks import (_test_sorting, _test_coo2csr_inplace_struct,
                             _test_csr2coo_struct, _test_coo2csr_struct)
 from qutip.random_objects import rand_jacobi_rotation
 from numpy.testing import assert_equal, assert_, run_module_suite

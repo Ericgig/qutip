@@ -1,3 +1,5 @@
+#!python
+#cython: language_level=3
 # This file is part of QuTiP: Quantum Toolbox in Python.
 #
 #    Copyright (c) 2011 and later, The QuTiP Project.
@@ -395,6 +397,7 @@ cdef void _zcsr_kron_core(double complex * dataA, long * indsA, long * indptrA,
                      double complex * dataB, long * indsB, long * indptrB,
                      CSR_Matrix * out,
                      long rowsA, long rowsB, long colsB) nogil:
+
     cdef size_t ii, jj, ptrA, ptr
     cdef long row = 0
     cdef long ptr_start, ptr_end

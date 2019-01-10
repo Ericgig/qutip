@@ -217,7 +217,6 @@ class BR_Codegen(object):
             input_vars += (",\n        " +
                            "complex[::1,:] A%d" % k)
 
-
         input_vars += (",\n        unsigned long nrows")
         input_vars += self._get_arg_str(self.args)
 
@@ -412,7 +411,8 @@ def cython_preamble(use_omp=False):
     """
     Returns list of code segments for Cython preamble.
     """
-    return ["""\
+    return ["""#!python
+#cython: language_level=3
 # This file is generated automatically by QuTiP.
 # (C) 2011 and later, QuSTaR
 import numpy as np

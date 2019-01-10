@@ -1,3 +1,5 @@
+#!python
+#cython: language_level=3
 # This file is part of QuTiP: Quantum Toolbox in Python.
 #
 #    Copyright (c) 2011 and later, Paul D. Nation and Robert J. Johansson.
@@ -329,6 +331,7 @@ cpdef double zcsr_one_norm(complex[::1] data, long[::1] ind, long[::1] ptr,
 @cython.wraparound(False)
 cpdef double zcsr_inf_norm(complex[::1] data, long[::1] ind, long[::1] ptr,
                      long nrows, long ncols):
+
 
     cdef long k
     cdef size_t ii, jj
