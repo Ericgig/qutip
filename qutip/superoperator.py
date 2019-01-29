@@ -41,7 +41,7 @@ from qutip.qobj import Qobj
 from qutip.qobjevo import QobjEvo
 from qutip.fastsparse import fast_csr_matrix, fast_identity
 from qutip.sparse import sp_reshape
-from qutip.cy.spmath import zcsr_kron
+from qutip.data_math import kron
 from functools import partial
 
 
@@ -123,8 +123,8 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
     elif isinstance(H, Qobj):
         if H.isoper:
             Ht = H.data.T
-            data = -1j * zcsr_kron(spI, H.data)
-            data += 1j * zcsr_kron(Ht, spI)
+            data = -1j * kron(spI, H.data)
+            data += 1j * kron(Ht, spI)
         else:
             data = H.data
     else:
@@ -152,13 +152,13 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
             c = c_.data
             if chi:
                 data = data + np.exp(1j * chi[idx]) * \
-                                zcsr_kron(c.conj(), c)
+                                kron(c.conj(), c)
             else:
-                data = data + zcsr_kron(c.conj(), c)
+                data = data + kron(c.conj(), c)
             cdc = cd * c
             cdct = cdc.T
-            data = data - 0.5 * zcsr_kron(spI, cdc)
-            data = data - 0.5 * zcsr_kron(cdct, spI)
+            data = data - 0.5 * kron(spI, cdc)
+            data = data - 0.5 * kron(cdct, spI)
 
     if not td:
         if data_only:
@@ -337,7 +337,7 @@ def spost(A):
 
     S = Qobj(isherm=A.isherm, superrep='super')
     S.dims = [[A.dims[0], A.dims[1]], [A.dims[0], A.dims[1]]]
-    S.data = zcsr_kron(A.data.T,
+    S.data = kron(A.data.T,
                        fast_identity(np.prod(A.shape[0])))
     return S
 
@@ -366,7 +366,7 @@ def spre(A):
 
     S = Qobj(isherm=A.isherm, superrep='super')
     S.dims = [[A.dims[0], A.dims[1]], [A.dims[0], A.dims[1]]]
-    S.data = zcsr_kron(fast_identity(np.prod(A.shape[1])), A.data)
+    S.data = kron(fast_identity(np.prod(A.shape[1])), A.data)
     return S
 
 
@@ -403,5 +403,5 @@ def sprepost(A, B):
                  _drop_projected_dims(B.dims[1])],
                 [_drop_projected_dims(A.dims[1]),
                  _drop_projected_dims(B.dims[0])]]
-        data = zcsr_kron(B.data.T, A.data)
+        data = kron(B.data.T, A.data)
         return Qobj(data, dims=dims, superrep='super')

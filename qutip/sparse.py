@@ -46,11 +46,8 @@ import numpy as np
 import scipy.linalg as la
 from scipy.linalg.blas import get_blas_funcs
 _dznrm2 = get_blas_funcs("znrm2")
-from qutip.cy.sparse_utils import (_sparse_profile, _sparse_permute,
-                                   _sparse_reverse_permute, _sparse_bandwidth,
-                                   _isdiag, zcsr_one_norm, zcsr_inf_norm)
+from qutip.cy.data_convert import cdata_from_scipy
 from qutip.fastsparse import fast_csr_matrix
-from qutip.cy.spconvert import (arr_coo2fast, zcsr_reshape)
 from qutip.settings import debug
 
 import qutip.logging_utils
@@ -72,8 +69,8 @@ def sp_inf_norm(A):
     """
     Infinity norm for sparse matrix
     """
-    return zcsr_inf_norm(A.data, A.indices, 
-                A.indptr, A.shape[0], A.shape[1])
+    mat = cdata_from_scipy(A)
+    return A.inf_norm()
 
 
 def sp_L2_norm(A):
@@ -100,8 +97,8 @@ def sp_one_norm(A):
     """
     One norm for sparse matrix
     """
-    return zcsr_one_norm(A.data, A.indices, 
-                A.indptr, A.shape[0], A.shape[1])
+    mat = cdata_from_scipy(A)
+    return A.one_norm()
 
 
 def sp_reshape(A, shape, format='csr'):
@@ -130,10 +127,12 @@ def sp_reshape(A, shape, format='csr'):
     """
     if not hasattr(shape, '__len__') or len(shape) != 2:
         raise ValueError('Shape must be a list of two integers')
-    
+
     if format == 'csr':
-        return zcsr_reshape(A, shape[0], shape[1])
-    
+        mat = cdata_from_scipy(A, copy=1)
+        mat.reshape(shape[0], shape[1])
+        return mat.to_scipy()
+
     C = A.tocoo()
     nrows, ncols = C.shape
     size = nrows * ncols
@@ -383,10 +382,11 @@ def sp_eigs(data, isherm, vecs=True, sparse=False, sort='low',
 
 def sp_expm(A, sparse=False):
     """
-    Sparse matrix exponential.    
+    Sparse matrix exponential.
     """
-    if _isdiag(A.indices, A.indptr, A.shape[0]):
-        A = sp.diags(np.exp(A.diagonal()), shape=A.shape, 
+    mat = cdata_from_scipy(A)
+    if mat.isdiag():
+        A = sp.diags(np.exp(A.diagonal()), shape=A.shape,
                     format='csr', dtype=complex)
         return A
     if sparse:
@@ -394,7 +394,7 @@ def sp_expm(A, sparse=False):
     else:
         E = spla.expm(A.toarray())
     return sp.csr_matrix(E)
-    
+
 
 
 def sp_permute(A, rperm=(), cperm=(), safe=True):
@@ -437,15 +437,13 @@ def sp_permute(A, rperm=(), cperm=(), safe=True):
 
     shp = A.shape
     kind = A.getformat()
-    if kind == 'csr':
-        flag = 0
-    elif kind == 'csc':
-        flag = 1
-    else:
-        raise Exception('Input must be Qobj, CSR, or CSC matrix.')
+    if kind not in ['csr', 'csc']:
+        raise Exception('Input must be CSR, or CSC matrix.')
 
-    data, ind, ptr = _sparse_permute(A.data, A.indices, A.indptr,
-                                     nrows, ncols, rperm, cperm, flag)
+    mat = cdata_from_scipy(A, copy=1)
+    mat.permute(rperm, cperm)
+    data, ind, ptr = mat.csr()
+
     if kind == 'csr':
         return fast_csr_matrix((data, ind, ptr), shape=shp)
     elif kind == 'csc':
@@ -492,15 +490,12 @@ def sp_reverse_permute(A, rperm=(), cperm=(), safe=True):
 
     shp = A.shape
     kind = A.getformat()
-    if kind == 'csr':
-        flag = 0
-    elif kind == 'csc':
-        flag = 1
-    else:
-        raise Exception('Input must be Qobj, CSR, or CSC matrix.')
+    if kind not in ['csr', 'csc']:
+        raise Exception('Input must be CSR, or CSC matrix.')
 
-    data, ind, ptr = _sparse_reverse_permute(A.data, A.indices, A.indptr,
-                                             nrows, ncols, rperm, cperm, flag)
+    mat = cdata_from_scipy(A, copy=1)
+    mat.reverse_permute(rperm, cperm)
+    data, ind, ptr = mat.csr()
 
     if kind == 'csr':
         return fast_csr_matrix((data, ind, ptr), shape=shp)
@@ -533,13 +528,14 @@ def sp_bandwidth(A):
     """
     nrows = A.shape[0]
     ncols = A.shape[1]
+    mat = cdata_from_scipy(A)
 
     if A.getformat() == 'csr':
-        return _sparse_bandwidth(A.indices, A.indptr, nrows)
+        return mat.bandwidth()
     elif A.getformat() == 'csc':
         # Normal output is mb,lb,ub but since CSC
         # is transpose of CSR switch lb and ub
-        mb, ub, lb = _sparse_bandwidth(A.indices, A.indptr, ncols)
+        mb, ub, lb = mat.bandwidth()
         return mb, lb, ub
     else:
         raise Exception('Invalid sparse input format.')
@@ -557,14 +553,18 @@ def sp_profile(A):
         Input matrix
     """
     if sp.isspmatrix_csr(A):
-        up = _sparse_profile(A.indices, A.indptr, A.shape[0])
-        A = A.tocsc()
-        lp = _sparse_profile(A.indices, A.indptr, A.shape[0])
+        mat = cdata_from_scipy(A)
+        up = A.sparse_profile()
+        A = A.tocsc() # better way?
+        mat = cdata_from_scipy(A)
+        lp = A.sparse_profile()
 
     elif sp.isspmatrix_csc(A):
-        lp = _sparse_profile(A.indices, A.indptr, A.shape[0])
-        A = A.tocsr()
-        up = _sparse_profile(A.indices, A.indptr, A.shape[0])
+        mat = cdata_from_scipy(A)
+        lp = A.sparse_profile()
+        A = A.tocsr() # better way?
+        mat = cdata_from_scipy(A)
+        up = A.sparse_profile()
 
     else:
         raise TypeError('Input sparse matrix must be in CSR or CSC format.')
@@ -574,18 +574,19 @@ def sp_profile(A):
 
 def sp_isdiag(A):
     """Determine if sparse CSR matrix is diagonal.
-    
+
     Parameters
     ----------
-    A : csr_matrix, csc_matrix
+    A : csr_matrix
         Input matrix
-        
+
     Returns
     -------
     isdiag : int
         True if matix is diagonal, False otherwise.
-    
+
     """
     if not sp.isspmatrix_csr(A):
         raise TypeError('Input sparse matrix must be in CSR format.')
-    return _isdiag(A.indices, A.indptr, A.shape[0])
+    mat = cdata_from_scipy(A)
+    return mat.isdiag()

@@ -57,7 +57,7 @@ from qutip.sparse import sp_permute, sp_bandwidth, sp_reshape, sp_profile
 from qutip.superoperator import liouvillian, vec2mat
 from qutip.sparse import (sp_permute, sp_bandwidth, sp_reshape,
                           sp_profile)
-from qutip.cy.spmath import zcsr_kron
+from qutip.data_math import kron
 from qutip.graph import reverse_cuthill_mckee, weighted_bipartite_matching
 from qutip import (mat2vec, tensor, identity, operator_to_vector)
 import qutip.settings as settings
@@ -1148,7 +1148,7 @@ def _pseudo_inverse_sparse(L, rhoss, w=None, **pseudo_args):
     tr_op = tensor([identity(n) for n in L.dims[0][0]])
     tr_op_vec = operator_to_vector(tr_op)
 
-    P = zcsr_kron(rhoss_vec.data, tr_op_vec.data.T)
+    P = kron(rhoss_vec.data, tr_op_vec.data.T)
     I = sp.eye(N*N, N*N, format='csr')
     Q = I - P
 

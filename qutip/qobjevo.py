@@ -43,7 +43,7 @@ from types import FunctionType, BuiltinFunctionType
 import numpy as np
 from numbers import Number
 from qutip.qobjevo_codegen import _compile_str_single, _compiled_coeffs
-from qutip.cy.spmatfuncs import (cy_expect_rho_vec, cy_expect_psi, spmv)
+from qutip.cy.data_convert import cdata_from_scipy
 from qutip.cy.cqobjevo import (CQobjCte, CQobjCteDense, CQobjEvoTd,
                                  CQobjEvoTdMatched, CQobjEvoTdDense)
 from qutip.cy.cqobjevo_factor import (InterCoeffT, InterCoeffCte,
@@ -1088,9 +1088,11 @@ class QobjEvo:
         if self.compiled:
             return self.compiled_Qobj.expect(t, vec, herm)
         if self.cte.issuper:
-            return cy_expect_rho_vec(self.__call__(t, data=True), vec, herm)
+            mat = cdata_from_scipy(self.__call__(t, data=True))
+            return mat.expect_rho_vec(vec, herm)
         else:
-            return cy_expect_psi(self.__call__(t, data=True), vec, herm)
+            mat = cdata_from_scipy(self.__call__(t, data=True))
+            return mat.expect_psi_vec(vec, herm)
 
     def mul_vec(self, t, vec):
         was_Qobj = False
@@ -1111,7 +1113,8 @@ class QobjEvo:
         if self.compiled:
             out = self.compiled_Qobj.mul_vec(t, vec)
         else:
-            out = spmv(self.__call__(t, data=True), vec)
+            mat = cdata_from_scipy(self.__call__(t, data=True))
+            out = mat.spmv(vec)
         if was_Qobj:
             return Qobj(out, dims=dims)
         else:

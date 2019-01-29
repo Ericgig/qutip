@@ -38,13 +38,21 @@ import scipy.sparse as sp
 
 from qutip.qobj import Qobj, isoper
 from qutip.eseries import eseries
-from qutip.cy.spmatfuncs import (cy_expect_rho_vec, cy_expect_psi, cy_spmm_tr,
-                                expect_csr_ket)
+from qutip.data_math import expect_ket, spmm_tr
 
+def expect_rho_vec(oper, vec, herm):
+    mat = cdata_from_scipy(oper)
+    expt = mat.expect_rho_vec(vec)
+    if herm:
+        return real(expt)
+    return  expt
 
-expect_rho_vec = cy_expect_rho_vec
-expect_psi = cy_expect_psi
-
+def expect_psi_vec(oper, vec, herm):
+    mat = cdata_from_scipy(oper)
+    expt = mat.expect_psi_vec(vec)
+    if herm:
+        return real(expt)
+    return  expt
 
 def expect(oper, state):
     '''Calculates the expectation value for operator(s) and state(s).
@@ -110,12 +118,12 @@ def _single_qobj_expect(oper, state):
 
         if state.type == 'oper':
             # calculates expectation value via TR(op*rho)
-            return cy_spmm_tr(oper.data, state.data,
+            return spmm_tr(oper.data, state.data,
                               oper.isherm and state.isherm)
 
         elif state.type == 'ket':
             # calculates expectation value via <psi|op|psi>
-            return expect_csr_ket(oper.data, state.data,
+            return expect_ket(oper.data, state.data,
                                  oper.isherm)
     else:
         raise TypeError('Invalid operand types')
