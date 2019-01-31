@@ -85,9 +85,13 @@ def propagator(H, t, c_op_list=[], args={}, options=None,
     options : :class:`qutip.Options`
         with options for the ODE solver.
 
-    unitary_mode : deprecated
+    unitary_mode = str ('batch', 'single')
+        Solve all basis vectors simulaneously ('batch') or individually
+        ('single').
 
-    parallel : deprecated
+    parallel : bool {False, True}
+        Run the propagator in parallel mode. This will override the
+        unitary_mode settings if set to True.
 
     progress_bar: BaseProgressBar
         Optional instance of BaseProgressBar, or a subclass thereof, for
@@ -108,15 +112,23 @@ def propagator(H, t, c_op_list=[], args={}, options=None,
     if _safe_mode:
         _solver_safety_check(H, None, c_ops=c_op_list, e_ops=[], args=args)
 
+    H_is_func = False
     if isinstance(H, (types.FunctionType, types.BuiltinFunctionType,
                       functools.partial)):
         H0 = H(0.0, args)
+        H_is_func = True
     elif isinstance(H, list):
         H0 = H[0][0] if isinstance(H[0], list) else H[0]
     else:
         H0 = H
 
     if len(c_op_list) == 0 and H0.isoper:
+        if (not H_is_func and unitary_mode =='batch') or parallel):
+            # When working (not H_is_func) batch is fasterself.
+            # parallel can be faster for big system
+            return _propagator(H, t, c_op_list, args, options,
+                           unitary_mode, parallel, progress_bar,
+                           _safe_mode=False, **kwargs)
         # closed System
         n = H0.shape[0]
         psi0 = qeye(n)
@@ -124,16 +136,21 @@ def propagator(H, t, c_op_list=[], args={}, options=None,
         result = sesolve(H, psi0, tlist, [], args, options,
                          _safe_mode=False, progress_bar=progress_bar).states
     else:
+        if parallel:
+            # parallel can be faster for big system
+            return _propagator(H, t, c_op_list, args, options,
+                           unitary_mode, parallel, progress_bar, 
+                           _safe_mode=False, **kwargs)
         # open system
         if H0.isoper:
             n = H0.shape[0]
-            rho0 = qt.qeye(n*n)
-            rho0.dims =  [H.dims, H.dims]
+            rho0 = qeye(n*n)
+            rho0.dims =  [H0.dims, H0.dims]
         else:
             n = H0.shape[0]
-            rho0 = qt.qeye(n)
-            rho0.dims = H.dims
-        result = smsolve(H, rho0, tlist, c_ops, [], args, options,
+            rho0 = qeye(n)
+            rho0.dims = H0.dims
+        result = mesolve(H, rho0, tlist, c_op_list, [], args, options,
                          _safe_mode=False, progress_bar=progress_bar).states
 
     if len(tlist) == 2:
@@ -142,7 +159,7 @@ def propagator(H, t, c_op_list=[], args={}, options=None,
         return np.array(result, dtype=object)
 
 
-def _propagator_old(H, t, c_op_list=[], args={}, options=None,
+def _propagator(H, t, c_op_list=[], args={}, options=None,
                unitary_mode='batch', parallel=False,
                progress_bar=None, _safe_mode=True,
                **kwargs):
