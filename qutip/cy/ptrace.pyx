@@ -35,15 +35,105 @@
 import numpy as np
 from qutip.cy.spconvert import zcsr_reshape
 from qutip.cy.spmath import zcsr_mult
-from qutip.fastsparse import fast_csr_matrix
+from qutip.fastsparse import fast_csr_matrix, csr2fast
 cimport numpy as cnp
 cimport cython
 from libc.math cimport floor, trunc
+from scipy.sparse.coo import coo_matrix
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef int _in(int val, int[::1] vec):
+    cdef int ii
+    for ii in range(vec.shape[0]):
+        if val == vec[ii]:
+            return 1
+    return 0
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-def _ptrace(object rho, _sel):
+cdef void i2_k_t(int N,
+                 int[::1] rho2ten,
+                 int[::1] keep,
+                 int[::1] trace,
+                 int[::1] out):
+    cdef int ii, t1, t2
+    out[0] = 0
+    out[1] = 0
+    for ii in range(rho2ten.shape[0]):
+        t1 = rho2ten[ii]
+        t2 = N / t1
+        N = N % t1
+        out[0] += keep[ii] * t2
+        out[1] += trace[ii] * t2
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+def my_cy_ptrace(object rho, sel): # work for N<= 26 on 16G Ram
+    cdef int[::1] _sel
+    if isinstance(sel, int):
+        sel = np.array([sel], dtype=np.int32)
+    else:
+        sel = np.asarray(sel, dtype=np.int32)
+
+    if (sel < 0).any() or (sel >= len(rho.dims[0])).any():
+        raise TypeError("Invalid selection index in ptrace.")
+
+    _sel = sel
+    cdef size_t mm, ii
+    cdef int _tmp
+    cdef cnp.ndarray[int, ndim=1, mode='c'] drho = np.asarray(rho.dims[0], dtype=np.int32).ravel()
+
+    if np.prod(rho.dims[1]) == 1:
+        rho = rho * rho.dag()
+    # ==========================================
+    cdef int num_dims = drho.shape[0]
+    cdef int[::1] rho2ten = np.ones(num_dims, dtype=np.int32)
+    cdef int[::1] keep    = np.zeros(num_dims, dtype=np.int32)
+    cdef int[::1] trace   = np.zeros(num_dims, dtype=np.int32)
+    cdef int nk =1, nt = 1, nn=1, d
+
+    for d in range(num_dims-1,-1,-1):
+        rho2ten[d] = nn
+        nn *= drho[d]
+        if _in(d, _sel):
+            keep[d] = nk
+            nk *= drho[d]
+        else:
+            trace[d] = nt
+            nt *= drho[d]
+
+    cdef object cco = rho.data.tocoo()
+    cdef cnp.ndarray[complex, ndim=1, mode='c'] new_data = np.zeros(cco.nnz, dtype=complex)
+    cdef cnp.ndarray[int, ndim=1, mode='c'] new_col = np.zeros(cco.nnz, dtype=np.int32)
+    cdef cnp.ndarray[int, ndim=1, mode='c'] new_row = np.zeros(cco.nnz, dtype=np.int32)
+    cdef cnp.ndarray[complex, ndim=1, mode='c'] data = cco.data
+    cdef cnp.ndarray[int, ndim=1, mode='c'] col = cco.col
+    cdef cnp.ndarray[int, ndim=1, mode='c'] row = cco.row
+    cdef int p = 0, nnz = cco.nnz
+    cdef int[::1] pos_c = np.zeros(2, dtype=np.int32)
+    cdef int[::1] pos_r = np.zeros(2, dtype=np.int32)
+    for i in range(nnz):
+        i2_k_t(col[i], rho2ten, keep, trace, pos_c)
+        i2_k_t(row[i], rho2ten, keep, trace, pos_r)
+        if pos_c[1] == pos_r[1]:
+            new_data[p] = data[i]
+            new_col[p] = (pos_c[0])
+            new_row[p] = (pos_r[0])
+            p += 1
+    dims_kept0 = np.asarray(rho.dims[0]).take(_sel).tolist()
+
+    rho1_dims = [dims_kept0, dims_kept0]
+    cdef object out = coo_matrix((new_data,[new_col, new_row])).tocsr()
+
+    return csr2fast(out, False), rho1_dims
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+def _ptrace(object rho, _sel): # work for N<= 15
     """
     Private function calculating the partial trace.
     """
