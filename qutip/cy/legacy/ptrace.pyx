@@ -71,7 +71,7 @@ cdef void i2_k_t(int N,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-def my_cy_ptrace(object rho, sel): # work for N<= 26 on 16G Ram
+def _coo_ptrace(object rho, sel): # work for N<= 26 on 16G Ram
     cdef int[::1] _sel
     if isinstance(sel, int):
         sel = np.array([sel], dtype=np.int32)

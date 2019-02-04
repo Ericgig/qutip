@@ -41,7 +41,7 @@ from qutip.cy.inter import _prep_cubic_spline
 from qutip.cy.inter cimport (_spline_complex_cte_second,
                              _spline_complex_t_second)
 from qutip.cy.interpolate cimport (interp, zinterp)
-include "complex_math.pxi"
+from qutip.cy.complex_math cimport *
 
 """
 Support cqobjevo's array and str based coefficient.

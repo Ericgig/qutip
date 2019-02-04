@@ -16,8 +16,6 @@ from libc.math cimport abs, fabs, sqrt
 include "parameters.pxi"
 
 
-
-
 cdef class cy_csr_matrix:
     cdef:
         double complex * data
@@ -95,6 +93,12 @@ cdef class cy_csr_matrix:
     #def trace(self, bool isherm) ##
 
     cpdef cnp.ndarray[complex, ndim=1, mode="c"] spmv(self, complex[::1] vec)
+
+    cpdef cnp.ndarray[complex, ndim=2] spmm(self, cnp.ndarray[complex, ndim=2] mat)
+
+    cpdef cnp.ndarray[complex, ndim=2] spmmf(self, cnp.ndarray[complex, ndim=2] mat)
+
+    cpdef cnp.ndarray[complex, ndim=2] spmmc(self, cnp.ndarray[complex, ndim=2] mat)
 
     cpdef complex expect_rho_vec(self, complex[::1] vec)
 

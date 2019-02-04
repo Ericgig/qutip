@@ -81,6 +81,37 @@ cdef inline void spmvpy(complex * data, int * ind, int * ptr,
 
     zspmvpy(data, ind, ptr, vec, a, out, nrows)
 
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _spmm_c_py(complex* data, int* ind, int* ptr,
+            complex* mat, complex a, complex* out,
+            unsigned int sp_rows, unsigned int nrows, unsigned int ncols):
+    """
+    sparse*dense "C" ordered.
+    """
+    cdef int row, col, ii, jj, row_start, row_end
+    for row from 0 <= row < sp_rows :
+        row_start = ptr[row]
+        row_end = ptr[row+1]
+        for jj from row_start <= jj < row_end:
+            for col in range(ncols):
+                out[row * ncols + col] += a*data[jj]*mat[ind[jj] * ncols + col]
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _spmm_f_py(complex* data, int* ind, int* ptr,
+            complex* mat, complex a, complex* out,
+            unsigned int sp_rows, unsigned int nrows, unsigned int ncols):
+    """
+    sparse*dense "F" ordered.
+    """
+    cdef int col
+    for col in range(ncols):
+        spmvpy(data, ind, ptr, mat+nrows*col, a, out+sp_rows*col, sp_rows)
+
+
 # val in vec in pure cython
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -128,16 +159,6 @@ cdef void raise_error_CSR(int E):
 
 
 cdef class cy_csr_matrix:
-    """cdef:
-        double complex * data
-        int * indices
-        int * indptr
-        int nnz
-        int nrows
-        int ncols
-        int is_set
-        int max_length
-        int numpy_lock"""
 
     def __init__(self):
         self.is_set = 0
@@ -973,6 +994,29 @@ cdef class cy_csr_matrix:
         """
         cdef cnp.ndarray[complex, ndim=1, mode="c"] out = np.zeros((op.nrows), dtype=np.complex)
         zspmvpy(self.data, self.indices, self.indptr, &vec[0], 1.0, &out[0], self.nrows)
+        return out
+
+    cpdef cnp.ndarray[complex, ndim=2] spmm(
+            self, cnp.ndarray[complex, ndim=2] mat):
+    if mat.flags["F_CONTIGUOUS"]:
+        return self.spmmf(mat)
+    else:
+        return self.spmmc(mat)
+
+    cpdef cnp.ndarray[complex, ndim=2] spmmf(self, cnp.ndarray[complex, ndim=2] mat):
+        cdef cnp.ndarray[complex, ndim=2, mode="fortran"] out = \
+                          np.zeros((sp_rows, ncols), dtype=complex, order="F")
+        _spmm_f_py(self.data, self.indices, self.indptr,
+                   &mat[0,0], (1.0+0j), &out[0,0],
+                   self.nrows, self.ncols, mat.shape[1])
+        return out
+
+    cpdef cnp.ndarray[complex, ndim=2] spmmc(self, cnp.ndarray[complex, ndim=2] mat):
+        cdef cnp.ndarray[complex, ndim=2, mode="c"] out = \
+                          np.zeros((sp_rows, ncols), dtype=complex)
+        _spmm_c_py(self.data, self.indices, self.indptr,
+                   &mat[0,0], (1.0+0j), &out[0,0],
+                   self.nrows, self.ncols, mat.shape[1])
         return out
 
     @cython.boundscheck(False)

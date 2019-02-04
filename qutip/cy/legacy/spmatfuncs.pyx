@@ -42,7 +42,7 @@ cdef extern from "src/zspmv.hpp" nogil:
     void zspmvpy(double complex *data, int *ind, int *ptr, double complex *vec,
                 double complex a, double complex *out, int nrows)
 
-include "complex_math.pxi"
+from qutip.cy.complex_math cimport *
 
 @cython.boundscheck(False)
 @cython.wraparound(False)

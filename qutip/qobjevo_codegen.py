@@ -45,7 +45,7 @@ def _compile_str_single(string, args):
     import os
     _cython_path = os.path.dirname(os.path.abspath(__file__)).replace(
                     "\\", "/")
-    _include_string = "'"+_cython_path + "/cy/complex_math.pxi'"
+    _include_string = "from qutip.cy.complex_math cimport *"
 
     Code = """#!python
 #cython: language_level=3
@@ -117,7 +117,7 @@ def _make_code_4_cimport(ops, args, tlist):
     """
     import os
     _cython_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
-    _include_string = "'"+_cython_path + "/cy/complex_math.pxi'"
+    _include_string = "from qutip.cy.complex_math cimport *"
 
     code = """#!python
 #cython: language_level=3

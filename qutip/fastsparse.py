@@ -41,10 +41,10 @@ from qutip.csr_math import mult
 from qutip.qdata import cdata_from_scipy
 from warnings import warn
 
-from qutip.cy.sparse_utils import cy_tidyup
+from qutip.cy.utils import cy_tidyup
 from qutip.cy.openmp.utilities import use_openmp
 if settings.has_openmp:
-    from qutip.cy.openmp.omp_sparse_utils import omp_tidyup
+    from qutip.cy.openmp.omp_utils import omp_tidyup
 
 class fast_csr_matrix(csr_matrix):
     """

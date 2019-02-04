@@ -35,7 +35,7 @@ import numpy as np
 import qutip.settings as qset
 from qutip.interpolate import Cubic_Spline
 _cython_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
-_include_string = "'"+_cython_path+"/complex_math.pxi'"
+_include_string = "from qutip.cy.complex_math cimport *"
 __all__ = ['BR_Codegen']
 
 

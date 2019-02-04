@@ -83,7 +83,7 @@ from qutip.cy.spmath import zcsr_add
 from qutip.cy.cqobjevo_factor cimport CoeffFunc
 cimport libc.math
 
-include "complex_math.pxi"
+from qutip.cy.complex_math cimport *
 include "sparse_routines.pxi"
 
 cdef extern from "numpy/arrayobject.h" nogil:

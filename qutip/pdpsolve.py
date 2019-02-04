@@ -48,7 +48,7 @@ from qutip.solver import Result
 from qutip.expect import expect, expect_rho_vec
 from qutip.superoperator import (spre, spost, mat2vec, vec2mat,
                                  liouvillian, lindblad_dissipator)
-from qutip.cy.spmatfuncs import cy_expect_psi_csr, spmv, cy_expect_rho_vec
+from qutip.qdata import cdata_from_scipy
 from qutip.parallel import serial_map
 from qutip.ui.progressbar import TextProgressBar
 from qutip.solver import Options, _solver_safety_check
@@ -459,12 +459,13 @@ def _ssepdpsolve_single_trajectory(data, Heff, dt, times, N_store, N_substeps, p
     jump_times = []
     jump_op_idx = []
 
+    ce_ops = [cdata_from_scipy(e) for e in e_ops]
+
     for t_idx, t in enumerate(times):
 
         if e_ops:
-            for e_idx, e in enumerate(e_ops):
-                s = cy_expect_psi_csr(
-                    e.data.data, e.data.indices, e.data.indptr, psi_t, 0)
+            for e_idx, e in enumerate(ce_ops):
+                s = e.expect_psi_vec(psi_t, 0)
                 data.expect[e_idx, t_idx] += s
                 data.ss[e_idx, t_idx] += s ** 2
         else:
@@ -584,6 +585,8 @@ def _smepdpsolve_single_trajectory(data, L, dt, times, N_store, N_substeps, rho_
     jump_times = []
     jump_op_idx = []
 
+    L_mat = cdata_from_scipy(L)
+
     for t_idx, t in enumerate(times):
 
         if e_ops:
@@ -613,10 +616,10 @@ def _smepdpsolve_single_trajectory(data, L, dt, times, N_store, N_substeps, rho_
                 r_jump, r_op = prng.rand(2)
 
             # deterministic evolution wihtout correction for norm decay
-            dsigma_t = spmv(L.data, sigma_t) * dt
+            dsigma_t = L_mat.spmv(sigma_t) * dt
 
             # deterministic evolution with correction for norm decay
-            drho_t = spmv(L.data, rho_t) * dt
+            drho_t = L_mat.spmv(rho_t) * dt
 
             rho_t += drho_t
 

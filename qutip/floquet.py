@@ -54,7 +54,8 @@ from qutip.states import projection
 from qutip.solver import Options
 from qutip.propagator import propagator
 from qutip.solver import Result, _solver_safety_check
-from qutip.cy.spmatfuncs import cy_ode_rhs
+from qutip.cy.solverfuncs import cy_ode_rhs
+from qutip.qdata import cdata_from_scipy
 from qutip.expect import expect
 from qutip.utilities import n_thermal
 
@@ -818,7 +819,7 @@ def floquet_markov_mesolve(R, ekets, rho0, tlist, e_ops, f_modes_table=None,
     #
     initial_vector = mat2vec(rho0.full())
     r = scipy.integrate.ode(cy_ode_rhs)
-    r.set_f_params(R.data.data, R.data.indices, R.data.indptr)
+    r.set_f_params(cdata_from_scipy(R.data, target="csr"))
     r.set_integrator('zvode', method=opt.method, order=opt.order,
                      atol=opt.atol, rtol=opt.rtol, max_step=opt.max_step)
     r.set_initial_value(initial_vector, tlist[0])
@@ -934,10 +935,10 @@ def fmmesolve(H, rho0, tlist, c_ops=[], e_ops=[], spectra_cb=[], T=None,
         An instance of the class :class:`qutip.solver`, which contains either
         an *array* of expectation values for the times specified by `tlist`.
     """
-    
+
     if _safe_mode:
         _solver_safety_check(H, rho0, c_ops, e_ops, args)
-    
+
     if T is None:
         T = max(tlist)
 

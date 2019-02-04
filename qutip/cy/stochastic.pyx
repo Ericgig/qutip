@@ -41,7 +41,7 @@ from qutip.cy.brtools cimport ZHEEVR
 from qutip.qobj import Qobj
 from qutip.superoperator import vec2mat
 include "parameters.pxi"
-include "complex_math.pxi"
+from qutip.cy.complex_math cimport *
 import scipy.sparse as sp
 from scipy.sparse.linalg import LinearOperator
 from scipy.linalg.cython_blas cimport zaxpy, zdotu, zdotc, zcopy, zdscal, zscal
