@@ -570,7 +570,6 @@ class Qobj(object):
 
         else:
             return NotImplemented
-            #raise TypeError("Incompatible object for multiplication")
 
     def __rmul__(self, other):
         """
@@ -1054,6 +1053,12 @@ class Qobj(object):
         else:
             return self.data.toarray(order=order)
 
+    def __array__(self, *arg, **kwarg):
+        """Numpy array from Qobj
+        For compatibility with np.array
+        """
+        return self.full()
+
     def diag(self):
         """Diagonal elements of quantum object.
 
@@ -1517,15 +1522,17 @@ class Qobj(object):
                 raise TypeError("Can only calculate matrix elements for bra and ket vectors.")
 
     def overlap(self, other):
-        """Overlap between two state vectors.
+        """Overlap between two state vectors or two operators.
 
         Gives the overlap (inner product) between the current bra or ket Qobj
-        and and another bra or ket Qobj.
+        and and another bra or ket Qobj. It gives the Hilbert-Schmidt overlap
+        when one of the Qobj is an operator/density matrix.
 
         Parameters
         -----------
         other : qobj
-            Quantum object for a state vector of type 'ket' or 'bra'.
+            Quantum object for a state vector of type 'ket', 'bra' or density
+            matrix.
 
         Returns
         -------
@@ -1535,14 +1542,14 @@ class Qobj(object):
         Raises
         ------
         TypeError
-            Can only calculate overlap between a bra and ket quantum objects.
+            Can only calculate overlap between a bra, ket and density matrix
+            quantum objects.
 
         Notes
         -----
-        Since QuTiP mainly deals with ket vectors, the most efficient inner product
-        call is the ket-ket version that computes the product <self|other> with
-        both vectors expressed as kets.
-
+        Since QuTiP mainly deals with ket vectors, the most efficient inner
+        product call is the ket-ket version that computes the product
+        <self|other> with both vectors expressed as kets.
         """
 
         if isinstance(other, Qobj):
@@ -1561,6 +1568,15 @@ class Qobj(object):
                 return inner(other.data, self.data)
             else:
                 raise TypeError("Can only calculate overlap for state vector Qobjs")
+
+            elif self.isoper:
+                if other.isket or other.isbra:
+                    return (self.dag() * qutip.states.ket2dm(other)).tr()
+                elif other.isoper:
+                    return (self.dag() * other).tr()
+                else:
+                    raise TypeError("Can only calculate overlap for state vector Qobjs")
+
 
         raise TypeError("Can only calculate overlap for state vector Qobjs")
 

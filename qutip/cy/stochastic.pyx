@@ -119,7 +119,8 @@ cdef void _zero_4d(complex[:,:,:,::1] x):
     cdef int l = x.shape[0]*x.shape[1]*x.shape[2]*x.shape[3]
     zdscal(&l, &DZERO, <complex*>&x[0,0,0,0], &ONE)
 
-"""functions for ensuring that the states stays physical"""
+# %%%%%%%%%%%%%%%%%%%%%%%%%
+# functions for ensuring that the states stay physical
 @cython.cdivision(True)
 @cython.boundscheck(False)
 cdef void _normalize_inplace(complex[::1] vec):
@@ -159,32 +160,34 @@ cdef void _normalize_rho(complex[::1] rho):
             for k in range(N):
                 rho[j+N*k] += conj(eivec[k,i])*eivec[j,i]*eival[i]
 
+# Available solvers:
+cpdef enum Solvers:
+  # order 0.5
+  EULER_SOLVER           =  50
+  # order 0.5 strong, 1.0 weak?
+  PC_SOLVER              = 101
+  PC_2_SOLVER            = 104
+  # order 1.0
+  PLATEN_SOLVER          = 100
+  MILSTEIN_SOLVER        = 102
+  MILSTEIN_IMP_SOLVER    = 103
+  # order 1.5
+  EXPLICIT1_5_SOLVER     = 150
+  TAYLOR1_5_SOLVER       = 152
+  TAYLOR1_5_IMP_SOLVER   = 153
+  # order 2.0
+  TAYLOR2_0_SOLVER       = 202
 
-"""
-Solver:
-  order 0.5
-    euler-maruyama     50
-  order 0.5? 1.0?
-    pred_corr         101
-    pred_corr(2)      104
-  order 1.0
-    platen            100
-    milstein          102
-    milstein-imp      103
-  order 1.5
-    explicit1.5       150
-    taylor1.5         152
-    taylor1.5-imp     153
-  order 2.0
-    taylor2.0         202
+  # Special solvers
+  PHOTOCURRENT_SOLVER    =  60
+  PHOTOCURRENT_PC_SOLVER = 110
+  ROUCHON_SOLVER         = 120
 
-Special solvers
-    photocurrent       60
-    photocurrent_pc   110
-    rouchon           120
-"""
+  # For initialisation
+  SOLVER_NOT_SET         =   0
 
-cdef class taylorNoise:
+
+cdef class TaylorNoise:
     """ Object to build the Stratonovich integral for order 2.0 strong taylor.
     Complex enough that I fell it should be kept separated from the main solver.
     """
@@ -226,7 +229,7 @@ cdef class taylorNoise:
     cpdef void order2(self, double[::1] noise, double[::1] dws):
         cdef int p = self.p
         cdef int r, l
-        cdef double s = 0.1666666666666666666666
+        cdef double s = 1/6.
         cdef double a = 0
         cdef double b = 0
         cdef double AA = 0
@@ -257,7 +260,7 @@ cdef class taylorNoise:
         dws[4] = noise[0]*(noise[0]*s +0.25*a -0.5*b) +AA -CC  # j110
 
 
-cdef class ssolvers:
+cdef class StochasticSolver:
     """ stochastic solver class base
     Does most of the initialisation, drive the simulation and contain the
     stochastic integration algorythm that do not depend on the physics.
@@ -288,12 +291,12 @@ cdef class ssolvers:
         ...
 
     CHILD:
-    sse: stochastic schrodinger evolution
-    sme: stochastic master evolution
-    psse: photocurrent stochastic schrodinger evolution
-    psme: photocurrent stochastic master evolution
-    pmsme: positive map stochastic master evolution
-    generic: general (user defined) stochastic evolution
+    SSESolver: stochastic schrodinger evolution
+    SMESolver: stochastic master evolution
+    PcSSESolver: photocurrent stochastic schrodinger evolution
+    PcSMESolver: photocurrent stochastic master evolution
+    PmSMESolver: positive map stochastic master evolution
+    GenericSSolver: general (user defined) stochastic evolution
 
     CHILD METHODS:
     set_data:
@@ -309,9 +312,9 @@ cdef class ssolvers:
       d1, d2 and there derivatives up to dt**2.0
       one sc_ops
     """
-    cdef int l_vec, N_ops
-    cdef int solver#, noise_type
-    cdef int N_step, N_substeps, N_dw
+    cdef int l_vec, num_ops
+    cdef Solvers solver
+    cdef int num_step, num_substeps, num_dw
     cdef int normalize
     cdef double dt
     cdef int noise_type
@@ -332,12 +335,12 @@ cdef class ssolvers:
     cdef complex[:, ::1] func_buffer_2d
     cdef complex[:, :, ::1] func_buffer_3d
 
-    cdef taylorNoise order2noise
+    cdef TaylorNoise order2noise
 
     def __init__(self):
         self.l_vec = 0
-        self.N_ops = 0
-        self.solver = 0
+        self.num_ops = 0
+        self.solver = SOLVER_NOT_SET
 
     def set_solver(self, sso):
         """ Prepare the solver from the info in StochasticSolverOptions
@@ -352,91 +355,101 @@ cdef class ssolvers:
 
         self.solver = sso.solver_code
         self.dt = sso.dt
-        self.N_substeps = sso.nsubsteps
+        self.num_substeps = sso.nsubsteps
         self.normalize = sso.normalize
-        self.N_step = len(sso.times)
-        self.N_dw = len(sso.sops)
-        if self.solver in [150, 152, 153]:
-            self.N_dw *= 2
-        if self.solver in [202]:
-            self.N_dw *= 3+2*sso.p
-            self.order2noise = taylorNoise(sso.p, self.dt)
+        self.num_step = len(sso.times)
+        self.num_dw = len(sso.sops)
+        if self.solver in [EXPLICIT1_5_SOLVER,
+                           TAYLOR1_5_SOLVER,
+                           TAYLOR1_5_IMP_SOLVER]:
+            self.num_dw *= 2
+        if self.solver in [TAYLOR2_0_SOLVER]:
+            self.num_dw *= 3 + 2*sso.p
+            self.order2noise = TaylorNoise(sso.p, self.dt)
         # prepare buffers for the solvers
         nb_solver = [0,0,0,0]
         nb_func = [0,0,0]
         nb_expect = [0,0,0]
 
-        if self.solver == 50:
+        # %%%%%%%%%%%%%%%%%%%%%%%%%
+        # Depending on the solver, determine the numbers of buffers of each
+        # shape to prepare. (~30% slower when not preallocating buffer)
+        # nb_solver : buffer to contain the states used by solver
+        # nb_func : buffer for states used used by d1, d2 and derivative functions
+        # nb_expect : buffer to store expectation values.
+        if self.solver is EULER_SOLVER:
             nb_solver = [0,1,0,0]
-        elif self.solver == 60:
+        elif self.solver is PHOTOCURRENT_SOLVER:
             nb_solver = [0,1,0,0]
             nb_func = [1,0,0]
-        elif self.solver == 100:
+        elif self.solver is PLATEN_SOLVER:
             nb_solver = [2,5,0,0]
-        elif self.solver == 101:
+        elif self.solver is PC_SOLVER:
             nb_solver = [4,1,1,0]
-        elif self.solver == 102:
+        elif self.solver is MILSTEIN_SOLVER:
             nb_solver = [0,1,1,0]
-        elif self.solver == 103:
+        elif self.solver is MILSTEIN_IMP_SOLVER:
             nb_solver = [1,1,1,0]
-        elif self.solver == 104:
+        elif self.solver is PC_2_SOLVER:
             nb_solver = [5,1,1,0]
-        elif self.solver == 110:
+        elif self.solver is PHOTOCURRENT_PC_SOLVER:
             nb_solver = [1,1,0,0]
             nb_func = [1,0,0]
-        elif self.solver == 120:
+        elif self.solver is ROUCHON_SOLVER:
             nb_solver = [2,0,0,0]
-        elif self.solver == 150:
+        elif self.solver is EXPLICIT1_5_SOLVER:
             nb_solver = [5,8,3,0]
-        elif self.solver == 152:
+        elif self.solver is TAYLOR1_5_SOLVER:
             nb_solver = [2,3,1,1]
-        elif self.solver == 153:
+        elif self.solver is TAYLOR1_5_IMP_SOLVER:
             nb_solver = [2,3,1,1]
-        elif self.solver == 202:
+        elif self.solver is TAYLOR2_0_SOLVER:
             nb_solver = [11,0,0,0]
 
-        if self.solver in [101,102,103,104,152,153]:
+        if self.solver in [PC_SOLVER, MILSTEIN_SOLVER, MILSTEIN_IMP_SOLVER,
+                           PC_2_SOLVER, TAYLOR1_5_SOLVER, TAYLOR1_5_IMP_SOLVER]:
           if sso.me:
             nb_func = [1,0,0]
             nb_expect = [1,1,0]
           else:
             nb_func = [2,1,1]
             nb_expect = [2,1,1]
-        elif self.solver in [202]:
+        elif self.solver is TAYLOR2_0_SOLVER:
           if sso.me:
             nb_func = [2,0,0]
             nb_expect = [2,0,0]
           else:
             nb_func = [14,0,0]
             nb_expect = [0,0,0]
-        elif self.solver in [120]:
+        elif self.solver is ROUCHON_SOLVER:
             nb_expect = [1,0,0]
         else:
           if not sso.me:
             nb_func = [1,0,0]
 
-        self.buffer_1d = np.zeros((nb_solver[0],self.l_vec),dtype=complex)
-        self.buffer_2d = np.zeros((nb_solver[1],self.N_ops,self.l_vec),dtype=complex)
-        self.buffer_3d = np.zeros((nb_solver[2],self.N_ops,self.N_ops,self.l_vec),
+        self.buffer_1d = np.zeros((nb_solver[0], self.l_vec), dtype=complex)
+        self.buffer_2d = np.zeros((nb_solver[1], self.num_ops, self.l_vec),
+                                  dtype=complex)
+        self.buffer_3d = np.zeros((nb_solver[2], self.num_ops, self.num_ops, self.l_vec),
                                         dtype=complex)
         if nb_solver[3]:
-          self.buffer_4d = np.zeros((self.N_ops,self.N_ops,self.N_ops,self.l_vec),
+          self.buffer_4d = np.zeros((self.num_ops, self.num_ops, self.num_ops, self.l_vec),
                                         dtype=complex)
 
-        self.expect_buffer_1d = np.zeros((nb_expect[0],self.N_ops),dtype=complex)
+        self.expect_buffer_1d = np.zeros((nb_expect[0], self.num_ops), dtype=complex)
         if nb_expect[1]:
-          self.expect_buffer_2d = np.zeros((self.N_ops,self.N_ops),dtype=complex)
+          self.expect_buffer_2d = np.zeros((self.num_ops, self.num_ops), dtype=complex)
         if nb_expect[2]:
-          self.expect_buffer_3d = np.zeros((self.N_ops,self.N_ops,self.N_ops),dtype=complex)
+          self.expect_buffer_3d = np.zeros((self.num_ops, self.num_ops, self.num_ops), dtype=complex)
 
-        self.func_buffer_1d = np.zeros((nb_func[0],self.l_vec),dtype=complex)
+        self.func_buffer_1d = np.zeros((nb_func[0], self.l_vec), dtype=complex)
         if nb_func[1]:
-          self.func_buffer_2d = np.zeros((self.N_ops,self.l_vec),dtype=complex)
+          self.func_buffer_2d = np.zeros((self.num_ops, self.l_vec), dtype=complex)
         if nb_func[2]:
-          self.func_buffer_3d = np.zeros((self.N_ops,self.N_ops,self.l_vec),dtype=complex)
+          self.func_buffer_3d = np.zeros((self.num_ops, self.num_ops, self.l_vec), dtype=complex)
 
         self.noise_type = sso.noise_type
-        self.dW_factor = np.array(sso.dW_factors,dtype=np.float64)
+        self.dW_factor = np.array(sso.dW_factors, dtype=np.float64)
         if self.noise_type == 1:
             self.custom_noise = sso.noise
         elif self.noise_type == 0:
@@ -448,13 +461,13 @@ cdef class ssolvers:
 
     cdef np.ndarray[double, ndim=3] make_noise(self, int n):
         """Create the random numbers for the stochastic process"""
-        if self.solver in [60, 110] and self.noise_type == 0:
+        if self.solver in [PHOTOCURRENT_SOLVER, PHOTOCURRENT_PC_SOLVER] and self.noise_type == 0:
             # photocurrent, just seed,
             np.random.seed(self.seed[n])
-            return np.zeros((self.N_step, self.N_substeps, self.N_dw))
+            return np.zeros((self.num_step, self.num_substeps, self.num_dw))
         if self.noise_type == 0:
             np.random.seed(self.seed[n])
-            return np.random.randn(self.N_step, self.N_substeps, self.N_dw) *\
+            return np.random.randn(self.num_step, self.num_substeps, self.num_dw) *\
                                    np.sqrt(self.dt)
         elif self.noise_type == 1:
             return self.custom_noise[n,:,:,:]
@@ -504,7 +517,7 @@ cdef class ssolvers:
         for t_idx, t in enumerate(times):
             if sso.ce_ops:
                 for e_idx, e in enumerate(sso.ce_ops):
-                    s = e.compiled_Qobj.expect(t, rho_t, 0)
+                    s = e.compiled_qobjevo.expect(t, rho_t, 0)
                     expect[e_idx, t_idx] = s
             if sso.store_states or not sso.ce_ops:
                 if sso.me:
@@ -515,87 +528,87 @@ cdef class ssolvers:
 
             if t_idx != tlast-1:
                 rho_t = self.run(t, self.dt, noise[t_idx, :, :],
-                                 rho_t, self.N_substeps)
+                                 rho_t, self.num_substeps)
 
             if sso.store_measurement:
                 for m_idx, m in enumerate(sso.cm_ops):
-                    m_expt = m.compiled_Qobj.expect(t, rho_t, 0)
+                    m_expt = m.compiled_qobjevo.expect(t, rho_t, 0)
                     measurements[t_idx, m_idx] = m_expt + self.dW_factor[m_idx] * \
-                        sum(noise[t_idx, :, m_idx]) / (self.dt * self.N_substeps)
+                        sum(noise[t_idx, :, m_idx]) / (self.dt * self.num_substeps)
 
         if sso.method == 'heterodyne':
-            measurements = measurements.reshape(len(times),len(sso.cm_ops)//2,2)
+            measurements = measurements.reshape(len(times), len(sso.cm_ops)//2, 2)
 
         return states_list, noise, measurements, expect
 
     @cython.boundscheck(False)
     cdef complex[::1] run(self, double t, double dt, double[:, ::1] noise,
-                          complex[::1] vec, int N_substeps):
+                          complex[::1] vec, int num_substeps):
         """ Do one time full step"""
         cdef complex[::1] out = np.zeros(self.l_vec, dtype=complex)
         cdef int i
-        if self.solver == 50:
-            for i in range(N_substeps):
+        if self.solver is EULER_SOLVER:
+            for i in range(num_substeps):
                 self.euler(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 60:
-            for i in range(N_substeps):
+        elif self.solver is PHOTOCURRENT_SOLVER:
+            for i in range(num_substeps):
                 self.photocurrent(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 100:
-            for i in range(N_substeps):
+        elif self.solver is PLATEN_SOLVER:
+            for i in range(num_substeps):
                 self.platen(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 101:
-            for i in range(N_substeps):
+        elif self.solver is PC_SOLVER:
+            for i in range(num_substeps):
                 self.pred_corr(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 102:
-            for i in range(N_substeps):
+        elif self.solver is MILSTEIN_SOLVER:
+            for i in range(num_substeps):
                 self.milstein(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 103:
-            for i in range(N_substeps):
+        elif self.solver is MILSTEIN_IMP_SOLVER:
+            for i in range(num_substeps):
                 self.milstein_imp(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 104:
-            for i in range(N_substeps):
+        elif self.solver is PC_2_SOLVER:
+            for i in range(num_substeps):
                 self.pred_corr_a(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 110:
-            for i in range(N_substeps):
+        elif self.solver is PHOTOCURRENT_PC_SOLVER:
+            for i in range(num_substeps):
                 self.photocurrent_pc(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 120:
-            for i in range(N_substeps):
+        elif self.solver is ROUCHON_SOLVER:
+            for i in range(num_substeps):
                 self.rouchon(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 150:
-            for i in range(N_substeps):
+        elif self.solver is EXPLICIT1_5_SOLVER:
+            for i in range(num_substeps):
                 self.platen15(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 152:
-            for i in range(N_substeps):
+        elif self.solver is TAYLOR1_5_SOLVER:
+            for i in range(num_substeps):
                 self.taylor15(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 153:
-            for i in range(N_substeps):
+        elif self.solver is TAYLOR1_5_IMP_SOLVER:
+            for i in range(num_substeps):
                 self.taylor15_imp(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
-        elif self.solver == 202:
-            for i in range(N_substeps):
+        elif self.solver is TAYLOR2_0_SOLVER:
+            for i in range(num_substeps):
                 self.taylor20(t + i*dt, dt, noise[i, :], vec, out)
                 out, vec = vec, out
 
@@ -607,6 +620,7 @@ cdef class ssolvers:
         _normalize_inplace(vec)
 
     # Dummy functions
+    # Needed for compilation since ssesolve is not stand-alone
     cdef void d1(self, double t, complex[::1] v, complex[::1] out):
         """ deterministic part of the evolution
         depend on schrodinger vs master vs photocurrent
@@ -686,7 +700,7 @@ cdef class ssolvers:
         copy(vec, out)
         self.d1(t, vec, out)
         self.d2(t, vec, d2)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(noise[i], d2[i,:], out)
 
     @cython.boundscheck(False)
@@ -725,7 +739,7 @@ cdef class ssolvers:
         copy(d1,Vt)
         copy(d1,out)
         _scale(0.5,out)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             copy(d1,Vp[i,:])
             copy(d1,Vm[i,:])
             _axpy( sqrt_dt,d2[i,:],Vp[i,:])
@@ -735,7 +749,7 @@ cdef class ssolvers:
         self.d1(t, Vt, d1)
         _axpy(0.5,d1,out)
         _axpy(0.5,vec,out)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _zero_2d(d2p)
             _zero_2d(d2m)
             self.d2(t, Vp[i,:], d2p)
@@ -744,7 +758,7 @@ cdef class ssolvers:
             _axpy(dw,d2m[i,:],out)
             _axpy(2*dw,d2[i,:],out)
             _axpy(dw,d2p[i,:],out)
-            for j in range(self.N_ops):
+            for j in range(self.num_ops):
                 if i == j:
                     dw2 = sqrt_dt_inv * (noise[i]*noise[i] - dt)
                 else:
@@ -777,7 +791,7 @@ cdef class ssolvers:
         copy(vec, euler)
         copy(vec, out)
         _axpy(1.0, a_pred, euler)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(noise[i], d2[i,:], b_pred)
             _axpy(-dt_2, dd2[i,i,:], a_pred)
         _axpy(1.0, a_pred, out)
@@ -785,7 +799,7 @@ cdef class ssolvers:
         _axpy(0.5, b_pred, out)
         _zero_2d(d2)
         self.d2(t + dt, euler, d2)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(noise[i]*0.5, d2[i,:], out)
 
     @cython.wraparound(False)
@@ -816,7 +830,7 @@ cdef class ssolvers:
         self.derivatives(t, 1, vec, a_pred, d2, dd2, None, None, None, None)
         copy(vec, euler)
         _axpy(1.0, a_pred, euler)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(noise[i], d2[i,:], b_pred)
             _axpy(-dt_2, dd2[i,i,:], a_pred)
         _axpy(1.0, b_pred, euler)
@@ -826,7 +840,7 @@ cdef class ssolvers:
         _zero_2d(d2)
         _zero_3d(dd2)
         self.derivatives(t, 1, euler, a_corr, d2, dd2, None, None, None, None)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(noise[i]*0.5, d2[i,:], out)
             _axpy(-dt_2, dd2[i,i,:], a_corr)
         _axpy(0.5, a_corr, out)
@@ -852,10 +866,10 @@ cdef class ssolvers:
         _zero_3d(dd2)
         copy(vec,out)
         self.derivatives(t, 1, vec, out, d2, dd2, None, None, None, None)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(noise[i],d2[i,:],out)
-        for i in range(self.N_ops):
-            for j in range(i, self.N_ops):
+        for i in range(self.num_ops):
+            for j in range(i, self.num_ops):
                 if (i == j):
                     dw = (noise[i] * noise[i] - dt) * 0.5
                 else:
@@ -887,10 +901,10 @@ cdef class ssolvers:
         self.derivatives(t, 1, vec, a, d2, dd2, None, None, None, None)
         copy(vec, dvec)
         _axpy(0.5, a, dvec)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(noise[i], d2[i,:], dvec)
-        for i in range(self.N_ops):
-            for j in range(i, self.N_ops):
+        for i in range(self.num_ops):
+            for j in range(i, self.num_ops):
                 if (i == j):
                     dw = (noise[i] * noise[i] - dt) * 0.5
                 else:
@@ -928,28 +942,28 @@ cdef class ssolvers:
 
         cdef int i,j,k
         cdef double[::1] dz, dw
-        dw = np.empty(self.N_ops)
-        dz = np.empty(self.N_ops)
+        dw = np.empty(self.num_ops)
+        dz = np.empty(self.num_ops)
         # The dt of dz is included in the d1 part (Ldt) and the noise (dt**.5)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             dw[i] = noise[i]
-            dz[i] = 0.5 *(noise[i] + 1./np.sqrt(3) * noise[i+self.N_ops])
+            dz[i] = 0.5 *(noise[i] + 1./np.sqrt(3) * noise[i+self.num_ops])
         copy(vec,out)
         _axpy(1.0, a, out)
         _axpy(0.5, L0a, out)
 
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(dw[i], b[i,:], out)
             _axpy(0.5*(dw[i]*dw[i]-dt), Lb[i,i,:], out)
             _axpy(dz[i], La[i,:], out)
             _axpy(dw[i]-dz[i], L0b[i,:], out)
-            _axpy(0.5 * (0.3333333333333333 * dw[i] * dw[i] - dt) * dw[i],
+            _axpy(0.5 * ((1/3.) * dw[i] * dw[i] - dt) * dw[i],
                         LLb[i,i,i,:], out)
-            for j in range(i+1,self.N_ops):
+            for j in range(i+1,self.num_ops):
                 _axpy((dw[i]*dw[j]), Lb[i,j,:], out)
                 _axpy(0.5*(dw[j]*dw[j]-dt)*dw[i], LLb[i,j,j,:], out)
                 _axpy(0.5*(dw[i]*dw[i]-dt)*dw[j], LLb[i,i,j,:], out)
-                for k in range(j+1,self.N_ops):
+                for k in range(j+1,self.num_ops):
                     _axpy(dw[i]*dw[j]*dw[k], LLb[i,j,k,:], out)
 
     @cython.wraparound(False)
@@ -984,26 +998,26 @@ cdef class ssolvers:
 
         cdef int i,j,k
         cdef double[::1] dz, dw
-        dw = np.empty(self.N_ops)
-        dz = np.empty(self.N_ops)
+        dw = np.empty(self.num_ops)
+        dz = np.empty(self.num_ops)
         # The dt of dz is included in the d1 part (Ldt) and the noise (dt**.5)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             dw[i] = noise[i]
-            dz[i] = 0.5 *(noise[i] + 1./np.sqrt(3) * noise[i+self.N_ops])
+            dz[i] = 0.5 *(noise[i] + 1./np.sqrt(3) * noise[i+self.num_ops])
         copy(vec, vec_t)
         _axpy(0.5, a, vec_t)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(dw[i], b[i,:], vec_t)
             _axpy(0.5*(dw[i]*dw[i]-dt), Lb[i,i,:], vec_t)
             _axpy(dz[i]-dw[i]*0.5, La[i,:], vec_t)
             _axpy(dw[i]-dz[i] , L0b[i,:], vec_t)
-            _axpy(0.5 * (0.3333333333333333 * dw[i] * dw[i] - dt) * dw[i],
+            _axpy(0.5 * ((1/3.) * dw[i] * dw[i] - dt) * dw[i],
                         LLb[i,i,i,:], vec_t)
-            for j in range(i+1,self.N_ops):
+            for j in range(i+1,self.num_ops):
                 _axpy((dw[i]*dw[j]), Lb[i,j,:], vec_t)
                 _axpy(0.5*(dw[j]*dw[j]-dt)*dw[i], LLb[i,j,j,:], vec_t)
                 _axpy(0.5*(dw[i]*dw[i]-dt)*dw[j], LLb[i,i,j,:], vec_t)
-                for k in range(j+1,self.N_ops):
+                for k in range(j+1,self.num_ops):
                     _axpy(dw[i]*dw[j]*dw[k], LLb[i,j,k,:], vec_t)
         copy(vec_t, guess)
         _axpy(0.5, a, guess)
@@ -1025,11 +1039,11 @@ cdef class ssolvers:
         cdef double sqrt_dt_inv = 1./sqrt_dt
         cdef double ddz, ddw, ddd
         cdef double[::1] dz, dw
-        dw = np.empty(self.N_ops)
-        dz = np.empty(self.N_ops)
-        for i in range(self.N_ops):
+        dw = np.empty(self.num_ops)
+        dz = np.empty(self.num_ops)
+        for i in range(self.num_ops):
             dw[i] = noise[i]
-            dz[i] = 0.5 *(noise[i] + 1./np.sqrt(3) * noise[i+self.N_ops])
+            dz[i] = 0.5 *(noise[i] + 1./np.sqrt(3) * noise[i+self.num_ops])
 
         cdef complex[::1] d1 = self.buffer_1d[0,:]
         cdef complex[::1] d1p = self.buffer_1d[1,:]
@@ -1055,16 +1069,16 @@ cdef class ssolvers:
         # Euler part
         copy(vec,out)
         _axpy(1., d1, out)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(dw[i], d2[i,:], out)
 
         _zero(V)
         _axpy(1., vec, V)
-        _axpy(1./self.N_ops, d1, V)
+        _axpy(1./self.num_ops, d1, V)
 
         _zero_2d(v2p)
         _zero_2d(v2m)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _axpy(1., V, v2p[i,:])
             _axpy(sqrt_dt, d2[i,:], v2p[i,:])
             _axpy(1., V, v2m[i,:])
@@ -1072,7 +1086,7 @@ cdef class ssolvers:
 
         _zero_3d(p2p)
         _zero_3d(p2m)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _zero_2d(d2p)
             _zero_2d(d2m)
             self.d2(t, v2p[i,:], d2p)
@@ -1080,14 +1094,14 @@ cdef class ssolvers:
             ddw = (dw[i]*dw[i]-dt)*0.25/sqrt_dt  # 1.0
             _axpy( ddw, d2p[i,:], out)
             _axpy(-ddw, d2m[i,:], out)
-            for j in range(self.N_ops):
+            for j in range(self.num_ops):
                 _axpy(      1., v2p[i,:], p2p[i,j,:])
                 _axpy( sqrt_dt, d2p[j,:], p2p[i,j,:])
                 _axpy(      1., v2p[i,:], p2m[i,j,:])
                 _axpy(-sqrt_dt, d2p[j,:], p2m[i,j,:])
 
-        _axpy(-0.5*(self.N_ops), d1, out)
-        for i in range(self.N_ops):
+        _axpy(-0.5*(self.num_ops), d1, out)
+        for i in range(self.num_ops):
             ddz = dz[i]*0.5/sqrt_dt  # 1.5
             ddd = 0.25*(dw[i]*dw[i]/3-dt)*dw[i]/dt  # 1.5
             _zero(d1p)
@@ -1096,8 +1110,8 @@ cdef class ssolvers:
             _zero_2d(d2p)
             _zero_2d(d2pp)
             _zero_2d(d2mm)
-            self.d1(t + dt/self.N_ops, v2p[i,:], d1p)
-            self.d1(t + dt/self.N_ops, v2m[i,:], d1m)
+            self.d1(t + dt/self.num_ops, v2p[i,:], d1p)
+            self.d1(t + dt/self.num_ops, v2m[i,:], d1m)
             self.d2(t, v2p[i,:], d2p)
             self.d2(t, v2m[i,:], d2m)
             self.d2(t, p2p[i,i,:], d2pp)
@@ -1114,7 +1128,7 @@ cdef class ssolvers:
             _axpy(-ddd, d2p[i,:], out)
             _axpy( ddd, d2m[i,:], out)
 
-            for j in range(self.N_ops):
+            for j in range(self.num_ops):
               ddw = 0.5*(dw[j]-dz[j]) # 1.5
               _axpy(ddw, d2p[j,:], out)
               _axpy(-2*ddw, d2[j,:], out)
@@ -1135,7 +1149,7 @@ cdef class ssolvers:
                 _axpy(-ddw, d2p[j,:], out)
                 _axpy( ddw, d2m[j,:], out)
 
-                for k in range(j+1,self.N_ops):
+                for k in range(j+1,self.num_ops):
                     ddw = 0.5*dw[i]*dw[j]*dw[k]/dt # 1.5
                     _axpy( ddw, d2pp[k,:], out)
                     _axpy(-ddw, d2mm[k,:], out)
@@ -1200,7 +1214,7 @@ cdef class ssolvers:
 
         _axpy(noises[1], La, out)
         _axpy(noises[0]-noises[1], L0b, out)
-        dwn *= noises[0]*0.3333333333333333333333
+        dwn *= noises[0]*(1/3.)
         _axpy(dwn, LLb, out)
         _axpy(0.5, L0a, out)
 
@@ -1211,8 +1225,8 @@ cdef class ssolvers:
         _axpy(dwn, LLLb, out)
 
 
-cdef class sse(ssolvers):
-    """stochastic schrodinger system"""
+cdef class SSESolver(StochasticSolver):
+    """stochastic Schrodinger system"""
     cdef CQobjEvo L
     cdef object c_ops
     cdef object cpcd_ops
@@ -1223,14 +1237,14 @@ cdef class sse(ssolvers):
         L = sso.LH
         c_ops = sso.sops
         self.l_vec = L.cte.shape[0]
-        self.N_ops = len(c_ops)
-        self.L = L.compiled_Qobj
+        self.num_ops = len(c_ops)
+        self.L = L.compiled_qobjevo
         self.c_ops = []
         self.cpcd_ops = []
         for i, op in enumerate(c_ops):
-            self.c_ops.append(op[0].compiled_Qobj)
-            self.cpcd_ops.append(op[1].compiled_Qobj)
-        if sso.solver_code in [103, 153]:
+            self.c_ops.append(op[0].compiled_qobjevo)
+            self.cpcd_ops.append(op[1].compiled_qobjevo)
+        if sso.solver_code in [MILSTEIN_IMP_SOLVER, TAYLOR1_5_IMP_SOLVER]:
             self.tol = sso.tol
             self.imp = LinearOperator( (self.l_vec,self.l_vec),
                                       matvec=self.implicit_op, dtype=complex)
@@ -1253,7 +1267,7 @@ cdef class sse(ssolvers):
         cdef CQobjEvo c_op
         cdef complex[::1] temp = self.func_buffer_1d[0,:]
         _zero(temp)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.cpcd_ops[i]
             e = c_op._expect(t, &vec[0], 0)
             _zero(temp)
@@ -1269,7 +1283,7 @@ cdef class sse(ssolvers):
         cdef int i, k
         cdef CQobjEvo c_op
         cdef complex expect
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.c_ops[i]
             c_op._mul_vec(t, &vec[0], &out[i,0])
             c_op = self.cpcd_ops[i]
@@ -1321,7 +1335,7 @@ cdef class sse(ssolvers):
 
         # a b
         self.L._mul_vec(t, &vec[0], &a[0])
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.c_ops[i]
             c_op._mul_vec(t, &vec[0], &Cvec[i,0])
             e = _dotc(vec,Cvec[i,:])
@@ -1333,9 +1347,9 @@ cdef class sse(ssolvers):
 
         #Lb bb'
         if deg >= 1:
-          for i in range(self.N_ops):
+          for i in range(self.num_ops):
             c_op = self.c_ops[i]
-            for j in range(self.N_ops):
+            for j in range(self.num_ops):
               c_op._mul_vec(t, &b[j,0], &Cb[i,j,0])
               for k in range(self.l_vec):
                   temp[k] = conj(b[j,k])
@@ -1347,7 +1361,7 @@ cdef class sse(ssolvers):
               _axpy(-e_real[i], b[j,:], Lb[i,j,:])
               _axpy(-de_b[i,j], vec, Lb[i,j,:])
 
-              for k in range(self.N_ops):
+              for k in range(self.num_ops):
                 dde_bb[i,j,k] += (_dot(b[j,:], Cb[i,k,:]) + \
                                   _dot(b[k,:], Cb[i,j,:]) + \
                                   conj(_dotc(b[k,:], temp2)))*.5
@@ -1355,10 +1369,10 @@ cdef class sse(ssolvers):
 
         #L0b La LLb
         if deg >= 2:
-          for i in range(self.N_ops):
+          for i in range(self.num_ops):
               #ba'
               self.L._mul_vec(t, &b[i,0], &La[i,0])
-              for j in range(self.N_ops):
+              for j in range(self.num_ops):
                   _axpy(-0.5 * e_real[j] * e_real[j] * dt, b[i,:], La[i,:])
                   _axpy(-e_real[j] * de_b[i,j] * dt, vec, La[i,:])
                   _axpy(e_real[j] * dt, Cb[i,j,:], La[i,:])
@@ -1383,13 +1397,13 @@ cdef class sse(ssolvers):
               _axpy(-real(e), vec, L0b[i,:])
               _axpy(-1., b[i,:], L0b[i,:])
 
-              for j in range(self.N_ops):
+              for j in range(self.num_ops):
                   _axpy(-de_b[i,j]*dt, b[j,:], L0b[i,:])
                   _axpy(-dde_bb[i,j,j]*dt, vec, L0b[i,:])
 
               #b(bb"+b'b')
-              for j in range(i,self.N_ops):
-                  for k in range(j, self.N_ops):
+              for j in range(i,self.num_ops):
+                  for k in range(j, self.num_ops):
                       c_op._mul_vec(t, &Lb[j,k,0], &LLb[i,j,k,0])
                       for l in range(self.l_vec):
                           temp[l] = conj(Lb[j,k,l])
@@ -1410,7 +1424,7 @@ cdef class sse(ssolvers):
           self.d1(t + dt, vec, L0a)
           _axpy(-1.0, a, L0a)
           self.L._mul_vec(t, &a[0], &L0a[0])
-          for j in range(self.N_ops):
+          for j in range(self.num_ops):
               c_op = self.c_ops[j]
               temp = np.zeros(self.l_vec, dtype=complex)
               c_op._mul_vec(t, &a[0], &temp[0])
@@ -1418,7 +1432,7 @@ cdef class sse(ssolvers):
               _axpy(-e_real[j] * de_a[j] * dt, vec, L0a[:])
               _axpy(e_real[j] * dt, temp, L0a[:])
               _axpy(de_a[j] * dt, Cvec[j,:], L0a[:])
-              for i in range(self.N_ops):
+              for i in range(self.num_ops):
                   _axpy(-0.5*(e_real[i] * dde_bb[i,j,j] +
                           de_b[i,j] * de_b[i,j]) * dt * dt, vec, L0a[:])
                   _axpy(-e_real[i] * de_b[i,j] * dt * dt, b[j,:], L0a[:])
@@ -1613,12 +1627,12 @@ cdef class sse(ssolvers):
         # np.ndarray to memoryview is OK but not the reverse
         # scipy function only take np array, not memoryview
         self.imp_t = t
-        spout, check = sp.linalg.bicgstab(self.imp, dvec, x0 = guess,
+        spout, check = sp.linalg.bicgstab(self.imp, dvec, x0=guess,
                                           tol=self.tol, atol=1e-12)
         cdef int i
         copy(spout, out)
 
-cdef class sme(ssolvers):
+cdef class SMESolver(StochasticSolver):
     """stochastic master equation system"""
     cdef CQobjEvo L
     cdef object imp
@@ -1630,13 +1644,13 @@ cdef class sme(ssolvers):
         L = sso.LH
         c_ops = sso.sops
         self.l_vec = L.cte.shape[0]
-        self.N_ops = len(c_ops)
-        self.L = L.compiled_Qobj
+        self.num_ops = len(c_ops)
+        self.L = L.compiled_qobjevo
         self.c_ops = []
         self.N_root = np.sqrt(self.l_vec)
         for i, op in enumerate(c_ops):
-            self.c_ops.append(op.compiled_Qobj)
-        if sso.solver_code in [103, 153]:
+            self.c_ops.append(op.compiled_qobjevo)
+        if sso.solver_code in [MILSTEIN_IMP_SOLVER, TAYLOR1_5_IMP_SOLVER]:
             self.tol = sso.tol
             self.imp = sso.imp
 
@@ -1664,7 +1678,7 @@ cdef class sme(ssolvers):
         cdef int i, k
         cdef CQobjEvo c_op
         cdef complex expect
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.c_ops[i]
             c_op._mul_vec(t, &rho[0], &out[i,0])
             expect = self.expect(out[i,:])
@@ -1706,7 +1720,7 @@ cdef class sme(ssolvers):
         self.L._mul_vec(t, &rho[0], &a[0])
 
         # b
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.c_ops[i]
             # bi
             c_op._mul_vec(t, &rho[0], &b[i,0])
@@ -1716,9 +1730,9 @@ cdef class sme(ssolvers):
         # Libj = bibj', i<=j
         # sc_ops must commute (Libj = Ljbi)
         if deg >= 1:
-          for i in range(self.N_ops):
+          for i in range(self.num_ops):
             c_op = self.c_ops[i]
-            for j in range(i, self.N_ops):
+            for j in range(i, self.num_ops):
                 c_op._mul_vec(t, &b[j,0], &Lb[i,j,0])
                 trAb[i,j] = self.expect(Lb[i,j,:])
                 _axpy(-trAp[j], b[i,:], Lb[i,j,:])
@@ -1726,7 +1740,7 @@ cdef class sme(ssolvers):
 
         # L0b La LLb
         if deg >= 2:
-          for i in range(self.N_ops):
+          for i in range(self.num_ops):
             c_op = self.c_ops[i]
             # Lia = bia'
             self.L._mul_vec(t, &b[i,0], &La[i,0])
@@ -1747,14 +1761,14 @@ cdef class sme(ssolvers):
             # bbb" : trAb[i,j] only defined for j>=i
             for j in range(i):
                 _axpy(-trAb[j,i]*self.dt, b[j,:], L0b[i,:])  # L contain dt
-            for j in range(i,self.N_ops):
+            for j in range(i,self.num_ops):
                 _axpy(-trAb[i,j]*self.dt, b[j,:], L0b[i,:])  # L contain dt
 
             # LLb
             # LiLjbk = bi(bj'bk'+bjbk"), i<=j<=k
             # sc_ops must commute (LiLjbk = LjLibk = LkLjbi)
-            for j in range(i,self.N_ops):
-              for k in range(j,self.N_ops):
+            for j in range(i,self.num_ops):
+              for k in range(j,self.num_ops):
                 c_op._mul_vec(t, &Lb[j,k,0], &LLb[i,j,k,0])
                 trAbb = self.expect(LLb[i,j,k,:])
                 _axpy(-trAp[i], Lb[j,k,:], LLb[i,j,k,:])
@@ -1886,8 +1900,8 @@ cdef class sme(ssolvers):
         copy(spout,out)
 
 
-cdef class psse(ssolvers):
-    """photocurrent for schrodinger equation"""
+cdef class PcSSESolver(StochasticSolver):
+    """photocurrent for Schrodinger equation"""
     cdef CQobjEvo L
     cdef object c_ops
     cdef object cdc_ops
@@ -1896,13 +1910,13 @@ cdef class psse(ssolvers):
         L = sso.LH
         c_ops = sso.sops
         self.l_vec = L.cte.shape[0]
-        self.N_ops = len(c_ops)
-        self.L = L.compiled_Qobj
+        self.num_ops = len(c_ops)
+        self.L = L.compiled_qobjevo
         self.c_ops = []
         self.cdc_ops = []
         for i, op in enumerate(c_ops):
-            self.c_ops.append(op[0].compiled_Qobj)
-            self.cdc_ops.append(op[1].compiled_Qobj)
+            self.c_ops.append(op[0].compiled_qobjevo)
+            self.cdc_ops.append(op[1].compiled_qobjevo)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -1916,7 +1930,7 @@ cdef class psse(ssolvers):
         copy(vec,out)
         self.d1(t, vec, out)
         self.d2(t, vec, d2)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.cdc_ops[i]
             expect = c_op.expect(t, vec, 1).real * dt
             if expect > 0:
@@ -1942,7 +1956,7 @@ cdef class psse(ssolvers):
         _scale(0.5, out)
         _axpy(0.5, tmp, out)
         self.d2(t, vec, d2)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.cdc_ops[i]
             expect = c_op.expect(t, vec, 1).real * dt
             if expect > 0:
@@ -1960,7 +1974,7 @@ cdef class psse(ssolvers):
         cdef complex e
         cdef CQobjEvo c_op
         cdef complex[::1] temp = self.func_buffer_1d[0,:]
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             _zero(temp)
             c_op = self.c_ops[i]
             c_op._mul_vec(t, &vec[0], &temp[0])
@@ -1974,7 +1988,7 @@ cdef class psse(ssolvers):
         cdef int i
         cdef CQobjEvo c_op
         cdef complex expect
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.c_ops[i]
             c_op._mul_vec(t, &vec[0], &out[i,0])
             expect = _dznrm2(out[i,:])
@@ -1984,7 +1998,7 @@ cdef class psse(ssolvers):
                 _zero(out[i,:])
             _axpy(-1, vec, out[i,:])
 
-cdef class psme(ssolvers):
+cdef class PcSMESolver(StochasticSolver):
     """photocurrent for master equation"""
     cdef CQobjEvo L
     cdef object cdcr_cdcl_ops
@@ -1996,16 +2010,16 @@ cdef class psme(ssolvers):
         L = sso.LH
         c_ops = sso.sops
         self.l_vec = L.cte.shape[0]
-        self.N_ops = len(c_ops)
-        self.L = L.compiled_Qobj
+        self.num_ops = len(c_ops)
+        self.L = L.compiled_qobjevo
         self.cdcr_cdcl_ops = []
         self.cdcl_ops = []
         self.clcdr_ops = []
         self.N_root = np.sqrt(self.l_vec)
         for i, op in enumerate(c_ops):
-            self.cdcr_cdcl_ops.append(op[0].compiled_Qobj)
-            self.cdcl_ops.append(op[1].compiled_Qobj)
-            self.clcdr_ops.append(op[2].compiled_Qobj)
+            self.cdcr_cdcl_ops.append(op[0].compiled_qobjevo)
+            self.cdcl_ops.append(op[1].compiled_qobjevo)
+            self.clcdr_ops.append(op[2].compiled_qobjevo)
 
     cdef void _normalize_inplace(self, complex[::1] vec):
         _normalize_rho(vec)
@@ -2021,7 +2035,7 @@ cdef class psme(ssolvers):
         copy(vec,out)
         self.d1(t, vec, out)
         self.d2(t, vec, d2)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.cdcl_ops[i]
             expect = c_op.expect(t, vec, 1).real * dt
             if expect > 0:
@@ -2046,7 +2060,7 @@ cdef class psme(ssolvers):
         _scale(0.5, out)
         _axpy(0.5, tmp, out)
         self.d2(t, vec, d2)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.cdcl_ops[i]
             expect = c_op.expect(t, vec, 1).real * dt
             if expect > 0:
@@ -2070,16 +2084,16 @@ cdef class psme(ssolvers):
     cdef void d1(self, double t, complex[::1] rho, complex[::1] out):
         cdef int i
         cdef CQobjEvo c_op
-        cdef complex[::1] Crho = self.func_buffer_1d[0,:]
+        cdef complex[::1] crho = self.func_buffer_1d[0,:]
         cdef complex expect
         self.L._mul_vec(t, &rho[0], &out[0])
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.cdcr_cdcl_ops[i]
-            _zero(Crho)
-            c_op._mul_vec(t, &rho[0], &Crho[0])
-            expect = self.expect(Crho)
+            _zero(crho)
+            c_op._mul_vec(t, &rho[0], &crho[0])
+            expect = self.expect(crho)
             _axpy(0.5*expect* self.dt, rho, out)
-            _axpy(-0.5* self.dt, Crho, out)
+            _axpy(-0.5* self.dt, crho, out)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -2088,7 +2102,7 @@ cdef class psme(ssolvers):
         cdef int i
         cdef CQobjEvo c_op
         cdef complex expect
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.clcdr_ops[i]
             c_op._mul_vec(t, &rho[0], &out[i,0])
             expect = self.expect(out[i,:])
@@ -2099,7 +2113,7 @@ cdef class psme(ssolvers):
             _axpy(-1, rho, out[i,:])
 
 
-cdef class pmsme(ssolvers):
+cdef class PmSMESolver(StochasticSolver):
     """positive map for master equation"""
     cdef object L
     cdef CQobjEvo pp_ops
@@ -2115,15 +2129,15 @@ cdef class pmsme(ssolvers):
     def set_data(self, sso):
         c_ops = sso.sops
         self.l_vec = sso.pp.cte.shape[0]
-        self.N_ops = len(c_ops)
-        self.preLH = sso.preLH.compiled_Qobj
-        self.postLH = sso.postLH.compiled_Qobj
-        self.pp_ops = sso.pp.compiled_Qobj
-        self.sops = [op.compiled_Qobj for op in sso.sops]
-        self.preops = [op.compiled_Qobj for op in sso.preops]
-        self.postops = [op.compiled_Qobj for op in sso.postops]
-        self.preops2 = [op.compiled_Qobj for op in sso.preops2]
-        self.postops2 = [op.compiled_Qobj for op in sso.postops2]
+        self.num_ops = len(c_ops)
+        self.preLH = sso.preLH.compiled_qobjevo
+        self.postLH = sso.postLH.compiled_qobjevo
+        self.pp_ops = sso.pp.compiled_qobjevo
+        self.sops = [op.compiled_qobjevo for op in sso.sops]
+        self.preops = [op.compiled_qobjevo for op in sso.preops]
+        self.postops = [op.compiled_qobjevo for op in sso.postops]
+        self.preops2 = [op.compiled_qobjevo for op in sso.preops2]
+        self.postops2 = [op.compiled_qobjevo for op in sso.postops2]
         self.N_root = np.sqrt(self.l_vec)
 
     cdef void _normalize_inplace(self, complex[::1] vec):
@@ -2142,7 +2156,7 @@ cdef class pmsme(ssolvers):
         _zero(out)
         _zero(temp)
         self.preLH._mul_vec(t, &vec[0], &temp[0])
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             c_op = self.sops[i]
             dy[i] = c_op._expect_super(t, &vec[0], 0) + noise[i]
             c_op = self.preops[i]
@@ -2151,8 +2165,8 @@ cdef class pmsme(ssolvers):
             _axpy(dy[i], temp2, temp)
 
         k = 0
-        for i in range(self.N_ops):
-            for j in range(i, self.N_ops):
+        for i in range(self.num_ops):
+            for j in range(i, self.num_ops):
                 c_op = self.preops2[k]
                 if i == j:
                     ddw = (dy[i]*dy[j] - dt) *0.5
@@ -2165,7 +2179,7 @@ cdef class pmsme(ssolvers):
                 k += 1
 
         self.postLH._mul_vec(t, &temp[0], &out[0])
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             dy[i] = conj(dy[i])
             c_op = self.postops[i]
             _zero(temp2)
@@ -2173,8 +2187,8 @@ cdef class pmsme(ssolvers):
             _axpy(dy[i], temp2, out)
 
         k = 0
-        for i in range(self.N_ops):
-            for j in range(i, self.N_ops):
+        for i in range(self.num_ops):
+            for j in range(i, self.num_ops):
                 c_op = self.postops2[k]
                 if i == j:
                     ddw = (dy[i]*dy[j] - dt) *0.5
@@ -2200,13 +2214,13 @@ cdef class pmsme(ssolvers):
             e += rho[k*(self.N_root+1)]
         return e
 
-cdef class generic(ssolvers):
+cdef class GenericSSolver(StochasticSolver):
     """support for user defined system"""
     cdef object d1_func, d2_func
 
     def set_data(self, sso):
         self.l_vec = sso.rho0.shape[0]
-        self.N_ops = len(sso.sops)
+        self.num_ops = len(sso.sops)
         self.d1_func = sso.d1
         self.d2_func = sso.d2
 
@@ -2227,5 +2241,5 @@ cdef class generic(ssolvers):
         in_np = np.zeros((self.l_vec, ), dtype=complex)
         copy(rho, in_np)
         out_np = self.d2_func(t, in_np)
-        for i in range(self.N_ops):
+        for i in range(self.num_ops):
             copy(out_np[i,:], out[i,:])
