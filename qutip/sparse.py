@@ -46,7 +46,7 @@ import numpy as np
 import scipy.linalg as la
 from scipy.linalg.blas import get_blas_funcs
 _dznrm2 = get_blas_funcs("znrm2")
-from qutip.cy.data_convert import cdata_from_scipy
+from qutip.qdata import cdata_from_scipy
 from qutip.fastsparse import fast_csr_matrix
 from qutip.settings import debug
 

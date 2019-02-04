@@ -81,6 +81,32 @@ cdef inline void spmvpy(complex * data, int * ind, int * ptr,
 
     zspmvpy(data, ind, ptr, vec, a, out, nrows)
 
+# val in vec in pure cython
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef int _in(int val, int[::1] vec):
+    cdef int ii
+    for ii in range(vec.shape[0]):
+        if val == vec[ii]:
+            return 1
+    return 0
+
+# indices determining function for ptrace
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+cdef void i2_k_t(int N,
+                 int[:, ::1] tensor_table,
+                 int[::1] out):
+    cdef int ii, t1, t2
+    out[0] = 0
+    out[1] = 0
+    for ii in range(rho2ten.shape[0]):
+        t1 = tensor_table[0, ii]
+        t2 = N / t1
+        N = N % t1
+        out[0] += tensor_table[1, ii] * t2
+        out[1] += tensor_table[2, ii] * t2
 
 cdef void raise_error_CSR(int E):
     if E == -1:
@@ -368,7 +394,8 @@ cdef class cy_csr_matrix:
     #@cython.wraparound(False)
     cpdef void _from_coo_indices(self, int[::1] rows, int[::1] cols):
         """
-        rebuild ind and ptr from cols and rowa
+        rebuild ind and ptr from cols and rows
+        data is inplace
         """
         cdef size_t kk
         cdef int i, j, init, inext, jnext, ipos, nn
@@ -875,7 +902,7 @@ cdef class cy_csr_matrix:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    def proj(self):
+    cpdef cy_csr_matrix proj(self):
         """
         Computes the projection operator
         from a given ket or bra vector
@@ -1001,6 +1028,98 @@ cdef class cy_csr_matrix:
         else:
             return tr
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.cdivision(True)
+    cpdef object ptrace(self, obejct dims, object sel): # work for N<= 26 on 16G Ram
+        cdef int[::1] _sel
+        cdef cy_csr_matrix _oper
+        cdef size_t ii
+        cdef size_t factor_keep = 1, factor_trace = 1, factor_tensor = 1
+        cdef int[:, ::1] tensor_table = np.zeros((3, num_dims), dtype=np.int32)
+        cdef int[::1] drho = np.asarray(dims[0], dtype=np.int32).ravel()
+        cdef int num_dims = drho.shape[0]
+
+        if isinstance(sel, int):
+            _sel = np.array([sel], dtype=np.int32)
+        else:
+            _sel = np.asarray(sel, dtype=np.int32)
+
+        for ii in range(_sel.shape[0]):
+            if _sel[ii] < 0 or _sel[ii] >= num_dims:
+                raise TypeError("Invalid selection index in ptrace.")
+
+        if np.prod(self.ncols) == 1:
+            _oper = self.proj()
+        else:
+            _oper = self
+
+        for ii in range(num_dims-1,-1,-1):
+            tensor_table[0, d] = factor_tensor
+            factor_tensor *= drho[d]
+            if _in(ii, _sel):
+                tensor_table[1, ii] = factor_keep
+                factor_keep *= drho[ii]
+            else:
+                tensor_table[2, ii] = factor_trace
+                factor_trace *= drho[ii]
+
+        dims_kept0 = np.asarray(rho.dims[0]).take(_sel).tolist()
+        rho1_dims = [dims_kept0, dims_kept0]
+
+        # Try to evaluate how sparse the result will be.
+        if factor_keep*factor_keep > _oper.nnz:
+            return _oper._ptrace_core_sp(tensor_table), rho1_dims
+        else:
+            return _oper._ptrace_core_dense(tensor_table, factor_keep), rho1_dims
+
+    cdef cy_csr_matrix _ptrace_core_sp(self, int[:, ::1] tensor_table):
+        cdef int p = 0, nnz, ii
+        cdef int[::1] pos_c = np.empty(2, dtype=np.int32)
+        cdef int[::1] pos_r = np.empty(2, dtype=np.int32)
+        cdef int[::1] col = np.empty(_oper.nnz, dtype=np.int32)
+        cdef int[::1] row = np.empty(_oper.nnz, dtype=np.int32)
+        cdef cnp.ndarray[complex, ndim=1, mode='c'] new_data = np.zeros(cco.nnz, dtype=complex)
+        cdef cnp.ndarray[int, ndim=1, mode='c'] new_col = np.zeros(cco.nnz, dtype=np.int32)
+        cdef cnp.ndarray[int, ndim=1, mode='c'] new_row = np.zeros(cco.nnz, dtype=np.int32)
+
+        nnz = _oper.nnz
+        _coo_indices(_oper, row, col)
+
+        for ii in range(nnz):
+            i2_k_t(col[ii], tensor_table, pos_c)
+            i2_k_t(row[ii], tensor_table, pos_r)
+            if pos_c[1] == pos_r[1]:
+                new_data[p] = self.data[i]
+                new_col[p] = (pos_c[0])
+                new_row[p] = (pos_r[0])
+                p += 1
+
+        # Here there can be redundance in (new_col, new_row) pairs.
+        # scipy coo_matrix does the sum but _from_coo_indices does not.
+        cdef object out = coo_matrix((new_data, [new_col, new_row])).tocsr()
+        return CSR_from_scipy(out, False)
+
+    cdef cy_csr_matrix _ptrace_core_dense(self, int[:, ::1] tensor_table, int num_sel_dims):
+        cdef int nnz, ii
+        cdef int[::1] pos_c = np.empty(2, dtype=np.int32)
+        cdef int[::1] pos_r = np.empty(2, dtype=np.int32)
+        cdef int[::1] col = np.empty(_oper.nnz, dtype=np.int32)
+        cdef int[::1] row = np.empty(_oper.nnz, dtype=np.int32)
+
+        cdef complex[:, ::1] data = np.zeros((num_sel_dims, num_sel_dims),
+                                              dtype=complex)
+        nnz = _oper.nnz
+        _coo_indices(_oper, row, col)
+
+        for ii in range(nnz):
+            i2_k_t(col[ii], tensor_table, pos_c)
+            i2_k_t(row[ii], tensor_table, pos_r)
+            if pos_c[1] == pos_r[1]:
+                data[pos_r[0], pos_c[0]] += self.data[p]
+                p += 1
+
+        return dense2D_to_CSR(data)
 
 
 @cython.boundscheck(False)
@@ -1036,6 +1155,42 @@ cpdef cy_csr_matrix CSR_from_scipy(object A, copy=False):
         mat.indptr = &ptr[0]
         mat.numpy_lock = 1
     return mat
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cpdef cy_csr_matrix dense2D_to_CSR(complex[:, :] mat):
+    """
+    Converts a dense complex ndarray to a CSR matrix struct.
+
+    Parameters
+    ----------
+    mat : ndarray
+        Input complex ndarray
+
+    Returns
+    -------
+    out : cy_csr_matrix
+        Output matrix as cy_csr_matrix.
+    """
+    cdef int nnz = 0
+    cdef size_t ii, jj
+    cdef cy_csr_matrix out = cy_csr_matrix
+    cdef int nrows = mat.shape[0], ncols = mat.shape[1]
+    out.init(nrows*ncols, nrows, ncols, nrows*ncols)
+
+    for ii in range(nrows):
+        for jj in range(ncols):
+            if mat[ii,jj] != 0:
+                out.indices[nnz] = jj
+                out.data[nnz] = mat[ii,jj]
+                nnz += 1
+        out.indptr[ii+1] = nnz
+
+    if nnz < (nrows*ncols):
+        out._shorten(nnz)
+
+    return out
 
 
 @cython.boundscheck(False)

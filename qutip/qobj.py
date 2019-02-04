@@ -58,26 +58,20 @@ import scipy.linalg as la
 import qutip.settings as settings
 from qutip import __version__
 from qutip.fastsparse import fast_csr_matrix, fast_identity
-from qutip.cy.ptrace import _ptrace
 from qutip.permute import _permute
 from qutip.sparse import (sp_eigs, sp_expm, sp_fro_norm, sp_max_norm,
                           sp_one_norm, sp_L2_norm)
 from qutip.dimensions import type_from_dims, enumerate_flat, collapse_dims_super
-from qutip.cy.spmath import (zcsr_transpose, zcsr_adjoint, zcsr_isherm,
-                            zcsr_trace, zcsr_proj, zcsr_inner)
-from qutip.cy.spmatfuncs import zcsr_mat_elem
-from qutip.cy.sparse_utils import cy_tidyup
+
+from qutip.csr_math import inner, mat_elem
+from qutip.qdata import cdata_from_scipy
+
 import sys
 if sys.version_info.major >= 3:
     from itertools import zip_longest
 elif sys.version_info.major < 3:
     from itertools import izip_longest
     zip_longest = izip_longest
-
-#OPENMP stuff
-from qutip.cy.openmp.utilities import use_openmp
-if settings.has_openmp:
-    from qutip.cy.openmp.omp_sparse_utils import omp_tidyup
 
 
 class Qobj(object):
@@ -492,7 +486,7 @@ class Qobj(object):
                 dims = [self.dims[0], other.dims[1]]
                 out.dims = dims
                 if settings.auto_tidyup: out.tidyup()
-                if (settings.auto_tidyup_dims 
+                if (settings.auto_tidyup_dims
                         and not isinstance(dims[0][0], list)
                         and not isinstance(dims[1][0], list)):
                     # If neither left or right is a superoperator,
@@ -908,7 +902,7 @@ class Qobj(object):
         """Adjoint operator of quantum object.
         """
         out = Qobj()
-        out.data = zcsr_adjoint(self.data)
+        out.data = self.data.adjoint()
         out.dims = [self.dims[1], self.dims[0]]
         out._isherm = self._isherm
         out.superrep = self.superrep
@@ -1014,11 +1008,12 @@ class Qobj(object):
         P : Qobj
             Projection operator.
         """
+        mat = cdata_from_scipy(self.data)
         if self.isket:
-            _out = zcsr_proj(self.data,1)
+            _out = mat.proj()
             _dims = [self.dims[0],self.dims[0]]
-        elif self.isbra:
-            _out = zcsr_proj(self.data,0)
+        elif :
+            _out = mat.proj()
             _dims = [self.dims[1],self.dims[1]]
         else:
             raise TypeError('Projector can only be formed from a bra or ket.')
@@ -1036,7 +1031,8 @@ class Qobj(object):
             otherwise.
 
         """
-        return zcsr_trace(self.data, self.isherm)
+        mat = cdata_from_scipy(self.data)
+        return mat.trace(self.isherm)
 
     def full(self, order='C', squeeze=False):
         """Dense array from quantum object.
@@ -1288,7 +1284,9 @@ class Qobj(object):
 
         """
         q = Qobj()
-        q.data, q.dims, _ = _ptrace(self, sel)
+        mat = cdata_from_scipy(self.data)
+        data, q.dims = mat.ptrace(sel)
+        q.data = data.to_scipy()
         return q.tidyup() if settings.auto_tidyup else q
 
     def permute(self, order):
@@ -1324,19 +1322,21 @@ class Qobj(object):
             Quantum object with small elements removed.
 
         """
+        self.data.tidyup()
+        return self
         if self.data.nnz:
             #This does the tidyup and returns True if
             #The sparse data needs to be shortened
             if use_openmp() and self.data.nnz > 500:
-                if omp_tidyup(self.data.data,atol,self.data.nnz,
-                            settings.num_cpus):
+                if omp_tidyup(self.data.data, atol, self.data.nnz,
+                              settings.num_cpus):
                             self.data.eliminate_zeros()
             else:
-                if cy_tidyup(self.data.data,atol,self.data.nnz):
+                if cy_tidyup(self.data.data, atol, self.data.nnz):
                     self.data.eliminate_zeros()
             return self
         else:
-            return self
+
 
     def transform(self, inpt, inverse=False, sparse=True):
         """Basis transform defined by input array.
@@ -1510,11 +1510,9 @@ class Qobj(object):
             raise TypeError("Can only get matrix elements for an operator.")
 
         else:
-            if bra.isbra and ket.isket:
-                return zcsr_mat_elem(self.data,bra.data,ket.data,1)
-
-            elif bra.isket and ket.isket:
-                return zcsr_mat_elem(self.data,bra.data,ket.data,0)
+            return
+            if (bra.isbra or bra.isket) and ket.isket:
+                return mat_elem(self.data, bra.data, ket.data)
             else:
                 raise TypeError("Can only calculate matrix elements for bra and ket vectors.")
 
@@ -1551,21 +1549,18 @@ class Qobj(object):
 
             if self.isbra:
                 if other.isket:
-                    return zcsr_inner(self.data, other.data, 1)
+                    return inner(self.data, other.data)
                 elif other.isbra:
                     #Since we deal mainly with ket vectors, the bra-bra combo
                     #is not common, and not optimized.
-                    return zcsr_inner(self.data, other.dag().data, 1)
+                    return inner(self.data, other.dag().data)
                 else:
                     raise TypeError("Can only calculate overlap for state vector Qobjs")
 
-            elif self.isket:
-                if other.isbra:
-                    return zcsr_inner(other.data, self.data, 1)
-                elif other.isket:
-                    return zcsr_inner(self.data, other.data, 0)
-                else:
-                    raise TypeError("Can only calculate overlap for state vector Qobjs")
+            elif self.isket and (other.isbra or other.isket):
+                return inner(other.data, self.data)
+            else:
+                raise TypeError("Can only calculate overlap for state vector Qobjs")
 
         raise TypeError("Can only calculate overlap for state vector Qobjs")
 
@@ -1711,7 +1706,7 @@ class Qobj(object):
 
         """
         out = Qobj()
-        out.data = zcsr_transpose(self.data)
+        out.data = self.data.transpose()
         out.dims = [self.dims[1], self.dims[0]]
         return out
 
@@ -1889,8 +1884,8 @@ class Qobj(object):
         if self._isherm is not None:
             # used previously computed value
             return self._isherm
-
-        self._isherm = bool(zcsr_isherm(self.data))
+        mat = cdata_from_scipy(self)
+        self._isherm = bool(mat.isherm())
 
         return self._isherm
 

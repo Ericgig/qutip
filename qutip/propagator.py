@@ -45,7 +45,7 @@ from qutip.rhs_generate import (rhs_generate, rhs_clear, _td_format_check)
 from qutip.superoperator import (vec2mat, mat2vec,
                                  vector_to_operator, operator_to_vector)
 from qutip.sparse import sp_reshape
-from qutip.cy.data_convert import cdata_from_scipy
+from qutip.qdata import cdata_from_scipy
 from qutip.mesolve import mesolve
 from qutip.sesolve import sesolve
 from qutip.states import basis

@@ -43,7 +43,7 @@ from types import FunctionType, BuiltinFunctionType
 import numpy as np
 from numbers import Number
 from qutip.qobjevo_codegen import _compile_str_single, _compiled_coeffs
-from qutip.cy.data_convert import cdata_from_scipy
+from qutip.qdata import cdata_from_scipy
 from qutip.cy.cqobjevo import (CQobjCte, CQobjCteDense, CQobjEvoTd,
                                  CQobjEvoTdMatched, CQobjEvoTdDense)
 from qutip.cy.cqobjevo_factor import (InterCoeffT, InterCoeffCte,

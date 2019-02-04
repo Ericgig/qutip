@@ -90,7 +90,7 @@ cdef class cy_csr_matrix:
 
     #def isherm(self, double tol = qset.atol) ##
 
-    #def proj(self) ##
+    cpdef cy_csr_matrix proj(self) ##
 
     #def trace(self, bool isherm) ##
 
@@ -100,7 +100,17 @@ cdef class cy_csr_matrix:
 
     cpdef complex expect_psi_vec(self, complex[::1] vec)
 
+    cpdef object ptrace(self, object sel)
+
+    cdef cy_csr_matrix _ptrace_core_dense(self, int[:, ::1] tensor_table, int num_sel_dims)
+
+    cdef cy_csr_matrix _ptrace_core_sp(self, int[:, ::1] tensor_table)
+
 
 cpdef cy_csr_matrix CSR_from_scipy(object A, copy=*) ##
+
+cpdef cy_csr_matrix dense2D_to_CSR(complex[:, :] mat)
+
+cpdef cy_csr_matrix CSR_from_scipy_coo(object A)
 
 cpdef cy_csr_matrix identity_CSR(unsigned int nrows) ##

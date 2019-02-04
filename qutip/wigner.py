@@ -49,7 +49,7 @@ from qutip.states import ket2dm
 from qutip.parallel import parfor
 from qutip.utilities import clebsch
 from scipy.special import factorial
-from qutip.cy.data_convert import cdata_from_scipy
+from qutip.qdata import cdata_from_scipy
 
 
 def wigner(psi, xvec, yvec, method='clenshaw', g=sqrt(2),

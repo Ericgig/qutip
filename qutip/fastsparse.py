@@ -37,7 +37,14 @@ from scipy.sparse import (_sparsetools, isspmatrix, isspmatrix_csr,
 from scipy.sparse.sputils import (upcast, upcast_char, to_native, isdense, isshape,
                       getdtype, isscalarlike, IndexMixin, get_index_dtype)
 from scipy.sparse.base import spmatrix, isspmatrix, SparseEfficiencyWarning
+from qutip.csr_math import mult
+from qutip.qdata import cdata_from_scipy
 from warnings import warn
+
+from qutip.cy.sparse_utils import cy_tidyup
+from qutip.cy.openmp.utilities import use_openmp
+if settings.has_openmp:
+    from qutip.cy.openmp.omp_sparse_utils import omp_tidyup
 
 class fast_csr_matrix(csr_matrix):
     """
@@ -52,7 +59,7 @@ class fast_csr_matrix(csr_matrix):
             self.indices = np.array([], dtype=np.int32)
             self.indptr = np.zeros(shape[0]+1, dtype=np.int32)
             self._shape = tuple(int(s) for s in shape)
-            
+
         else:
             if args[0].shape[0] and args[0].dtype != complex:
                 raise TypeError('fast_csr_matrix allows only complex data.')
@@ -73,7 +80,7 @@ class fast_csr_matrix(csr_matrix):
 
     def _binopt(self, other, op):
         """
-        Do the binary operation fn to two sparse matrices using 
+        Do the binary operation fn to two sparse matrices using
         fast_csr_matrix only when other is also a fast_csr_matrix.
         """
         # e.g. csr_plus_csr, csr_minus_csr, etc.
@@ -116,7 +123,7 @@ class fast_csr_matrix(csr_matrix):
         else:
             A = csr_matrix((data, indices, indptr), dtype=data.dtype, shape=self.shape)
         return A
-    
+
     def multiply(self, other):
         """Point-wise multiplication by another matrix, vector, or
         scalar.
@@ -174,7 +181,7 @@ class fast_csr_matrix(csr_matrix):
                 return self._mul_scalar(other.flat[0])
         # Anything else.
         return np.multiply(self.todense(), other)
-    
+
     def _mul_sparse_matrix(self, other):
         """
         Do the sparse matrix mult returning fast_csr_matrix only
@@ -185,9 +192,9 @@ class fast_csr_matrix(csr_matrix):
 
         major_axis = self._swap((M,N))[0]
         if isinstance(other, fast_csr_matrix):
-            A = zcsr_mult(self, other, sorted=1)
+            A = mult(self, other, sorted=1)
             return A
-        
+
         other = csr_matrix(other)  # convert to this format
         idx_dtype = get_index_dtype((self.indptr, self.indices,
                                      other.indptr, other.indices),
@@ -325,7 +332,7 @@ class fast_csr_matrix(csr_matrix):
             return all_true - res
         else:
             raise ValueError("Operands could not be compared.")
-        
+
     def _with_data(self,data,copy=True):
         """Returns a matrix with the same sparsity structure as self,
         but with different data.  By default the structure arrays
@@ -340,33 +347,67 @@ class fast_csr_matrix(csr_matrix):
         else:
             return fast_csr_matrix((data,self.indices,self.indptr),
                                    shape=self.shape,dtype=data.dtype)
-    
+
     def transpose(self):
         """
         Returns the transpose of the matrix, keeping
         it in fast_csr format.
         """
-        return zcsr_transpose(self)
-    
+        mat = cdata_from_scipy(self, copy=1)
+        mat.transpose()
+        return mat.to_scipy()
+
     def trans(self):
         """
         Same as transpose
         """
-        return zcsr_transpose(self)
-    
+        mat = cdata_from_scipy(self, copy=1)
+        mat.transpose()
+        return mat.to_scipy()
+
     def getH(self):
         """
         Returns the conjugate-transpose of the matrix, keeping
         it in fast_csr format.
         """
-        return zcsr_adjoint(self)
-    
+        mat = cdata_from_scipy(self, copy=1)
+        mat.adjoint()
+        return mat.to_scipy()
+
     def adjoint(self):
         """
         Same as getH
         """
-        return zcsr_adjoint(self)
-    
+        mat = cdata_from_scipy(self, copy=1)
+        mat.adjoint()
+        return mat.to_scipy()
+
+    def tidyup(self, atol=settings.auto_tidyup_atol):
+        """Removes small elements from the quantum object.
+
+        Parameters
+        ----------
+        atol : float
+            Absolute tolerance used by tidyup. Default is set
+            via qutip global settings parameters.
+
+        Returns
+        -------
+        oper : qobj
+            Quantum object with small elements removed.
+
+        """
+        if self.nnz:
+            #This does the tidyup and returns True if
+            #The sparse data needs to be shortened
+            if use_openmp() and self.nnz > 500:
+                if omp_tidyup(self.data, atol, self.nnz,
+                              settings.num_cpus):
+                            self.eliminate_zeros()
+            else:
+                if cy_tidyup(self.data, atol, self.nnz):
+                    self.eliminate_zeros()
+        return self
 
 def csr2fast(A, copy=False):
     if (not isinstance(A, fast_csr_matrix)) or copy:
@@ -403,4 +444,3 @@ def _all_true(shape):
 
 #Need to do some trailing imports here
 #-------------------------------------
-from qutip.cy.spmath import (zcsr_transpose, zcsr_adjoint, zcsr_mult)
