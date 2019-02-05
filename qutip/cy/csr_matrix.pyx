@@ -996,6 +996,32 @@ cdef class cy_csr_matrix:
         zspmvpy(self.data, self.indices, self.indptr, &vec[0], 1.0, &out[0], self.nrows)
         return out
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False) ##
+    cpdef cnp.ndarray[complex, ndim=1, mode="c"] spmvpy(
+            self,
+            complex[::1] vec, c):
+        """
+        Sparse matrix, dense vector multiplication.
+        Here the vector is assumed to have one-dimension.
+        Matrix must be in CSR format and have complex entries.
+
+        Parameters
+        ----------
+        op : csr matrix
+        vec : array
+            Dense vector for multiplication.  Must be one-dimensional.
+
+        Returns
+        -------
+        out : array
+            Returns dense array.
+
+        """
+        cdef cnp.ndarray[complex, ndim=1, mode="c"] out = np.zeros((op.nrows), dtype=np.complex)
+        zspmvpy(self.data, self.indices, self.indptr, &vec[0], 1.0, &out[0], self.nrows)
+        return out
+
     cpdef cnp.ndarray[complex, ndim=2] spmm(
             self, cnp.ndarray[complex, ndim=2] mat):
     if mat.flags["F_CONTIGUOUS"]:

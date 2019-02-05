@@ -33,24 +33,26 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 from scipy.linalg.cython_blas cimport zgemv
-from qutip.cy.spmath cimport (_zcsr_kron_core, _zcsr_kron,
-                    _zcsr_add, _zcsr_transpose, _zcsr_adjoint,
-                    _zcsr_mult)
-from qutip.cy.spconvert cimport fdense2D_to_CSR
-from qutip.cy.spmatfuncs cimport spmvpy
+from qutip.cy.csr_math cimport (_zcsr_kron_core, zcsr_kron,
+                                zcsr_add, zcsr_mult)
+from qutip.cy.csr_matrix cimport dense2D_to_CSR, identity_CSR, cy_csr_matrix, spmvpy
 from qutip.cy.openmp.parfuncs cimport spmvpy_openmp
 from qutip.cy.brtools cimport (spec_func, vec2mat_index, dense_to_eigbasis)
 from libc.math cimport fabs, fmin
 from libc.float cimport DBL_MAX
 from libcpp.vector cimport vector
-from qutip.cy.sparse_structs cimport (CSR_Matrix, COO_Matrix)
+from cython.parallel import parallel, prange
+from libc.stdlib cimport abort
 
-include "../sparse_routines.pxi"
-
-cdef extern from "<complex>" namespace "std" nogil:
-    double complex conj(double complex x)
-    double cabs   "abs" (double complex x)
-
+import numpy as np
+cimport numpy as cnp
+np.import_array()
+cdef extern from "numpy/arrayobject.h" nogil:
+    void PyArray_ENABLEFLAGS(np.ndarray arr, int flags)
+    void PyDataMem_FREE(void * ptr)
+    void PyDataMem_RENEW(void * ptr, size_t size)
+    void PyDataMem_NEW_ZEROED(size_t size, size_t elsize)
+    void PyDataMem_NEW(size_t size)
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -82,93 +84,94 @@ cdef void cop_super_mult_openmp(complex[::1,:] cop, complex[::1,:] evecs,
                      unsigned int nthr,
                      double atol):
     cdef size_t kk
-    cdef CSR_Matrix mat1, mat2, mat3, mat4
+    # cdef CSR_Matrix mat1, mat2, mat3, mat4
+    cdef cy_csr_matrix c, cd, cdc, id_, tmp
 
     cdef complex[::1,:] cop_eig = dense_to_eigbasis(cop, evecs, nrows, atol)
 
     #Mat1 holds cop_eig in CSR format
-    fdense2D_to_CSR(cop_eig, &mat1, nrows, nrows)
+    c = dense2D_to_CSR(cop_eig)
 
     #Multiply by alpha for time-dependence
-    for kk in range(mat1.nnz):
-        mat1.data[kk] *= alpha
+    for kk in range(c.nnz):
+        c.data[kk] *= alpha
 
     #Free data associated with cop_eig as it is no longer needed.
     PyDataMem_FREE(&cop_eig[0,0])
 
     #create temp array of conj data for cop_eig_sparse
     cdef complex * conj_data = <complex *>PyDataMem_NEW(mat1.nnz * sizeof(complex))
-    for kk in range(mat1.nnz):
-        conj_data[kk] = conj(mat1.data[kk])
+    for kk in range(c.nnz):
+        conj_data[kk] = conj(c.data[kk])
 
     #mat2 holds data for kron(cop.dag(), c)
-    init_CSR(&mat2, mat1.nnz**2, mat1.nrows**2, mat1.ncols**2)
-    _zcsr_kron_core(conj_data, mat1.indices, mat1.indptr,
-                   mat1.data, mat1.indices, mat1.indptr,
-                   &mat2,
-                   mat1.nrows, mat1.nrows, mat1.ncols)
+    tmp = cy_csr_matrix()
+    tmp.init_CSR(c.nnz**2, c.nrows**2, c.ncols**2)
+    _zcsr_kron_core(conj_data, c.indices, c.indptr,
+                    c.data, c.indices, c.indptr,
+                    tmp,
+                    c.nrows, c.nrows, c.ncols)
 
     #Do spmv with kron(cop.dag(), c)
-    if mat2.nnz >= omp_thresh:
-        spmvpy_openmp(mat2.data,mat2.indices,mat2.indptr,
-            &vec[0], 1, out, nrows**2, nthr)
+    if tmp.nnz >= omp_thresh:
+        spmvpy_openmp(tmp.data, tmp.indices, tmp.indptr,
+                      vec, 1, out, nrows**2, nthr)
     else:
-        spmvpy(mat2.data,mat2.indices,mat2.indptr,
-                &vec[0], 1, out, nrows**2)
+        spmvpy(tmp.data, tmp.indices, tmp.indptr,
+               vec, 1, out, nrows**2)
 
     #Free temp conj_data array
     PyDataMem_FREE(conj_data)
     #Free mat2
-    free_CSR(&mat2)
+    tmp.free()
 
     #Create identity in mat3
-    identity_CSR(&mat3, nrows)
+    id_ = identity_CSR(nrows)
 
     #Take adjoint of cop (mat1) -> mat2
-    _zcsr_adjoint(&mat1, &mat2)
+    #_zcsr_adjoint(&mat1, &mat2)
+    cd.init(cop_csr.nnz, cop_csr.ncols, cop_csr.nrows)
+    cop_csr._zcsr_adjoint_core(cd)
 
     #multiply cop.dag() * c (cdc) -> mat4
-    _zcsr_mult(&mat2, &mat1, &mat4)
+    cdc = zcsr_mult(cd, c)
 
     #Free mat1 and mat2
-    free_CSR(&mat1)
-    free_CSR(&mat2)
+    cd.free()
+    c.free()
 
     # kron(eye, cdc) -> mat1
-    _zcsr_kron(&mat3, &mat4, &mat1)
+    tmp = zcsr_kron(id_, cdc)
 
     #Do spmv with -0.5*kron(eye, cdc)
-    if mat1.nnz >= omp_thresh:
-        spmvpy_openmp(mat1.data,mat1.indices,mat1.indptr,
-            vec, -0.5, &out[0], nrows**2, nthr)
+    if tmp.nnz >= omp_thresh:
+        spmvpy_openmp(tmp.data, tmp.indices, tmp.indptr,
+                      vec, -0.5, out, nrows**2, nthr)
     else:
-        spmvpy(mat1.data,mat1.indices,mat1.indptr,
-            vec, -0.5, &out[0], nrows**2)
+        spmvpy(tmp.data, tmp.indices, tmp.indptr,
+               vec, -0.5, out, nrows**2)
 
     #Free mat1 (mat1 and mat2 are currently free)
-    free_CSR(&mat1)
+    tmp.free()
 
     #Take traspose of cdc (mat4) -> mat1
-    _zcsr_transpose(&mat4, &mat1)
-
-    #Free mat4 (mat2 and mat4 currently free)
-    free_CSR(&mat4)
+    cdc.transpose()
 
     # kron(cdct, eye) -> mat2
-    _zcsr_kron(&mat1, &mat3, &mat2)
+    tmp = zcsr_kron(cdc, id_)
 
     #Do spmv with -0.5*kron(cdct, eye)
-    if mat2.nnz >= omp_thresh:
-        spmvpy_openmp(mat2.data,mat2.indices,mat2.indptr,
-            vec, -0.5, &out[0], nrows**2, nthr)
+    if tmp.nnz >= omp_thresh:
+        spmvpy_openmp(tmp.data, tmp.indices, tmp.indptr,
+                      vec, -0.5, out, nrows**2, nthr)
     else:
-        spmvpy(mat2.data,mat2.indices,mat2.indptr,
-            vec, -0.5, &out[0], nrows**2)
+        spmvpy(tmp.data, tmp.indices, tmp.indptr,
+               vec, -0.5, out, nrows**2)
 
     #Free mat1, mat2, and mat3
-    free_CSR(&mat1)
-    free_CSR(&mat2)
-    free_CSR(&mat3)
+    tmp.free()
+    cdc.free()
+    id_.free()
 
 
 @cython.boundscheck(False)
@@ -190,8 +193,6 @@ cdef void br_term_mult_openmp(double t, complex[::1,:] A, complex[::1,:] evecs,
     cdef vector[int] coo_rows, coo_cols
     cdef vector[complex] coo_data
     cdef unsigned int nnz
-    cdef COO_Matrix coo
-    cdef CSR_Matrix csr
     cdef complex[:,::1] non_sec_mat
 
     for I in range(nrows**2):
@@ -224,17 +225,36 @@ cdef void br_term_mult_openmp(double t, complex[::1,:] A, complex[::1,:] evecs,
 
     #Number of elements in BR tensor
     nnz = coo_rows.size()
-    coo.nnz = nnz
-    coo.rows = coo_rows.data()
-    coo.cols = coo_cols.data()
-    coo.data = coo_data.data()
-    coo.nrows = nrows**2
-    coo.ncols = nrows**2
-    coo.is_set = 1
-    coo.max_length = nnz
-    COO_to_CSR(&csr, &coo)
-    if csr.nnz > omp_thresh:
-        spmvpy_openmp(csr.data, csr.indices, csr.indptr, vec, 1, out, nrows**2, nthr)
+    cdef double complex* local_buf
+    if nnz > omp_thresh:
+        with nogil, parallel():
+            local_buf = <complex *> PyDataMem_NEW_ZEROED(sizeof(double complex) * nrows**2)
+            if local_buf is NULL:
+                abort()
+
+            # share the work using the thread-local buffer(s)
+            for kk in prange(nnz, schedule='static'):
+                local_buf[coo_rows[kk]] += coo_data[kk] * vec[coo_cols[kk]]
+
+            with gil:
+                for kk in range(nrows**2):
+                    out[kk] += local_buf[kk]
+
+            PyDataMem_FREE(local_buf)
+        #coo.nnz = nnz
+        #coo.rows = coo_rows.data()
+        #coo.cols = coo_cols.data()
+        #coo.data = coo_data.data()
+        #coo.nrows = nrows**2
+        #coo.ncols = nrows**2
+        #coo.is_set = 1
+        #coo.max_length = nnz
+        #COO_to_CSR(&csr, &coo)
+        #spmvpy_openmp(csr.data, csr.indices, csr.indptr, vec, 1, out, nrows**2, nthr)
+        # COO_to_CSR is not parallel and require going over all elements...
+
     else:
-        spmvpy(csr.data, csr.indices, csr.indptr, vec, 1, out, nrows**2)
-    free_CSR(&csr)
+        for kk in range(nnz):
+            out[coo_rows[kk]] += coo_data[kk] * vec[coo_cols[kk]]
+        #spmvpy(csr.data, csr.indices, csr.indptr, vec, 1, out, nrows**2)
+    #free_CSR(&csr)
