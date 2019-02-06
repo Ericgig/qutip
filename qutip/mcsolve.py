@@ -43,10 +43,12 @@ from scipy.integrate._ode import zvode
 from scipy.linalg.blas import get_blas_funcs
 from qutip.qobj import Qobj
 from qutip.parallel import parfor, parallel_map, serial_map
+
 from qutip.cy.spmatfuncs import cy_ode_rhs, cy_expect_psi_csr, spmv, spmv_csr
+from qutip.qdata import dense2D_to_data, cdata_from_scipy
+
 from qutip.cy.codegen import Codegen
 from qutip.cy.utilities import _cython_build_cleanup
-from qutip.cy.spconvert import dense2D_to_fastcsr_cmode
 from qutip.solver import Options, Result, config, _solver_safety_check
 from qutip.rhs_generate import _td_format_check, _td_wrap_array_str
 from qutip.interpolate import Cubic_Spline
@@ -181,7 +183,7 @@ def mcsolve(H, psi0, tlist, c_ops=[], e_ops=[], ntraj=None,
 
     if debug:
         print(inspect.stack()[0][3])
-    
+
     if isinstance(c_ops, Qobj):
         c_ops = [c_ops]
 
@@ -193,10 +195,10 @@ def mcsolve(H, psi0, tlist, c_ops=[], e_ops=[], ntraj=None,
         e_ops = [e for e in e_ops.values()]
     else:
         e_ops_dict = None
-    
+
     if _safe_mode:
         _solver_safety_check(H, psi0, c_ops, e_ops, args)
-    
+
     if options is None:
         options = Options()
 
@@ -402,7 +404,7 @@ class _MC():
                         config.options.seeds[0:config.ntraj]
                 # if ntraj was increased but reusing seeds
                 elif seed_length < config.ntraj:
-                    newseeds = randint(1, 100000000.0 + 1, 
+                    newseeds = randint(1, 100000000.0 + 1,
                                 size=(config.ntraj - seed_length))
                     self.config.options.seeds = np.hstack(
                         (config.options.seeds, newseeds))
@@ -463,8 +465,7 @@ def _tdRHS(t, psi, config):
 # RHS of ODE for constant Hamiltonian and at least one function based
 # collapse operator
 def _cRHStd(t, psi, config):
-    sys = cy_ode_rhs(t, psi, config.h_data,
-                     config.h_ind, config.h_ptr)
+    sys = cy_ode_rhs(t, psi, config.hdata)
     col = np.array([np.abs(config.c_funcs[j](t, config.c_func_args)) ** 2 *
                     spmv_csr(config.n_ops_data[j],
                              config.n_ops_ind[j],
@@ -602,7 +603,7 @@ def _evolve_no_collapse_psi_out(config):
         ODE.set_f_params(config)
     else:
         ODE = ode(cy_ode_rhs)
-        ODE.set_f_params(config.h_data, config.h_ind, config.h_ptr)
+        ODE.set_f_params(config.hdata)
 
     # initialize ODE solver for RHS
     ODE.set_integrator('zvode', method=opt.method, order=opt.order,
@@ -688,7 +689,7 @@ def _evolve_no_collapse_expect_out(config):
         ODE.set_f_params(config)
     else:
         ODE = ode(cy_ode_rhs)
-        ODE.set_f_params(config.h_data, config.h_ind, config.h_ptr)
+        ODE.set_f_params(config.hdata)
 
     ODE.set_integrator('zvode', method=opt.method, order=opt.order,
                        atol=opt.atol, rtol=opt.rtol, nsteps=opt.nsteps,
@@ -948,9 +949,8 @@ def _mc_alg_evolve(nt, config, opt, seeds):
         # ----------------
         out_psi = ODE._y / dznrm2(ODE._y)
         if config.e_num == 0 or config.options.store_states:
-            out_psi_csr = dense2D_to_fastcsr_cmode(np.reshape(out_psi,
-                                                   (out_psi.shape[0], 1)),
-                                                   out_psi.shape[0], 1)
+            out_psi_csr = dense2D_to_data(np.reshape(out_psi,
+                                                     (out_psi.shape[0], 1)))
             if (config.options.average_states and
                     not config.options.steady_state_average):
                 states_out[k] = Qobj(
@@ -1045,14 +1045,14 @@ def _mc_data_config(H, psi0, h_stuff, c_ops, c_stuff, args, e_ops,
         for op in e_ops:
             if isinstance(op, list):
                 op = op[0]
-            config.e_ops_data.append(op.data.data)
-            config.e_ops_ind.append(op.data.indices)
-            config.e_ops_ptr.append(op.data.indptr)
+            config.e_opsdata.append(cdata_from_scipy(op.data))
+            #config.e_ops_ind.append(op.data.indices)
+            #config.e_ops_ptr.append(op.data.indptr)
             config.e_ops_isherm.append(op.isherm)
 
-        config.e_ops_data = np.array(config.e_ops_data)
-        config.e_ops_ind = np.array(config.e_ops_ind)
-        config.e_ops_ptr = np.array(config.e_ops_ptr)
+        config.e_opsdata = np.array(config.e_opsdata)
+        #config.e_ops_ind = np.array(config.e_ops_ind)
+        #config.e_ops_ptr = np.array(config.e_ops_ptr)
         config.e_ops_isherm = np.array(config.e_ops_isherm)
 
     # take care of collapse operators, if any
@@ -1062,21 +1062,21 @@ def _mc_data_config(H, psi0, h_stuff, c_ops, c_stuff, args, e_ops,
             if isinstance(c_op, list):
                 c_op = c_op[0]
             n_op = c_op.dag() * c_op
-            config.c_ops_data.append(c_op.data.data)
-            config.c_ops_ind.append(c_op.data.indices)
-            config.c_ops_ptr.append(c_op.data.indptr)
+            config.c_opsdata.append(cdata_from_scipy(c_op.data))
+            #config.c_ops_ind.append(c_op.data.indices)
+            #config.c_ops_ptr.append(c_op.data.indptr)
             # norm ops
-            config.n_ops_data.append(n_op.data.data)
-            config.n_ops_ind.append(n_op.data.indices)
-            config.n_ops_ptr.append(n_op.data.indptr)
+            config.n_opsdata.append(cdata_from_scipy(n_op.data))
+            #config.n_ops_ind.append(n_op.data.indices)
+            #config.n_ops_ptr.append(n_op.data.indptr)
         # to array
-        config.c_ops_data = np.array(config.c_ops_data)
-        config.c_ops_ind = np.array(config.c_ops_ind)
-        config.c_ops_ptr = np.array(config.c_ops_ptr)
+        config.c_opsdata = np.array(config.c_opsdata)
+        #config.c_ops_ind = np.array(config.c_ops_ind)
+        #config.c_ops_ptr = np.array(config.c_ops_ptr)
 
-        config.n_ops_data = np.array(config.n_ops_data)
-        config.n_ops_ind = np.array(config.n_ops_ind)
-        config.n_ops_ptr = np.array(config.n_ops_ptr)
+        config.n_opsdata = np.array(config.n_opsdata)
+        #config.n_ops_ind = np.array(config.n_ops_ind)
+        #config.n_ops_ptr = np.array(config.n_ops_ptr)
 
     if config.tflag == 0:
         # CONSTANT H & C_OPS CODE
@@ -1087,13 +1087,13 @@ def _mc_data_config(H, psi0, h_stuff, c_ops, c_stuff, args, e_ops,
             for c_op in c_ops:
                 n_op = c_op.dag() * c_op
                 H -= 0.5j * \
-                    n_op 
+                    n_op
         # construct Hamiltonian data structures
         if options.tidy:
             H = H.tidyup(options.atol)
-        config.h_data = -1.0j * H.data.data
-        config.h_ind = H.data.indices
-        config.h_ptr = H.data.indptr
+        config.hdata = cdata_from_scipy(-1.0j * H.data)
+        #config.h_ind = H.data.indices
+        #config.h_ptr = H.data.indptr
 
     elif config.tflag in [1, 10, 11]:
         # STRING BASED TIME-DEPENDENCE
@@ -1124,17 +1124,17 @@ def _mc_data_config(H, psi0, h_stuff, c_ops, c_stuff, args, e_ops,
                 H -= 0.5j * (c_ops[k].dag() * c_ops[k])
             if options.tidy:
                 H = H.tidyup(options.atol)
-            config.h_data = [H.data.data]
-            config.h_ind = [H.data.indices]
-            config.h_ptr = [H.data.indptr]
+            config.hdata = [cdata_from_scipy(H.data)]
+            #config.h_ind = [H.data.indices]
+            #config.h_ptr = [H.data.indptr]
             for k in config.c_td_inds:
                 op = c_ops[k][0].dag() * c_ops[k][0]
-                config.h_data.append(-0.5j * op.data.data)
-                config.h_ind.append(op.data.indices)
-                config.h_ptr.append(op.data.indptr)
-            config.h_data = -1.0j * np.array(config.h_data)
-            config.h_ind = np.array(config.h_ind)
-            config.h_ptr = np.array(config.h_ptr)
+                config.hdata.append(cdata_from_scipy(-0.5j * op.data))
+                #config.h_ind.append(op.data.indices)
+                #config.h_ptr.append(op.data.indptr)
+            config.hdata = -1.0j * np.array(config.hdata)
+            #config.h_ind = np.array(config.h_ind)
+            #config.h_ptr = np.array(config.h_ptr)
 
         else:
             # string-type Hamiltonian & at least one string-type
@@ -1192,16 +1192,16 @@ def _mc_data_config(H, psi0, h_stuff, c_ops, c_stuff, args, e_ops,
                 H = np.array([H[k].tidyup(options.atol)
                               for k in range(len_h)], dtype=object)
             # construct data sets
-            config.h_data = [H[k].data.data for k in range(len_h)]
-            config.h_ind = [H[k].data.indices for k in range(len_h)]
-            config.h_ptr = [H[k].data.indptr for k in range(len_h)]
+            config.hdata = [cdata_from_scipy(-1.0j *H[k].data) for k in range(len_h)]
+            # config.h_ind = [H[k].data.indices for k in range(len_h)]
+            # config.h_ptr = [H[k].data.indptr for k in range(len_h)]
             for k in config.c_td_inds:
-                config.h_data.append(-0.5j * config.n_ops_data[k])
-                config.h_ind.append(config.n_ops_ind[k])
-                config.h_ptr.append(config.n_ops_ptr[k])
-            config.h_data = -1.0j * np.array(config.h_data)
-            config.h_ind = np.array(config.h_ind)
-            config.h_ptr = np.array(config.h_ptr)
+                config.h_data.append(0.5 * config.n_ops_data[k]) ## This is a problem
+                #config.h_ind.append(config.n_ops_ind[k])
+                #config.h_ptr.append(config.n_ops_ptr[k])
+            # config.h_data = -1.0j * np.array(config.h_data)
+            # config.h_ind = np.array(config.h_ind)
+            # config.h_ptr = np.array(config.h_ptr)
 
         # set execuatble code for collapse expectation values and spmv
         col_spmv_code = ("state = _cy_col_spmv_func(j, ODE.t, " +
@@ -1225,17 +1225,15 @@ def _mc_data_config(H, psi0, h_stuff, c_ops, c_stuff, args, e_ops,
         config.string = ""
         data_range = range(len(config.h_data))
         for k in data_range:
-            config.string += ("config.h_data[" + str(k) +
-                              "], config.h_ind[" + str(k) +
-                              "], config.h_ptr[" + str(k) + "]")
+            config.string += ("config.hdata[" + str(k) + "]")
             if k != data_range[-1]:
                 config.string += ","
-        
+
         # Add objects to ode args string
         for k in range(len(config.h_tdterms)):
             if isinstance(config.h_tdterms[k], Cubic_Spline):
                 config.string += ", config.h_tdterms["+str(k)+"].coeffs"
-        
+
         # attach args to ode args string
         if len(config.c_args) > 0:
             for kk in range(len(config.c_args)):
@@ -1293,17 +1291,15 @@ def _mc_data_config(H, psi0, h_stuff, c_ops, c_stuff, args, e_ops,
             Htd = np.array([Htd[j].tidyup(options.atol)
                             for j in config.h_td_inds], dtype=object)
         # setup constant H terms data
-        config.h_data = -1.0j * H.data.data
-        config.h_ind = H.data.indices
-        config.h_ptr = H.data.indptr
+        config.hdata = cdata_from_scipy(-1.0j * H.data)
 
         # setup td H terms data
         config.h_td_data = np.array(
-            [-1.0j * Htd[k].data.data for k in config.h_td_inds])
-        config.h_td_ind = np.array(
-            [Htd[k].data.indices for k in config.h_td_inds])
-        config.h_td_ptr = np.array(
-            [Htd[k].data.indptr for k in config.h_td_inds])
+            [cdata_from_scipy(-1.0j * Htd[k].data) for k in config.h_td_inds])
+        #config.h_td_ind = np.array(
+        #    [Htd[k].data.indices for k in config.h_td_inds])
+        #config.h_td_ptr = np.array(
+        #    [Htd[k].data.indptr for k in config.h_td_inds])
 
     elif config.tflag == 3:
         # PYTHON FUNCTION BASED HAMILTONIAN
@@ -1322,9 +1318,7 @@ def _mc_data_config(H, psi0, h_stuff, c_ops, c_stuff, args, e_ops,
                 H -= 0.5j * (c_ops[k].dag() * c_ops[k])
             if options.tidy:
                 H = H.tidyup(options.atol)
-            config.h_data = -1.0j * H.data.data
-            config.h_ind = H.data.indices
-            config.h_ptr = H.data.indptr
+            config.hdata = cdata_from_scipy(-1.0j * H.data)
 
 
 def _mc_dm_avg(psi_list):

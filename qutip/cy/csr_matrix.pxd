@@ -94,6 +94,9 @@ cdef class cy_csr_matrix:
 
     cpdef cnp.ndarray[complex, ndim=1, mode="c"] spmv(self, complex[::1] vec)
 
+    cpdef cnp.ndarray[complex, ndim=1, mode="c"] spmvpy(self, complex[::1] vec,
+                                                        complex[::1] out, complex alpha)
+
     cpdef cnp.ndarray[complex, ndim=2] spmm(self, cnp.ndarray[complex, ndim=2] mat)
 
     cpdef cnp.ndarray[complex, ndim=2] spmmf(self, cnp.ndarray[complex, ndim=2] mat)
