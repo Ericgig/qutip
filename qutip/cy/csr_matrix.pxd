@@ -68,7 +68,7 @@ cdef class cy_csr_matrix:
 
     cpdef _isdiag(self) ##
 
-    cpdef cnp.ndarray[complex, ndim=1, mode='c'] _csr_get_diag(self, int k=*) ##
+    cpdef cnp.ndarray[complex, ndim=1, mode='c'] _get_diag(self, int k=*) ##
 
     #def unit_row_norm(self) ##
 

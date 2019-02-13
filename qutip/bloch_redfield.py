@@ -45,18 +45,17 @@ from qutip.qobj import Qobj, isket
 from qutip.states import ket2dm
 from qutip.operators import qdiags
 from qutip.superoperator import spre, spost, vec2mat, mat2vec, vec2mat_index
-from qutip.expect import expect
+from qutip.expect import expect, expect_rho_vec
 from qutip.solver import Options, Result, config, _solver_safety_check
 from qutip.superoperator import liouvillian
 from qutip.interpolate import Cubic_Spline
 from qutip.ui.progressbar import BaseProgressBar, TextProgressBar
-from qutip.expect import expect_rho_vec
 import qutip.settings as qset
 
 from qutip.cy.openmp.utilities import check_use_openmp
 
 from qutip.cy.solverfuncs import cy_ode_rhs
-from qutip.qdata import cdata_from_scipy, dense2D_to_data
+from qutip.qdata import qdata_from_numpy
 
 from qutip.cy.br_codegen import BR_Codegen
 from qutip.cy.br_tensor import bloch_redfield_tensor
@@ -335,7 +334,7 @@ def bloch_redfield_solve(R, ekets, rho0, tlist, e_ops=[], options=None, progress
     #
     initial_vector = mat2vec(rho_eb.full())
     r = scipy.integrate.ode(cy_ode_rhs)
-    r.set_f_params(cdata_from_scipy(R.data))
+    r.set_f_params(R.data.cdata)
     r.set_integrator('zvode', method=options.method, order=options.order,
                      atol=options.atol, rtol=options.rtol,
                      nsteps=options.nsteps, first_step=options.first_step,
@@ -352,7 +351,7 @@ def bloch_redfield_solve(R, ekets, rho0, tlist, e_ops=[], options=None, progress
         if not r.successful():
             break
 
-        rho_eb.data = dense2D_to_data(vec2mat(r.y))
+        rho_eb.data = qdata_from_numpy(vec2mat(r.y))
 
         # calculate all the expectation values, or output rho_eb if no
         # expectation value operators are given
@@ -593,7 +592,7 @@ def _td_brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[], args={},
                             "the nsteps parameter in the Options class.")
 
         if options.store_states or expt_callback:
-            rho.data = dense2D_to_data(vec2mat(_ode.y))
+            rho.data = qdata_from_numpy(vec2mat(_ode.y))
 
             if options.store_states:
                 output.states.append(Qobj(rho, isherm=True))
@@ -622,7 +621,7 @@ def _td_brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[], args={},
         _cython_build_cleanup(config.tdname)
 
     if options.store_final_state:
-        rho.data = dense2D_to_data(vec2mat(_ode.y))
+        rho.data = qdata_from_numpy(vec2mat(_ode.y))
         output.final_state = Qobj(rho, dims=rho0.dims, isherm=True)
 
     return output

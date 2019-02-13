@@ -54,7 +54,6 @@ from qutip.settings import debug
 from qutip.cy.solverfuncs import (cy_ode_rhs,
                                   cy_ode_psi_func_td,
                                   cy_ode_psi_func_td_with_state)
-from qutip.qdata import cdata_from_scipy
 from qutip.cy.codegen import Codegen
 from qutip.cy.utilities import _cython_build_cleanup
 
@@ -300,8 +299,7 @@ def psi_list_td(t, psi, L_List_and_args):
     L = L_List[0][0]
     tdfunc = L_List[0][1]
     out = np.zeros(psi.shape[0],dtype=complex)
-    Ldata = cdata_from_scipy(L)
-    Ldata.spmvpy(psi, out, tdfunc(t, args))
+    L.mul_vec_py(psi, out, tdfunc(t, args))
     for n in range(1, len(L_List)):
         #
         # args[n][0] = the sparse data for a Qobj in operator form
@@ -309,8 +307,7 @@ def psi_list_td(t, psi, L_List_and_args):
         #
         L = L_List[n][0]
         tdfunc = L_List[n][1]
-        Ldata = cdata_from_scipy(L)
-        Ldata.spmvpy(psi, out, tdfunc(t, args))
+        L.mul_vec_py(psi, out, tdfunc(t, args))
         # spmvpy_csr(L.data, L.indices, L.indptr, psi, tdfunc(t, args), out)
 
     return out
@@ -324,8 +321,7 @@ def psi_list_td_with_state(t, psi, L_List_and_args):
     L = L_List[0][0]
     tdfunc = L_List[0][1]
     out = np.zeros(psi.shape[0],dtype=complex)
-    Ldata = cdata_from_scipy(L)
-    Ldata.spmvpy(psi, out, tdfunc(t, psi, args))
+    L.mul_vec_py(psi, out, tdfunc(t, psi, args))
     # spmvpy_csr(L.data, L.indices, L.indptr, psi, tdfunc(t, psi, args), out)
     for n in range(1, len(L_List)):
         #
@@ -334,8 +330,7 @@ def psi_list_td_with_state(t, psi, L_List_and_args):
         #
         L = L_List[n][0]
         tdfunc = L_List[n][1]
-        Ldata = cdata_from_scipy(L)
-        Ldata.spmvpy(psi, out, tdfunc(t, psi, args))
+        L.mul_vec_py(psi, out, tdfunc(t, psi, args))
         # spmvpy_csr(L.data, L.indices, L.indptr, psi, tdfunc(t, psi, args), out)
 
     return out
@@ -400,8 +395,7 @@ def _sesolve_const(H, psi0, tlist, e_ops, args, opt, progress_bar):
             r.set_f_params(Ldata, opt.openmp_threads)
         else:
             r = scipy.integrate.ode(cy_ode_rhs)
-            Ldata = cdata_from_scipy(L)
-            r.set_f_params(Ldata)
+            r.set_f_params(L.cdata)
     r.set_integrator('zvode', method=opt.method, order=opt.order,
                      atol=opt.atol, rtol=opt.rtol, nsteps=opt.nsteps,
                      first_step=opt.first_step, min_step=opt.min_step,
@@ -838,9 +832,6 @@ def _generic_ode_solve(r, psi0, tlist, e_ops, opt, progress_bar, dims=None):
 
     dt = np.diff(tlist)
 
-    if not expt_callback:
-        e_ops_data = [cdata_from_scipy(e) for e in e_ops]
-
     for t_idx, t in enumerate(tlist):
         progress_bar.update(t_idx)
 
@@ -870,7 +861,7 @@ def _generic_ode_solve(r, psi0, tlist, e_ops, opt, progress_bar, dims=None):
             e_ops(t, Qobj(cdata, dims=dims))
 
         for m in range(n_expt_op):
-            output.expect[m][t_idx] = e_ops_data.expect_psi_vec(cdata, e_ops[m].isherm)
+            output.expect[m][t_idx] = e_ops[m].data.expect_psi_vec(cdata, e_ops[m].isherm)
             # cy_expect_psi(e_ops[m].data, cdata, e_ops[m].isherm)
 
         if t_idx < n_tsteps - 1:

@@ -40,16 +40,14 @@ from qutip.qobj import Qobj, isoper
 from qutip.eseries import eseries
 from qutip.data_math import expect_ket, spmm_tr
 
-def expect_rho_vec(oper, vec, herm):
-    mat = cdata_from_scipy(oper)
-    expt = mat.expect_rho_vec(vec)
+def expect_rho_vec(operdata, vec, herm):
+    expt = operdata.expect_rho_vec(vec)
     if herm:
         return real(expt)
     return  expt
 
-def expect_psi_vec(oper, vec, herm):
-    mat = cdata_from_scipy(oper)
-    expt = mat.expect_psi_vec(vec)
+def expect_psi_vec(operdata, vec, herm):
+    expt = operdata.expect_psi_vec(vec)
     if herm:
         return real(expt)
     return  expt

@@ -48,7 +48,7 @@ from copy import copy
 from qutip import Qobj, qeye
 from qutip.states import enr_state_dictionaries
 from qutip.superoperator import liouvillian, spre, spost
-from qutip.cy.spmatfuncs import cy_ode_rhs
+from qutip.cy.solverfuncs import cy_ode_rhs
 from qutip.solver import Options, Result, Stats
 from qutip.ui.progressbar import BaseProgressBar, TextProgressBar
 from qutip.cy.heom import cy_pad_csr
@@ -430,7 +430,7 @@ class HSolverDL(HEOMSolver):
 
         r = scipy.integrate.ode(cy_ode_rhs)
 
-        r.set_f_params(L_helems.data, L_helems.indices, L_helems.indptr)
+        r.set_f_params(L_helems.cdata)
         r.set_integrator('zvode', method=options.method, order=options.order,
                          atol=options.atol, rtol=options.rtol,
                          nsteps=options.nsteps, first_step=options.first_step,

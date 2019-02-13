@@ -49,7 +49,6 @@ from qutip.states import ket2dm
 from qutip.parallel import parfor
 from qutip.utilities import clebsch
 from scipy.special import factorial
-from qutip.qdata import cdata_from_scipy
 
 
 def wigner(psi, xvec, yvec, method='clenshaw', g=sqrt(2),
@@ -364,8 +363,7 @@ def _wigner_clenshaw(rho, xvec, yvec, g=sqrt(2), sparse=False):
     else:
         while L > 0:
             L -= 1
-            mat = cdata_from_scipy(rho.data)
-            diag = mat.get_diag(L)
+            diag = rho.data.get_diag(L)
             if L != 0:
                 diag *= 2
             #here c_L = _wig_laguerre_val(L, B, np.diag(rho, L))

@@ -51,7 +51,7 @@ from qutip.expect import expect_rho_vec
 from qutip.solver import Options, Result, config, _solver_safety_check
 
 from qutip.cy.solverfuncs import cy_ode_rhs, cy_ode_rho_func_td
-from qutip.qdata import dense2D_to_data, cdata_from_scipy
+from qutip.qdata import qdata_from_numpy
 
 from qutip.cy.codegen import Codegen
 from qutip.cy.utilities import _cython_build_cleanup
@@ -467,8 +467,7 @@ def drho_list_td(t, rho, L_list, args):
     out = np.zeros(rho.shape[0],dtype=complex)
     L = L_list[0][0]
     L_td = L_list[0][1]
-    Ldata = cdata_from_scipy(L)
-    Ldata.spmvpy(rho, out, L_td(t, args))
+    L.mul_vec_py(rho, out, L_td(t, args))
     #spmvpy_csr(L.data, L.indices, L.indptr,
     #            rho, L_td(t, args), out)
     for n in range(1, len(L_list)):
@@ -478,15 +477,14 @@ def drho_list_td(t, rho, L_list, args):
         #
         L = L_list[n][0]
         L_td = L_list[n][1]
-        Ldata = cdata_from_scipy(L)
         if L_list[n][2]:
             # spmvpy_csr(L.data, L.indices, L.indptr,
             #            rho, L_td(t, args)**2, out)
-            Ldata.spmvpy(rho, out, L_td(t, args)**2)
+            L.mul_vec_py(rho, out, L_td(t, args)**2)
         else:
             # spmvpy_csr(L.data, L.indices, L.indptr,
             #            rho, L_td(t, args), out)
-            Ldata.spmvpy(rho, out, L_td(t, args))
+            L.mul_vec_py(rho, out, L_td(t, args))
     return out
 
 
@@ -495,8 +493,7 @@ def drho_list_td_with_state(t, rho, L_list, args):
     out = np.zeros(rho.shape[0],dtype=complex)
     L = L_list[0][0]
     L_td = L_list[0][1]
-    Ldata = cdata_from_scipy(L)
-    Ldata.spmvpy(rho, out, L_td(t, rho, args))
+    L.mul_vec_py(rho, out, L_td(t, rho, args))
     #spmvpy_csr(L.data, L.indices, L.indptr,
     #            rho, L_td(t, rho, args), out)
     for n in range(1, len(L_list)):
@@ -506,14 +503,13 @@ def drho_list_td_with_state(t, rho, L_list, args):
         #
         L = L_list[n][0]
         L_td = L_list[n][1]
-        Ldata = cdata_from_scipy(L)
         if L_list[n][2]:
-            Ldata.spmvpy(rho, out, L_td(t, rho, args)**2)
+            L.mul_vec_py(rho, out, L_td(t, rho, args)**2)
             # spmvpy_csr(L.data, L.indices, L.indptr,
             #            rho, L_td(t, rho, args)**2, out)
         else:
 
-            Ldata.spmvpy(rho, out, L_td(t, rho, args))
+            L.mul_vec_py(rho, out, L_td(t, rho, args))
             # spmvpy_csr(L.data, L.indices, L.indptr,
             #            rho, L_td(t, rho, args), out)
 
@@ -827,12 +823,10 @@ def _mesolve_const(H, rho0, tlist, c_op_list, e_ops, args, opt,
     else:
         if opt.use_openmp and L.data.nnz >= qset.openmp_thresh:
             r = scipy.integrate.ode(cy_ode_rhs_openmp)
-            Ldata = cdata_from_scipy(L)
-            r.set_f_params(Ldata, opt.openmp_threads)
+            r.set_f_params(L.cdata, opt.openmp_threads)
         else:
             r = scipy.integrate.ode(cy_ode_rhs)
-            Ldata = cdata_from_scipy(L)
-            r.set_f_params(Ldata)
+            r.set_f_params(L.cdata)
         # r = scipy.integrate.ode(_ode_rho_test)
         # r.set_f_params(L.data)
     r.set_integrator('zvode', method=opt.method, order=opt.order,
@@ -1059,7 +1053,7 @@ def _generic_ode_solve(r, rho0, tlist, e_ops, opt, progress_bar):
                             "the nsteps parameter in the Options class.")
 
         if opt.store_states or expt_callback:
-            rho.data = dense2D_to_data(vec2mat(r.y))
+            rho.data = qdata_from_numpy(vec2mat(r.y))
 
             if opt.store_states:
                 output.states.append(Qobj(rho, isherm=True))
@@ -1085,7 +1079,7 @@ def _generic_ode_solve(r, rho0, tlist, e_ops, opt, progress_bar):
         _cython_build_cleanup(config.tdname)
 
     if opt.store_final_state:
-        rho.data = dense2D_to_data(vec2mat(r.y))
+        rho.data = qdata_from_numpy(vec2mat(r.y))
         output.final_state = Qobj(rho, dims=rho0.dims, isherm=True)
 
     return output

@@ -53,18 +53,17 @@ from numpy import (arccos, arccosh, arcsin, arcsinh, arctan, arctan2, arctanh,
                    log1p, modf, pi, radians, sin, sinh, sqrt, tan, tanh, trunc)
 
 import numpy as np
-import scipy.sparse as sp
 import scipy.linalg as la
 import qutip.settings as settings
 from qutip import __version__
-from qutip.fastsparse import fast_csr_matrix, fast_identity
-from qutip.permute import _permute
-from qutip.sparse import (sp_eigs, sp_expm, sp_fro_norm, sp_max_norm,
-                          sp_one_norm, sp_L2_norm)
 from qutip.dimensions import type_from_dims, enumerate_flat, collapse_dims_super
 
 from qutip.csr_math import inner, mat_elem
-from qutip.qdata import cdata_from_scipy
+
+# all this to be removed
+import scipy.sparse as sp
+from qutip.fastsparse import fast_csr_matrix, fast_identity
+from qutip.permute import _permute
 
 import sys
 if sys.version_info.major >= 3:
@@ -72,7 +71,6 @@ if sys.version_info.major >= 3:
 elif sys.version_info.major < 3:
     from itertools import izip_longest
     zip_longest = izip_longest
-
 
 class Qobj(object):
     """A class for representing quantum objects, such as quantum operators
@@ -230,9 +228,7 @@ class Qobj(object):
         if isinstance(inpt, Qobj):
             # if input is already Qobj then return identical copy
 
-            self._data = fast_csr_matrix((inpt.data.data, inpt.data.indices,
-                                          inpt.data.indptr),
-                                          shape=inpt.shape, copy=copy)
+            self._data = inpt.copy()
 
             if not np.any(dims):
                 # Dimensions of quantum object used for keeping track of tensor
@@ -269,8 +265,8 @@ class Qobj(object):
                 data = data.transpose()
 
             _tmp = sp.csr_matrix(data, dtype=complex)
-            self._data = fast_csr_matrix((_tmp.data, _tmp.indices, _tmp.indptr),
-                                         shape=_tmp.shape)
+            self._data = qdata(_tmp)
+
             if not np.any(dims):
                 self.dims = [[int(data.shape[0])], [int(data.shape[1])]]
             else:
@@ -288,8 +284,7 @@ class Qobj(object):
                 do_copy = 0
             else:
                 _tmp = inpt
-            self._data = fast_csr_matrix((_tmp.data, _tmp.indices, _tmp.indptr),
-                                        shape=_tmp.shape, copy=do_copy)
+            self._data = qdata(_tmp)
 
             if not np.any(dims):
                 self.dims = [[int(inpt.shape[0])], [int(inpt.shape[1])]]
@@ -300,8 +295,8 @@ class Qobj(object):
                                np.integer, np.floating, np.complexfloating)):
             # if input is int, float, or complex then convert to array
             _tmp = sp.csr_matrix([[inpt]], dtype=complex)
-            self._data = fast_csr_matrix((_tmp.data, _tmp.indices, _tmp.indptr),
-                                        shape=_tmp.shape)
+            self._data = qdata(_tmp)
+
             if not np.any(dims):
                 self.dims = [[1], [1]]
             else:
@@ -312,8 +307,7 @@ class Qobj(object):
                           builtins.type(inpt))
             inpt = np.array([[0]])
             _tmp = sp.csr_matrix(inpt, dtype=complex, copy=copy)
-            self._data = fast_csr_matrix((_tmp.data, _tmp.indices, _tmp.indptr),
-                                        shape = _tmp.shape)
+            self._data = qdata(_tmp)
             self.dims = [[int(inpt.shape[0])], [int(inpt.shape[1])]]
 
         if type == 'super':
@@ -380,8 +374,7 @@ class Qobj(object):
                 out.data = self.data + dat * fast_identity(
                     self.shape[0])
             else:
-                out.data = self.data
-                out.data.data = out.data.data + dat
+                out.data = self.data + dat
 
             out.dims = self.dims
 
@@ -409,8 +402,7 @@ class Qobj(object):
             if other.type in ['oper', 'super']:
                 out.data = dat * fast_identity(other.shape[0]) + other.data
             else:
-                out.data = other.data
-                out.data.data = out.data.data + dat
+                out.data = other.data + dat
             out.dims = other.dims
 
             if settings.auto_tidyup: out.tidyup()
@@ -729,11 +721,12 @@ class Qobj(object):
             # sparse data string representation
             s += str(self.data)
 
-        elif all(np.imag(self.data.data) == 0):
-            s += str(np.real(self.full()))
-
         else:
-            s += str(self.full())
+            full = self.full()
+            if all(np.imag(full) == 0):
+                s += str(np.real(full))
+            else:
+                s += str(full)
 
         return s
 
@@ -974,23 +967,19 @@ class Qobj(object):
         if self.type in ['oper', 'super']:
             if norm is None or norm == 'tr':
                 _op = self*self.dag()
-                vals = sp_eigs(_op.data, _op.isherm, vecs=False,
+                vals = _op.data.eigs(_op.isherm, vecs=False,
                                sparse=sparse, tol=tol, maxiter=maxiter)
                 return np.sum(np.sqrt(np.abs(vals)))
-            elif norm == 'fro':
-                return sp_fro_norm(self.data)
-            elif norm == 'one':
-                return sp_one_norm(self.data)
-            elif norm == 'max':
-                return sp_max_norm(self.data)
+            elif norm in ['fro', 'one', 'max']:
+                return self.data.norm(norm)
             else:
                 raise ValueError(
                     "For matrices, norm must be 'tr', 'fro', 'one', or 'max'.")
         else:
             if norm is None or norm == 'l2':
-                return sp_L2_norm(self.data)
+                return self.data.norm('l2')
             elif norm == 'max':
-                return sp_max_norm(self.data)
+                return self.data.norm('max')
             else:
                 raise ValueError("For vectors, norm must be 'l2', or 'max'.")
 
@@ -1007,17 +996,16 @@ class Qobj(object):
         P : Qobj
             Projection operator.
         """
-        mat = cdata_from_scipy(self.data)
         if self.isket:
-            _out = mat.proj()
+            _out = self.data.proj()
             _dims = [self.dims[0],self.dims[0]]
         elif :
-            _out = mat.proj()
+            _out = self.data.proj()
             _dims = [self.dims[1],self.dims[1]]
         else:
             raise TypeError('Projector can only be formed from a bra or ket.')
 
-        return Qobj(_out,dims=_dims)
+        return Qobj(_out, dims=_dims)
 
 
     def tr(self):
@@ -1030,8 +1018,10 @@ class Qobj(object):
             otherwise.
 
         """
-        mat = cdata_from_scipy(self.data)
-        return mat.trace(self.isherm)
+        tr = self.data.trace()
+        if self.isherm:
+            return tr.real
+        return tr
 
     def full(self, order='C', squeeze=False):
         """Dense array from quantum object.
@@ -1102,11 +1092,8 @@ class Qobj(object):
         if self.dims[0][0] != self.dims[1][0]:
             raise TypeError('Invalid operand for matrix exponential')
 
-        if method == 'dense':
-            F = sp_expm(self.data, sparse=False)
-
-        elif method == 'sparse':
-            F = sp_expm(self.data, sparse=True)
+        if method in ['dense', 'sparse']:
+            F = self.data.expm(method)
 
         else:
             raise ValueError("method must be 'dense' or 'sparse'.")
@@ -1156,8 +1143,8 @@ class Qobj(object):
 
         """
         if self.dims[0][0] == self.dims[1][0]:
-            evals, evecs = sp_eigs(self.data, self.isherm, sparse=sparse,
-                                   tol=tol, maxiter=maxiter)
+            evals, evecs = self.data.eigs(self.isherm, sparse=sparse,
+                                          tol=tol, maxiter=maxiter)
             numevals = len(evals)
             dV = sp.spdiags(np.sqrt(evals, dtype=complex), 0, numevals,
                             numevals, format='csr')
@@ -1289,9 +1276,7 @@ class Qobj(object):
 
         """
         q = Qobj()
-        mat = cdata_from_scipy(self.data)
-        data, q.dims = mat.ptrace(sel)
-        q.data = data.to_scipy()
+        q.data, q.dims = self.data.ptrace(sel)
         return q.tidyup() if settings.auto_tidyup else q
 
     def permute(self, order):
@@ -1329,18 +1314,6 @@ class Qobj(object):
         """
         self.data.tidyup()
         return self
-        if self.data.nnz:
-            #This does the tidyup and returns True if
-            #The sparse data needs to be shortened
-            if use_openmp() and self.data.nnz > 500:
-                if omp_tidyup(self.data.data, atol, self.data.nnz,
-                              settings.num_cpus):
-                            self.data.eliminate_zeros()
-            else:
-                if cy_tidyup(self.data.data, atol, self.data.nnz):
-                    self.data.eliminate_zeros()
-            return self
-        else:
 
 
     def transform(self, inpt, inverse=False, sparse=True):
@@ -1368,7 +1341,6 @@ class Qobj(object):
         -----
         This function is still in development.
 
-
         """
         if isinstance(inpt, list) or (isinstance(inpt, np.ndarray) and
                                       len(inpt.shape) == 1):
@@ -1388,7 +1360,6 @@ class Qobj(object):
             sparse = False
         else:
             raise TypeError('Invalid operand for basis transformation')
-
 
         # transform data
         if inverse:
@@ -1420,8 +1391,6 @@ class Qobj(object):
             return out.tidyup()
         else:
             return out
-
-
 
     def trunc_neg(self, method="clip"):
         """Truncates negative eigenvalues and renormalizes.
@@ -1484,7 +1453,6 @@ class Qobj(object):
                 for val, state in zip(eigvals, eigstates)
             ], Qobj(np.zeros(self.shape), dims=self.dims)
         ).unit()
-
 
     def matrix_element(self, bra, ket):
         """Calculates a matrix element.
@@ -1553,7 +1521,6 @@ class Qobj(object):
         """
 
         if isinstance(other, Qobj):
-
             if self.isbra:
                 if other.isket:
                     return inner(self.data, other.data)
@@ -1577,9 +1544,7 @@ class Qobj(object):
                 else:
                     raise TypeError("Can only calculate overlap for state vector Qobjs")
 
-
         raise TypeError("Can only calculate overlap for state vector Qobjs")
-
 
     def eigenstates(self, sparse=False, sort='low',
                     eigvals=0, tol=0, maxiter=100000):
@@ -1621,15 +1586,14 @@ class Qobj(object):
         Use sparse only if memory requirements demand it.
 
         """
-        evals, evecs = sp_eigs(self.data, self.isherm, sparse=sparse,
-                               sort=sort, eigvals=eigvals, tol=tol,
-                               maxiter=maxiter)
+        evals, evecs = self.data.eigs(self.isherm, sparse=sparse,
+                                      sort=sort, eigvals=eigvals, tol=tol,
+                                      maxiter=maxiter)
         new_dims = [self.dims[0], [1] * len(self.dims[0])]
         ekets = np.array([Qobj(vec, dims=new_dims) for vec in evecs],
                          dtype=object)
         norms = np.array([ket.norm() for ket in ekets])
         return evals, ekets / norms
-
 
     def eigenenergies(self, sparse=False, sort='low',
                       eigvals=0, tol=0, maxiter=100000):
@@ -1663,8 +1627,8 @@ class Qobj(object):
         Use sparse only if memory requirements demand it.
 
         """
-        return sp_eigs(self.data, self.isherm, vecs=False, sparse=sparse,
-                       sort=sort, eigvals=eigvals, tol=tol, maxiter=maxiter)
+        return self.data.eigs(self.isherm, vecs=False, sparse=sparse, sort=sort,
+                              eigvals=eigvals, tol=tol, maxiter=maxiter)
 
     def groundstate(self, sparse=False, tol=0, maxiter=100000, safe=True):
         """Ground state Eigenvalue and Eigenvector.
@@ -1700,8 +1664,8 @@ class Qobj(object):
             evals = 2
         else:
             evals = 1
-        grndval, grndvec = sp_eigs(self.data, self.isherm, sparse=sparse,
-                                   eigvals=evals, tol=tol, maxiter=maxiter)
+        grndval, grndvec = self.data.eigs(self.isherm, sparse=sparse,
+                                          eigvals=evals, tol=tol, maxiter=maxiter)
         if safe:
             if tol == 0: tol = 1e-15
             if (grndval[1]-grndval[0]) <= 10*tol:
@@ -1722,7 +1686,7 @@ class Qobj(object):
 
         """
         out = Qobj()
-        out.data = self.data.transpose()
+        out.data = self.data.transpose(copy=True)
         out.dims = [self.dims[1], self.dims[0]]
         return out
 
@@ -1814,8 +1778,7 @@ class Qobj(object):
         """
         return mts.dnorm(self, B)
 
-
-    @property
+    @cached_property
     def ishp(self):
         # FIXME: this needs to be cached in the same ways as isherm.
         if self.type in ["super", "oper"]:
@@ -1827,7 +1790,7 @@ class Qobj(object):
         else:
             return False
 
-    @property
+    @cached_property
     def iscp(self):
         # FIXME: this needs to be cached in the same ways as isherm.
         if self.type in ["super", "oper"]:
@@ -1896,12 +1859,10 @@ class Qobj(object):
 
     @property
     def isherm(self):
-
         if self._isherm is not None:
             # used previously computed value
             return self._isherm
-        mat = cdata_from_scipy(self)
-        self._isherm = bool(mat.isherm())
+        self._isherm = bool(self.data.isherm())
 
         return self._isherm
 
@@ -2015,7 +1976,7 @@ class Qobj(object):
             A Qobj instance that represents the value of qobj_list at time t.
 
         """
-
+        # warnings.warn("Deprecated: Use Qobj.evaluate", DeprecationWarning)
         q_sum = 0
         if isinstance(qobj_list, Qobj):
             q_sum = qobj_list
@@ -2041,21 +2002,6 @@ class Qobj(object):
                 'Unrecongized format for specification of time-dependent Qobj')
 
         return q_sum
-
-
-# -----------------------------------------------------------------------------
-# This functions evaluates a time-dependent quantum object on the list-string
-# and list-function formats that are used by the time-dependent solvers.
-# Although not used directly in by those solvers, it can for test purposes be
-# conventient to be able to evaluate the expressions passed to the solver for
-# arbitrary value of time. This function provides this functionality.
-#
-def qobj_list_evaluate(qobj_list, t, args):
-    """
-    Depracated: See Qobj.evaluate
-    """
-    warnings.warn("Deprecated: Use Qobj.evaluate", DeprecationWarning)
-    return Qobj.evaluate(qobj_list, t, args)
 
 
 # -----------------------------------------------------------------------------
@@ -2398,3 +2344,23 @@ import qutip.operators as ops
 import qutip.metrics as mts
 import qutip.states
 import qutip.superoperator
+
+
+# Test
+class cached_property(object):
+    """ A property that is only computed once per instance and then replaces
+        itself with an ordinary attribute. Deleting the attribute resets the
+        property.
+
+        Source: https://github.com/bottlepy/bottle/commit/fa7733e075da0d790d809aa3d2f53071897e6f76
+        """
+
+    def __init__(self, func):
+        self.__doc__ = getattr(func, '__doc__')
+        self.func = func
+
+    def __get__(self, obj, cls):
+        if obj is None:
+            return self
+        value = obj.__dict__[self.func.__name__] = self.func(obj)
+        return value

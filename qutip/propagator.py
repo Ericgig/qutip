@@ -45,7 +45,6 @@ from qutip.rhs_generate import (rhs_generate, rhs_clear, _td_format_check)
 from qutip.superoperator import (vec2mat, mat2vec,
                                  vector_to_operator, operator_to_vector)
 from qutip.sparse import sp_reshape
-from qutip.qdata import cdata_from_scipy
 from qutip.mesolve import mesolve
 from qutip.sesolve import sesolve
 from qutip.states import basis
@@ -188,8 +187,7 @@ def propagator(H, t, c_op_list=[], args={}, options=None,
                                  _safe_mode=False)
                 for k, t in enumerate(tlist):
                     u[k] = sp_reshape(output.states[k].data, (N, N))
-                    mat = cdata_from_scipy(u[k])
-                    mat.unit_row_norm()
+                    u[k].unit_row_norm()
                     u[k] = u[k].T.tocsr()
 
             else:

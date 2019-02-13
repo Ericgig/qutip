@@ -55,7 +55,6 @@ from qutip.solver import Options
 from qutip.propagator import propagator
 from qutip.solver import Result, _solver_safety_check
 from qutip.cy.solverfuncs import cy_ode_rhs
-from qutip.qdata import cdata_from_scipy
 from qutip.expect import expect
 from qutip.utilities import n_thermal
 
@@ -819,7 +818,7 @@ def floquet_markov_mesolve(R, ekets, rho0, tlist, e_ops, f_modes_table=None,
     #
     initial_vector = mat2vec(rho0.full())
     r = scipy.integrate.ode(cy_ode_rhs)
-    r.set_f_params(cdata_from_scipy(R.data, target="csr"))
+    r.set_f_params(R.data.cdata)
     r.set_integrator('zvode', method=opt.method, order=opt.order,
                      atol=opt.atol, rtol=opt.rtol, max_step=opt.max_step)
     r.set_initial_value(initial_vector, tlist[0])

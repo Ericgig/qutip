@@ -36,7 +36,7 @@ __all__ = ['reshuffle']
 import numpy as np
 import scipy.sparse as sp
 from qutip.cy.utils import select, index_permute
-from qutip.qdata import data_as_coo, coo_to_data
+from qutip.qdata import qdata_to_coo, qdata_from_coo
 
 
 def _chunk_dims(dims, order):
@@ -48,7 +48,7 @@ def _chunk_dims(dims, order):
 
 
 def _permute(Q, order):
-    Qcoo = data_as_coo(Q.data)
+    Qcoo = qdata_to_coo(Q.data)
 
     if Q.isket:
         cy_index_permute(Qcoo.row,
@@ -126,7 +126,7 @@ def _permute(Q, order):
     else:
         raise TypeError('Invalid quantum object for permutation.')
 
-    return coo_to_data(Qcoo), new_dims
+    return qdata_from_coo(Qcoo), new_dims
 
 
 def _perm_inds(dims, order):
