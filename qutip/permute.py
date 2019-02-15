@@ -35,8 +35,8 @@ __all__ = ['reshuffle']
 
 import numpy as np
 import scipy.sparse as sp
-from qutip.cy.utils import select, index_permute
-from qutip.qdata import qdata_to_coo, qdata_from_coo
+from qutip.matrix.cy.utils import select, index_permute
+from qutip.qdata import qdata_to_coo, qdata_from_sparse
 
 
 def _chunk_dims(dims, order):
@@ -51,26 +51,26 @@ def _permute(Q, order):
     Qcoo = qdata_to_coo(Q.data)
 
     if Q.isket:
-        cy_index_permute(Qcoo.row,
-                         np.array(Q.dims[0], dtype=np.int32),
-                         np.array(order, dtype=np.int32))
+        index_permute(Qcoo.row,
+                      np.array(Q.dims[0], dtype=np.int32),
+                      np.array(order, dtype=np.int32))
 
         new_dims = [[Q.dims[0][i] for i in order], Q.dims[1]]
 
     elif Q.isbra:
-        cy_index_permute(Qcoo.col,
-                         np.array(Q.dims[1], dtype=np.int32),
-                         np.array(order, dtype=np.int32))
+        index_permute(Qcoo.col,
+                      np.array(Q.dims[1], dtype=np.int32),
+                      np.array(order, dtype=np.int32))
 
         new_dims = [Q.dims[0], [Q.dims[1][i] for i in order]]
 
     elif Q.isoper:
-        cy_index_permute(Qcoo.row,
-                         np.array(Q.dims[0], dtype=np.int32),
-                         np.array(order, dtype=np.int32))
-        cy_index_permute(Qcoo.col,
-                         np.array(Q.dims[1], dtype=np.int32),
-                         np.array(order, dtype=np.int32))
+        index_permute(Qcoo.row,
+                      np.array(Q.dims[0], dtype=np.int32),
+                      np.array(order, dtype=np.int32))
+        index_permute(Qcoo.col,
+                      np.array(Q.dims[1], dtype=np.int32),
+                      np.array(order, dtype=np.int32))
 
         new_dims = [[Q.dims[0][i] for i in order], [Q.dims[1][i] for i in order]]
 
@@ -92,7 +92,7 @@ def _permute(Q, order):
         flat_order = np.array(sum(order, []), dtype=np.int32)
         q_dims = np.array(sum(Q.dims[0], []), dtype=np.int32)
 
-        cy_index_permute(Qcoo.row, q_dims, flat_order)
+        index_permute(Qcoo.row, q_dims, flat_order)
 
         # Finally, we need to restructure the now-decomposed left index
         # into left and right subindices, so that the overall dims we return
@@ -106,7 +106,7 @@ def _permute(Q, order):
         flat_order = np.array(sum(order, []), dtype=np.int32)
         q_dims = np.array(sum(Q.dims[1], []), dtype=np.int32)
 
-        cy_index_permute(Qcoo.col, q_dims, flat_order)
+        index_permute(Qcoo.col, q_dims, flat_order)
 
         new_dims = [q_dims[i] for i in flat_order]
         new_dims = list(_chunk_dims(new_dims, order))
@@ -116,8 +116,8 @@ def _permute(Q, order):
         flat_order = np.array(sum(order, []), dtype=np.int32)
         q_dims = np.array(sum(Q.dims[0], []), dtype=np.int32)
 
-        cy_index_permute(Qcoo.row, q_dims, flat_order)
-        cy_index_permute(Qcoo.col, q_dims, flat_order)
+        index_permute(Qcoo.row, q_dims, flat_order)
+        index_permute(Qcoo.col, q_dims, flat_order)
 
         new_dims = [q_dims[i] for i in flat_order]
         new_dims = list(_chunk_dims(new_dims, order))
@@ -126,7 +126,7 @@ def _permute(Q, order):
     else:
         raise TypeError('Invalid quantum object for permutation.')
 
-    return qdata_from_coo(Qcoo), new_dims
+    return qdata_from_sparse(Qcoo), new_dims
 
 
 def _perm_inds(dims, order):

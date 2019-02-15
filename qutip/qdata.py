@@ -1,175 +1,58 @@
 
-from qutip.cy.csr_matrix import CSR_from_scipy
 
-from scipy import matrix
+import numpy as np
+from scipy.sparse import issparse, coo_matrix
 
-# base class for all Qobj data, mainly here as a template to know what to do
-# when adding a new format. Instanting it would not result in much.
-class _qdata:
-    def __init__(self):
-        self.format = "None"
-        self.shape = ()
-        self.nnz
-        self.cdata
+from qutip.matrix.qdata import _qdata
+from qutip.matrix.crs import (...)
 
-    # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    # method defined in numpy/scipy
-    # we can reuse but:
-    # 1. scipy sparse can change the type to csr during computation.
-    # 2. there may be speed gain since we can skip some safety checks
-
-    def __mul__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __rmul__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __add__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __radd__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __sub__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __rsub__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __div__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __neg__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __pow__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __abs__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __str__(self, other):
-        raise NotImplementedError("dummy class")
-
-    def __getitem__(self, key):
-        raise NotImplementedError("dummy class")
-
-    def __setitem__(self, key):
-        raise NotImplementedError("dummy class")
-
-    def transpose(self, axes=None, copy=False):
-        """ transpose, 'axes' is for numpy compatibility
-        """
-        raise NotImplementedError("dummy class")
-
-    def conj(self, copy=True):
-        """ return conj of self
-        """
-        raise NotImplementedError("dummy class")
-
-    def toarray(self, order=None, out=None):
-        """ self*self.dag
-        """
-        raise NotImplementedError("dummy class")
-
-    def diagonal(self, k=0):
-        """ self*self.dag
-        """
-        raise NotImplementedError("dummy class")
-
-    def dot(self, other):
-        """ self * other
-        """
-        raise self * other
-
-    # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%5
-    # Qutip method
-    def adjoint(self):
-        """ return dag of self
-        scipy/numpy as getH
-        """
-        raise NotImplementedError("dummy class")
-
-    def norm(self, norm):
-        """
-        Norm of a quantum object.
-        """
-        raise NotImplementedError("dummy class")
-
-    def eigs(self):
-        """ eigenvalue and eigstates
-        """
-        raise NotImplementedError("dummy class")
-
-    def proj(self):
-        """ self*self.dag
-        """
-        raise NotImplementedError("dummy class")
-
-    def trace(self):
-        """ tr(self)
-        """
-        raise NotImplementedError("dummy class")
-
-    def expm(self, ):
-        """ self*self.dag
-        """
-        raise NotImplementedError("dummy class")
-
-    def ptrace(self, selection):
-        """ partial trance
-        """
-        raise NotImplementedError("dummy class")
-
-    def tidyup(self, atol=settings.auto_tidyup_atol):
-        """ self*self.dag
-        """
-        raise NotImplementedError("dummy class")
-
-    def expect_rho_vec(self, vec):
-        """ tr(self*vec2mat(vec))
-        """
-        raise NotImplementedError("dummy class")
-
-    def expect_psi_vec(self, vec):
-        """ vec.dag * self * vec
-        """
-        raise NotImplementedError("dummy class")
-
-    def mul_vec(self, in ):
-        """ out = self * in
-        used in solver iterations: should be fast
-        """
-        raise NotImplementedError("dummy class")
-
-    def mul_vec_py(self, in, out, alpha):
-        """ out = out + alpha * self * in
-        used in solver iterations: should be fast
-        """
-        raise NotImplementedError("dummy class")
-
-    def unit_row_norm(self):
-        """ normalize each row
-        """
-        raise NotImplementedError("dummy class")
-
-    def get_diag(self, L):
-        """ same as diagonal
-        """
-        raise NotImplementedError("dummy class")
-
+KNOWN_FORMAT = "csr"
 
 
 ##########################
-def qdata_from_numpy(dense_data, target=""):
-    return dense2D_to_CSR(dense_data).to_scipy()
+def qdata(data, format="csr", copy=False):
+    if isinstance(data, _qdata) and not copy:
+        return data
+    elif isinstance(data, _qdata):
+        return data.copy()
+    elif issparse(data):
+        return qdata_from_sparse(data, format, copy)
+    elif isinstance(data, np.ndarray):
+        return qdata_from_dense(data, format, copy)
+    else:
+        # cross fingers
+        return qdata_from_dense(np.array(data), format, copy)
 
+def qdata_from_dense(dense_data, format="csr", copy=False):
+    if format == "crs":
+        return csr_qmatrix_from_dense(dense_data)
+    else:
+        raise Exception("Unknown format")
 
-def qdata_from_coo(coo):
-    ...
-    return qdata
+def qdata_from_sparse(sparse, format="csr", copy=False):
+    if format == "crs":
+        if sparse.format = "coo":
+            return csr_qmatrix_from_coo(sparse)
+        if sparse.format != "csr":
+            sparse = sparse.tocsr()
+        return csr_qmatrix_from_csr(sparse, copy)
+    else:
+        raise Exception("Unknown format")
 
+def qdata_identity(N, format="csr"):
+    if format == "crs":
+        return csr_qmatrix_identity(N)
+    else:
+        raise Exception("Unknown format")
+
+def qdata_empty(shape=(0,0), format="csr"):
+    if format == "crs":
+        return csr_qmatrix(shape=shape)
+    else:
+        raise Exception("Unknown format")
 
 def qdata_to_coo(qdata):
-    ...
-    return coo
+    if issparse(qdata):
+        return qdata.tocoo()
+    else:
+        return coo_matrix(qdata.toarray())

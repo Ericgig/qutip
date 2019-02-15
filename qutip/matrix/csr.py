@@ -124,11 +124,10 @@ class csr_qmatrix(csr_matrix, _qdata):
             #This does the tidyup and returns True if
             #The sparse data needs to be shortened
             if use_openmp() and self.nnz > 500:
-                if omp_tidyup(self.data, atol, self.nnz,
-                              settings.num_cpus):
-                            self.eliminate_zeros()
+                if omp_tidyup(self.data, atol, self.nnz, settings.num_cpus):
+                    self.eliminate_zeros()
             else:
-                if cy_tidyup(self.data, atol, self.nnz):
+                if tidyup(self.data, atol, self.nnz):
                     self.eliminate_zeros()
         return self
 
@@ -249,5 +248,11 @@ class csr_qmatrix(csr_matrix, _qdata):
     def tocsr():
         return self
 
-    def tocsc():
-        return = qdata(csr_matrix.tocsc(self))
+
+
+csr_qmatrix_identity(N)
+csr_qmatrix_from_data(data, shape, copy=False)
+csr_qmatrix_from_csr(A, copy=False)
+csr_qmatrix_from_coo(A)
+csr_qmatrix_from_dense(data)
+csr_qmatrix_from_sparse(A)

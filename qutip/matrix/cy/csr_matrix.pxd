@@ -7,8 +7,17 @@ cimport cython
 cimport qutip.matrix.cy.cs_matrix
 import qutip.settings as qset
 from libcpp cimport bool
+from qutip.qdata import _qdata, qdata
 
 cdef class cy_csr_matrix(cy_cs_matrix):
+    def __init__(self, object data=None):
+        if data is None:
+            cy_cs_matrix.__init__(self)
+            return
+        elif not isinstance(data, _qdata):
+            data = qdata(data)
+
+
     cpdef cy_csr_matrix copy(self) ##
 
     #def object to_qdata(self)
@@ -71,10 +80,12 @@ cdef class cy_csr_matrix(cy_cs_matrix):
     cdef void _from_coo_indices(self, int[::1] rows, int[::1] cols) #
 
 
-cpdef cy_csr_matrix CSR_from_scipy(object A, copy=*) ##
+cpdef cy_csr_matrix csr_from_scipy(object A, copy=*)
 
-cpdef cy_csr_matrix dense2D_to_CSR(complex[:, :] mat)
+cpdef cy_csr_matrix crs_from_dense(complex[:, :] mat)
 
-cpdef cy_csr_matrix CSR_from_scipy_coo(object A)
+cpdef cy_csr_matrix csr_from_scipy_coo(object A)
 
-cpdef cy_csr_matrix identity_CSR(unsigned int nrows) ##
+cpdef cy_csr_matrix identity_csr(unsigned int nrows)
+
+cpdef object csr_qmatrix_from_cdata(cy_csr_matrix cdata)

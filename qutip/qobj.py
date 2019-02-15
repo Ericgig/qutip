@@ -62,8 +62,9 @@ from qutip.csr_math import inner, mat_elem
 
 # all this to be removed
 import scipy.sparse as sp
-from qutip.fastsparse import fast_csr_matrix, fast_identity
-from qutip.permute import _permute
+from qutip.qdata import qdata_empty, qdata_identity,
+from qutip.matrix.qdata import _qdata
+from qutip.matrix.permute import _permute
 
 import sys
 if sys.version_info.major >= 3:
@@ -211,7 +212,7 @@ class Qobj(object):
         self.superrep = superrep
         self._isunitary = isunitary
 
-        if fast == 'mc':
+        if fast == 'mc': #no longer used
             # fast Qobj construction for use in mcsolve with ket output
             self._data = inpt
             self.dims = dims
@@ -226,6 +227,18 @@ class Qobj(object):
             return
 
         if isinstance(inpt, Qobj):
+            # if input is already Qobj then return identical copy
+
+            self._data = inpt.copy()
+
+            if not np.any(dims):
+                # Dimensions of quantum object used for keeping track of tensor
+                # components
+                self.dims = inpt.dims
+            else:
+                self.dims = [[inpt.shape[0]], [inpt.shape[1]]]
+
+        if isinstance(inpt, _qdata):
             # if input is already Qobj then return identical copy
 
             self._data = inpt.copy()
@@ -255,36 +268,29 @@ class Qobj(object):
                 N, M = 1, 1
                 self.dims = [[N], [M]]
 
-            self._data = fast_csr_matrix(shape=(N, M))
+            self._data = qdata_empty(shape=(N, M))
 
-        elif isinstance(inpt, list) or isinstance(inpt, tuple):
+        elif isinstance(inpt, (list, tuple, np.ndarray)):
             # case where input is a list
             data = np.array(inpt)
             if len(data.shape) == 1:
                 # if list has only one dimension (i.e [5,4])
                 data = data.transpose()
 
-            _tmp = sp.csr_matrix(data, dtype=complex)
-            self._data = qdata(_tmp)
+            #_tmp = sp.csr_matrix(data, dtype=complex)
+            self._data = qdata_from_dense(data, format=format, copy=copy)
 
             if not np.any(dims):
                 self.dims = [[int(data.shape[0])], [int(data.shape[1])]]
             else:
                 self.dims = dims
 
-        elif isinstance(inpt, np.ndarray) or sp.issparse(inpt):
+        elif sp.issparse(inpt):
             # case where input is array or sparse
             if inpt.ndim == 1:
                 inpt = inpt[:, np.newaxis]
 
-            do_copy = copy
-            if not isinstance(inpt, fast_csr_matrix):
-                _tmp = sp.csr_matrix(inpt, dtype=complex, copy=do_copy)
-                _tmp.sort_indices() #Make sure indices are sorted.
-                do_copy = 0
-            else:
-                _tmp = inpt
-            self._data = qdata(_tmp)
+            self._data = qdata_from_sparse(_tmp, format=format, copy=copy)
 
             if not np.any(dims):
                 self.dims = [[int(inpt.shape[0])], [int(inpt.shape[1])]]
@@ -295,7 +301,7 @@ class Qobj(object):
                                np.integer, np.floating, np.complexfloating)):
             # if input is int, float, or complex then convert to array
             _tmp = sp.csr_matrix([[inpt]], dtype=complex)
-            self._data = qdata(_tmp)
+            self._data = qdata(_tmp, format=format)
 
             if not np.any(dims):
                 self.dims = [[1], [1]]
@@ -339,10 +345,12 @@ class Qobj(object):
         return self._data
     #Here we perfrom a check of the csr matrix type during setting of Q.data
     def set_data(self, data):
-        if not isinstance(data, fast_csr_matrix):
-            raise TypeError('Qobj data must be in fast_csr format.')
-        else:
-            self._data = data
+        #force as qdata
+        self._data = qdata(data)
+        #if not isinstance(data, _qdata):
+        #    raise TypeError('Qobj data must be in fast_csr format.')
+        #else:
+        #    self._data = qdata(data)
     data = property(get_data, set_data)
 
     def __add__(self, other):
@@ -371,7 +379,7 @@ class Qobj(object):
             out = Qobj()
 
             if self.type in ['oper', 'super']:
-                out.data = self.data + dat * fast_identity(
+                out.data = self.data + dat * qdata_identity(
                     self.shape[0])
             else:
                 out.data = self.data + dat
@@ -400,7 +408,7 @@ class Qobj(object):
 
             out = Qobj()
             if other.type in ['oper', 'super']:
-                out.data = dat * fast_identity(other.shape[0]) + other.data
+                out.data = dat * qdata_identity(other.shape[0]) + other.data
             else:
                 out.data = other.data + dat
             out.dims = other.dims
@@ -1875,7 +1883,7 @@ class Qobj(object):
         Checks whether qobj is a unitary matrix
         """
         if self.isoper:
-            eye_data = fast_identity(self.shape[0])
+            eye_data = qdata_identity(self.shape[0])
             return not (np.any(np.abs((self.data*self.dag().data
                                        - eye_data).data)
                                 > settings.atol)
