@@ -33,27 +33,24 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 
-from qutip.cy.sparse_structs cimport CSR_Matrix
+from qutip.matrix.cy.csr_matrix cimport cy_csr_matrix
 
-cdef void _zcsr_add(CSR_Matrix * A, CSR_Matrix * B,
-                    CSR_Matrix * C, double complex alpha)
+cdef cy_csr_matrix _zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex alpha)
 
 cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
                         double complex * Bdata, int * Bind, int * Bptr,
                         double complex alpha,
-                        CSR_Matrix * C,
+                        cy_csr_matrix C,
                         int nrows, int ncols) nogil
 
-cdef void _zcsr_mult(CSR_Matrix * A, CSR_Matrix * B, CSR_Matrix * C)
+cdef cy_csr_matrix zcsr_mult(cy_csr_matrix A, cy_csr_matrix B, int sorted=*)
 
-
-cdef void _zcsr_kron(CSR_Matrix * A, CSR_Matrix * B, CSR_Matrix * C)
+cpdef cy_csr_matrix zcsr_kron(cy_csr_matrix A, cy_csr_matrix B)
 
 cdef void _zcsr_kron_core(double complex * dataA, int * indsA, int * indptrA,
                           double complex * dataB, int * indsB, int * indptrB,
                           CSR_Matrix * out,
                           int rowsA, int rowsB, int colsB) nogil
 
-cdef void _zcsr_transpose(CSR_Matrix * A, CSR_Matrix * B)
-
-cdef void _zcsr_adjoint(CSR_Matrix * A, CSR_Matrix * B)
+cpdef double complex zcsr_mat_elem(cy_csr_matrix A, cy_csr_matrix left,
+                                   cy_csr_matrix right)

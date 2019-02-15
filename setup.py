@@ -64,6 +64,7 @@ REQUIRES = ['numpy (>=1.8)', 'scipy (>=0.15)', 'cython (>=0.21)']
 INSTALL_REQUIRES = ['numpy>=1.8', 'scipy>=0.15', 'cython>=0.21']
 PACKAGES = ['qutip', 'qutip/ui', 'qutip/cy', 'qutip/cy/src',
             'qutip/qip', 'qutip/qip/models',
+            'qutip/matrix', 'qutip/matrix/cy',
             'qutip/qip/algorithms', 'qutip/control', 'qutip/nonmarkov',
             'qutip/_mkl', 'qutip/tests', 'qutip/legacy',
             'qutip/cy/openmp', 'qutip/cy/openmp/src']
@@ -71,6 +72,7 @@ PACKAGE_DATA = {
     'qutip': ['configspec.ini'],
     'qutip/tests': ['*.ini'],
     'qutip/cy': ['*.pxi', '*.pxd', '*.pyx'],
+    'qutip/matrix/cy': ['*.pxd', '*.pyx'],
     'qutip/cy/src': ['*.cpp', '*.hpp'],
     'qutip/control': ['*.pyx'],
     'qutip/cy/openmp': ['*.pxd', '*.pyx'],
@@ -85,10 +87,10 @@ INCLUDE_DIRS = [np.get_include()] if np is not None else []
 HEADERS = ['qutip/cy/src/zspmv.hpp', 'qutip/cy/openmp/src/zspmv_openmp.hpp']
 NAME = "qutip"
 AUTHOR = ("Alexander Pitchford, Paul D. Nation, Robert J. Johansson, "
-          "Chris Granade, Arne Grimsmo")
+          "Chris Granade, Arne Grimsmo, Eric Giguere")
 AUTHOR_EMAIL = ("alex.pitchford@gmail.com, nonhermitian@gmail.com, "
                 "jrjohansson@gmail.com, cgranade@cgranade.com, "
-                "arne.grimsmo@gmail.com")
+                "arne.grimsmo@gmail.com, eric.giguere@usherbrooke.ca")
 LICENSE = "BSD"
 DESCRIPTION = DOCLINES[0]
 LONG_DESCRIPTION = "\n".join(DOCLINES[2:])
@@ -146,8 +148,8 @@ if os.path.exists('qutip/version.py'):
 write_version_py()
 
 # Add Cython extensions here
-cy_exts = ['spmatfuncs', 'stochastic', 'sparse_utils', 'graph_utils', 'interpolate',
-           'spmath', 'heom', 'math', 'spconvert', 'ptrace', 'checks', 'brtools',
+cy_exts = ['solverfuncs', 'stochastic', 'mcsolve', 'graph_utils', 'interpolate',
+           'heom', 'math', 'checks', 'brtools',
            'brtools_checks', 'br_tensor', 'inter', 'cqobjevo', 'cqobjevo_factor', 'piqs']
 
 # Extra link args
@@ -187,6 +189,17 @@ _mod = Extension('qutip.control.cy_grape',
             language='c++')
 EXT_MODULES.append(_mod)
 
+mat_cy_exts = ['cs_matrix', 'csr_matrix', 'utils', 'csr_math']
+
+# Add Cython files from qutip/matrix/cy
+for ext in cy_exts:
+    _mod = Extension('qutip.matrix.cy.'+ext,
+            sources = ['qutip/matrix/cy/'+ext+'.pyx', 'qutip/cy/src/zspmv.cpp'],
+            include_dirs = [np.get_include()],
+            extra_compile_args=_compiler_flags,
+            extra_link_args=_link_flags,
+            language='c++')
+    EXT_MODULES.append(_mod)
 
 # Add optional ext modules here
 if "--with-openmp" in sys.argv:

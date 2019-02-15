@@ -6,9 +6,10 @@ from scipy.sparse import (_sparsetools, isspmatrix, isspmatrix_csr,
 from scipy.sparse.sputils import (upcast, upcast_char, to_native, isdense, isshape,
                       getdtype, isscalarlike, IndexMixin, get_index_dtype)
 from scipy.sparse.base import spmatrix, isspmatrix, SparseEfficiencyWarning
-from qutip.csr_math import mult
-from qutip.qdata import
+from qutip.qdata_math import mult
 from warnings import warn
+from qutip.matrix.qdata import _qdata
+
 
 from qutip.cy.utils import cy_tidyup
 from qutip.cy.openmp.utilities import use_openmp
@@ -30,7 +31,7 @@ class csr_qmatrix(csr_matrix, _qdata):
             self.indptr = np.zeros(shape[0]+1, dtype=np.int32)
             self._shape = tuple(int(s) for s in shape)
 
-        else:
+        elif isinstance(args, tuple):
             if args[0].shape[0] and args[0].dtype != complex:
                 raise TypeError('fast_csr_matrix allows only complex data.')
             if args[1].shape[0] and args[1].dtype != np.int32:
@@ -44,12 +45,36 @@ class csr_qmatrix(csr_matrix, _qdata):
                 self._shape = tuple([len(self.indptr)-1]*2)
             else:
                 self._shape = tuple(int(s) for s in shape)
+
+        elif isspmatrix_csr(args):
+            self.data = np.array(args.data, dtype=complex, copy=copy)
+            self.indices = np.array(args.indices, dtype=np.int32, copy=copy)
+            self.indptr = np.array(args.indptr, dtype=np.int32, copy=copy)
+            if shape is None:
+                self._shape = args.shape
+            else:
+                self._shape = tuple(int(s) for s in shape)
+
+        else:
+            raise ValueError("Unknown input format")
+
         self.dtype = complex
         self.maxprint = 50
         self.format = 'csr'
+        self._isherm = None
+        self._isdiag = None
+        self._cdata = None
 
     def copy(self):
-        return ...
+        return csr_qmatrix(self, copy=True)
+        # probably a few us faster but worth it?
+        # out = csr_qmatrix.__new__(csr_qmatrix)
+        # out.__dict__ = self.__dict__.copy()
+        # out.data = self.data.copy()
+        # out.indices = self.indices.copy()
+        # out.indptr = self.indptr.copy()
+        # out._cdata = None
+        # return out
 
 
     # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -133,9 +158,14 @@ class csr_qmatrix(csr_matrix, _qdata):
 
     @property
     def cdata():
-        if self._cdata:
-            return self._cdata
-        self._cdata = ...
+        if self._cdata is None:
+            self._cdata = cy_csr_matrix(self)
+        return self._cdata
+
+    @cdata.setter
+    def cdata(self, _):
+        # Need to keep both object using the same data array
+        pass
 
     def norm(self, norm):
         """
@@ -245,14 +275,36 @@ class csr_qmatrix(csr_matrix, _qdata):
         self._isdiag = self.cdata.isdiag()
         return self._isdiag
 
-    def tocsr():
-        return self
 
+def csr_qmatrix_identity(N):
+    """Generates a sparse identity matrix in
+    csr qdata format.
+    """
+    data = np.ones(N, dtype=complex)
+    ind = np.arange(N, dtype=np.int32)
+    ptr = np.arange(N+1, dtype=np.int32)
+    ptr[-1] = N
+    return csr_qmatrix_from_data((data,ind,ptr), shape=(N,N))
 
+def csr_qmatrix_from_data(data, shape, copy=False):
+    return csr_qmatrix(data, shape=shape, copy=copy)
 
-csr_qmatrix_identity(N)
-csr_qmatrix_from_data(data, shape, copy=False)
-csr_qmatrix_from_csr(A, copy=False)
-csr_qmatrix_from_coo(A)
-csr_qmatrix_from_dense(data)
-csr_qmatrix_from_sparse(A)
+def csr_qmatrix_from_csr(A, copy=False):
+    return csr_qmatrix(A, copy=copy)
+
+def csr_qmatrix_from_coo(A):
+    if isspmatrix_coo(A):
+        return csr_from_scipy_coo(A).to_qdata()
+    raise ValueError("Wrong input matrix format")
+
+def csr_qmatrix_from_dense(data):
+    if not isinstance(data, np.ndarray):
+        raise ValueError("Wrong input matrix format")
+    if len(data.shape) == 1:
+        data = data.reshape((1,-1))
+    if len(data.shape) == 2:
+        return csr_from_dense(data).to_qdata()
+
+def csr_qmatrix_from_sparse(A):
+    csr = sp.csr_matrix(A)
+    return csr_qmatrix_from_csr(csr)

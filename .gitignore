@@ -26,6 +26,7 @@ rhs*.pyx
 
 qutip/cy/*.c
 qutip/cy/*.cpp
+qutip/cy/legacy/*.cpp
 qutip/control/*.cpp
 qutip/cy/openmp/*.cpp
 qutip/matrix/cy/*.cpp
@@ -35,4 +36,3 @@ qutip/matrix/cy/*.cpp
 
 benchmark/benchmark_data.js
 *-tasks.txt
-

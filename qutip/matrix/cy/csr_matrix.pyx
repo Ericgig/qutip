@@ -158,17 +158,29 @@ cdef class cy_csr_matrix(cy_cs_matrix):
     def __cinit__(self):
         self.is_csr = 1
 
-    def __init__(self):
-        self.is_set = 0
-        self.nnz = 0
-        self.nrows = 0
-        self.ncols = 0
-        self.nptrs = 0
-        self.max_length = 0
-        self.numpy_lock = 0
-        self.data = NULL
-        self.indices = NULL
-        self.indptr = NULL
+    def __init__(self, qdata=None):
+        if qdata is None:
+            self.is_set = 0
+            self.nnz = 0
+            self.nrows = 0
+            self.ncols = 0
+            self.nptrs = 0
+            self.max_length = 0
+            self.numpy_lock = 0
+            self.data = NULL
+            self.indices = NULL
+            self.indptr = NULL
+        else:
+            self.is_set = 1
+            self.nnz = qdata.nnz
+            self.nrows = qdata.shape[0]
+            self.ncols = qdata.shape[1]
+            self.nptrs = qdata.shape[0]
+            self.max_length = qdata.nnz
+            self.numpy_lock = 1
+            self.data = qdata.data
+            self.indices = qdata.indices
+            self.indptr = qdata.indptr
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -240,8 +252,6 @@ cdef class cy_csr_matrix(cy_cs_matrix):
 
     cpdef double inf_norm(self):
         return self._max_sum_main()
-
-
 
     cpdef cnp.ndarray[complex, ndim=1, mode="c"] spmv(self, complex[::1] vec):
         """
@@ -574,7 +584,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
             if pos_c[1] == pos_r[1]:
                 data[pos_r[0], pos_c[0]] += self.data[p]
                 p += 1
-        return dense_to_csr(data)
+        return csr_from_dense(data)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -641,7 +651,6 @@ cdef class cy_csr_matrix(cy_cs_matrix):
         #Free working array
         PyDataMem_FREE(work)
 
-
     # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     # method from cdata for name compatibility
     cpdef cnp.ndarray[complex, ndim=1, mode="c"] matvec(self, complex[::1] vec):
@@ -676,8 +685,6 @@ cdef class cy_csr_matrix(cy_cs_matrix):
         _spmm_f_py(self.data, self.indices, self.indptr,
                    &mat[0], alpha, &out[0],
                    self.nrows, self.ncols, self.ncols)
-
-
 
 
 @cython.boundscheck(False)
@@ -755,12 +762,20 @@ cpdef cy_csr_matrix identity_csr(unsigned int nrows):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef object csr_qmatrix_from_cdata(cy_csr_matrix cdata):
-    ...
+    if not cdata.numpy_lock:
+        return cdata.to_qdata()
+    out = csr_qmatrix(shape=(0,0))
+    out.data = cdata.data
+    out.indices = cdata.indices
+    out.indptr = cdata.indptr
+    out._shape = (cdata.nrows, cdata.ncols)
+    out._cdata = cdata
+    return out
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef cy_csr_matrix dense_to_csr(complex[:, :] mat):
+cpdef cy_csr_matrix csr_from_dense(complex[:, :] mat):
     """
     Converts a dense complex ndarray to a CSR matrix struct.
 

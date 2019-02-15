@@ -1,9 +1,10 @@
 # base class for all Qobj data, mainly here as a template to know what to do
-# when adding a new format. Instanting it would not result in much.
+# when adding a new format. also for type checks
+# Instanting it would not result in much.
 class _qdata:
     def __init__(self):
         self.format = "None"
-        self.shape = (0,0)
+        self._shape = (0,0)
 
     # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     # method defined in numpy/scipy
@@ -166,3 +167,11 @@ class _qdata:
         return and instance of cdata for the object
         """
         raise NotImplementedError("dummy class")
+
+    @property
+    def shape(self):
+        return self._shape
+
+    @shape.setter
+    def shape(self, _):
+        pass

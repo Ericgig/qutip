@@ -82,7 +82,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
 
 cpdef cy_csr_matrix csr_from_scipy(object A, copy=*)
 
-cpdef cy_csr_matrix crs_from_dense(complex[:, :] mat)
+cpdef cy_csr_matrix csr_from_dense(complex[:, :] mat)
 
 cpdef cy_csr_matrix csr_from_scipy_coo(object A)
 

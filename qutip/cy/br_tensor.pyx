@@ -37,6 +37,7 @@ import numpy as np
 import qutip.settings as qset
 from qutip.qobj import Qobj
 cimport numpy as np
+np.import_array()
 cimport cython
 from libcpp cimport bool
 from qutip.cy.brtools cimport (vec2mat_index, dense_to_eigbasis,
@@ -44,7 +45,12 @@ from qutip.cy.brtools cimport (vec2mat_index, dense_to_eigbasis,
 from qutip.cy.brtools import (liou_from_diag_ham, cop_super_term)
 from libc.math cimport fabs
 
-include "sparse_routines.pxi"
+cdef extern from "numpy/arrayobject.h" nogil:
+    void PyArray_ENABLEFLAGS(np.ndarray arr, int flags)
+    void PyDataMem_FREE(void * ptr)
+    void PyDataMem_RENEW(void * ptr, size_t size)
+    void PyDataMem_NEW_ZEROED(size_t size, size_t elsize)
+    void PyDataMem_NEW(size_t size)
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -93,17 +99,24 @@ def _br_term(complex[::1,:] A, complex[::1,:] evecs,
     PyDataMem_FREE(&A_eig[0,0])
 
     #Number of elements in BR tensor
+    # no coo object for a while: making a csr directly
+    cdef cy_csr_matrix mat = cy_csr_matrix.__new__(cy_csr_matrix)
     nnz = coo_rows.size()
-    coo.nnz = nnz
-    coo.rows = coo_rows.data()
-    coo.cols = coo_cols.data()
-    coo.data = coo_data.data()
-    coo.nrows = nrows**2
-    coo.ncols = nrows**2
-    coo.is_set = 1
-    coo.max_length = nnz
-    COO_to_CSR(&csr, &coo)
-    return CSR_to_scipy(&csr)
+    mat.nnz = nnz
+    mat.data = coo_data.data()
+    mat.nrows = nrows**2
+    mat.ncols = nrows**2
+    mat.is_set = 1
+    mat.max_length = nnz
+    mat.indices = <int *>PyDataMem_NEW(mat.nnz * sizeof(int))
+    mat.indptr = <int *>PyDataMem_NEW((mat.nrows+1) * sizeof(int))
+    #vector to memoryview using a ptr (make a function?)
+    cdef npy_intp nnzs[1]
+    nnzs[0] = nnz
+    cdef int[::1] rows = np.PyArray_SimpleNewFromData(1, nnzs, np.NPY_INT32, coo_rows.data())
+    cdef int[::1] cols = np.PyArray_SimpleNewFromData(1, nnzs, np.NPY_INT32, coo_cols.data())
+    mat._from_coo_indices(rows, cols)
+    return mat.to_qdata()
 
 
 @cython.boundscheck(False)

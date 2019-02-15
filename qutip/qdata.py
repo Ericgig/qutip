@@ -4,13 +4,16 @@ import numpy as np
 from scipy.sparse import issparse, coo_matrix
 
 from qutip.matrix.qdata import _qdata
-from qutip.matrix.crs import (...)
+from qutip.matrix.crs import (csr_qmatrix, csr_qmatrix_identity,
+                              csr_qmatrix_from_csr,
+                              csr_qmatrix_from_coo,
+                              csr_qmatrix_from_dense)
 
 KNOWN_FORMAT = "csr"
 
-
-##########################
 def qdata(data, format="csr", copy=False):
+    if isinstance(data, Qobj):
+        return qdata(data.data, format, copy)
     if isinstance(data, _qdata) and not copy:
         return data
     elif isinstance(data, _qdata):
