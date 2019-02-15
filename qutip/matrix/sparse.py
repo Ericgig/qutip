@@ -69,8 +69,7 @@ def sp_inf_norm(A):
     """
     Infinity norm for sparse matrix
     """
-    mat = cdata_from_scipy(A)
-    return A.inf_norm()
+    return A.cdata.inf_norm()
 
 
 def sp_L2_norm(A):
@@ -97,8 +96,7 @@ def sp_one_norm(A):
     """
     One norm for sparse matrix
     """
-    mat = cdata_from_scipy(A)
-    return A.one_norm()
+    return A.cdata.one_norm()
 
 
 def sp_reshape(A, shape, format='csr'):
@@ -129,9 +127,9 @@ def sp_reshape(A, shape, format='csr'):
         raise ValueError('Shape must be a list of two integers')
 
     if format == 'csr':
-        mat = cdata_from_scipy(A, copy=1)
+        mat = A.cdata.copy()
         mat.reshape(shape[0], shape[1])
-        return mat.to_scipy()
+        return mat.to_qdata()
 
     C = A.tocoo()
     nrows, ncols = C.shape
@@ -170,6 +168,7 @@ def _dense_eigs(data, isherm, vecs, N, eigvals, num_large, num_small):
             if eigvals == 0:
                 evals, evecs = la.eigh(data)
             else:
+                # TODO: both small and big overwrite data, sparse append
                 if num_small > 0:
                     evals, evecs = la.eigh(
                         data, eigvals=[0, num_small - 1])
@@ -183,6 +182,7 @@ def _dense_eigs(data, isherm, vecs, N, eigvals, num_large, num_small):
             if eigvals == 0:
                 evals = la.eigvalsh(data)
             else:
+                # TODO: both small and big overwrite data, sparse append
                 if num_small > 0:
                     evals = la.eigvalsh(data, eigvals=[0, num_small - 1])
                 if num_large > 0:
@@ -347,13 +347,16 @@ def sp_eigs(data, isherm, vecs=True, sparse=False, sort='low',
 
     # set number of large and small eigenvals/vecs
     if eigvals == 0:  # user wants all eigs (default)
-        D = int(np.ceil(N / 2.0))
-        num_large = N - D
-        if not np.mod(N, 2):
-            M = D
-        else:
-            M = D - 1
-        num_small = N - M
+        num_large = N//2
+        num_small = N - num_large
+        # Same thing, much simpler
+        # D = int(np.ceil(N / 2.0))
+        # num_large = N - D
+        # if not np.mod(N, 2):
+        #     M = D
+        # else:
+        #     M = D - 1
+        # num_small = N - M
     else:  # if user wants only a few eigen vals/vecs
         if sort == 'low':
             num_small = eigvals
@@ -384,8 +387,7 @@ def sp_expm(A, sparse=False):
     """
     Sparse matrix exponential.
     """
-    mat = cdata_from_scipy(A)
-    if mat.isdiag():
+    if A.isdiag():
         A = sp.diags(np.exp(A.diagonal()), shape=A.shape,
                     format='csr', dtype=complex)
         return A
@@ -394,7 +396,6 @@ def sp_expm(A, sparse=False):
     else:
         E = spla.expm(A.toarray())
     return sp.csr_matrix(E)
-
 
 
 def sp_permute(A, rperm=(), cperm=(), safe=True):
@@ -419,7 +420,6 @@ def sp_permute(A, rperm=(), cperm=(), safe=True):
     -------
     perm_csr : csr_matrix, csc_matrix
         CSR or CSC matrix with permuted rows/columns.
-
     """
     rperm = np.asarray(rperm, dtype=np.int32)
     cperm = np.asarray(cperm, dtype=np.int32)
@@ -438,16 +438,17 @@ def sp_permute(A, rperm=(), cperm=(), safe=True):
     shp = A.shape
     kind = A.getformat()
     if kind not in ['csr', 'csc']:
-        raise Exception('Input must be CSR, or CSC matrix.')
+        raise Exception('Input must be CSR or CSC matrix.')
 
-    mat = cdata_from_scipy(A, copy=1)
+    mat = A.cdata.copy()
     mat.permute(rperm, cperm)
-    data, ind, ptr = mat.csr()
+    out = mat.to_qdata()
+    return out
 
-    if kind == 'csr':
-        return fast_csr_matrix((data, ind, ptr), shape=shp)
-    elif kind == 'csc':
-        return sp.csc_matrix((data, ind, ptr), shape=shp, dtype=data.dtype)
+    #if kind == 'csr':
+    #    return sp.csr_matrix((data, ind, ptr), shape=shp, dtype=data.dtype)
+    #elif kind == 'csc':
+    #    return sp.csc_matrix((data, ind, ptr), shape=shp, dtype=data.dtype)
 
 
 def sp_reverse_permute(A, rperm=(), cperm=(), safe=True):
@@ -493,14 +494,10 @@ def sp_reverse_permute(A, rperm=(), cperm=(), safe=True):
     if kind not in ['csr', 'csc']:
         raise Exception('Input must be CSR, or CSC matrix.')
 
-    mat = cdata_from_scipy(A, copy=1)
-    mat.reverse_permute(rperm, cperm)
-    data, ind, ptr = mat.csr()
-
-    if kind == 'csr':
-        return fast_csr_matrix((data, ind, ptr), shape=shp)
-    elif kind == 'csc':
-        return sp.csc_matrix((data, ind, ptr), shape=shp, dtype=data.dtype)
+    mat = A.cdata.copy()
+    mat.permute(rperm, cperm)
+    out = mat.to_qdata()
+    return out
 
 
 def sp_bandwidth(A):
@@ -553,18 +550,17 @@ def sp_profile(A):
         Input matrix
     """
     if sp.isspmatrix_csr(A):
-        mat = cdata_from_scipy(A)
-        up = A.sparse_profile()
-        A = A.tocsc() # better way?
-        mat = cdata_from_scipy(A)
-        lp = A.sparse_profile()
+        # up = A.cdata.profile()
+        # A = A.tocsc()
+        # A = qdata(A.data, A.indices, A.indptr, shape=A.shape) # better way?
+        # lp = A.cdata.profile()
+        up, lp = A.cdata.profile_full()
 
     elif sp.isspmatrix_csc(A):
-        mat = cdata_from_scipy(A)
-        lp = A.sparse_profile()
-        A = A.tocsr() # better way?
-        mat = cdata_from_scipy(A)
-        up = A.sparse_profile()
+        # lp = A.cdata.profile()
+        # A = qdata(A.tocsr()) # better way?
+        # up = A.cdata.profile()
+        lp, up = A.cdata.profile_full()
 
     else:
         raise TypeError('Input sparse matrix must be in CSR or CSC format.')
@@ -573,20 +569,16 @@ def sp_profile(A):
 
 
 def sp_isdiag(A):
-    """Determine if sparse CSR matrix is diagonal.
+    """Determine if sparse CSR/CSC matrix is diagonal.
 
     Parameters
     ----------
-    A : csr_matrix
+    A : qdata in csrs or csc format
         Input matrix
 
     Returns
     -------
     isdiag : int
         True if matix is diagonal, False otherwise.
-
     """
-    if not sp.isspmatrix_csr(A):
-        raise TypeError('Input sparse matrix must be in CSR format.')
-    mat = cdata_from_scipy(A)
-    return mat.isdiag()
+    return A.cdata.isdiag()

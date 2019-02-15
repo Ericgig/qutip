@@ -1,4 +1,4 @@
-from csr_matrix cimport cy_csr_matrix, CSR_from_scipy
+from qutip.matrix.cy.cdata cimport Cdata
 cimport cython
 cimport numpy as cnp
 import numpy as np
@@ -8,8 +8,8 @@ import numpy as np
 cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_rhs(
         double t,
         complex[::1] rho,
-        cy_csr_matrix mat):
-    return mat.spmv(rho)
+        Cdata mat):
+    return mat.mulvec(rho)
 
 
 @cython.boundscheck(False)
@@ -19,8 +19,8 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_psi_func_td(
         cnp.ndarray[complex, ndim=1, mode="c"] psi,
         object H_func,
         object args):
-    H = CSR_from_scipy(H_func(t, args).data)
-    return -1j * H.spmv(psi)
+    H = H_func(t, args).data.cdata
+    return -1j * H.mulvec(psi)
 
 
 @cython.boundscheck(False)
@@ -31,8 +31,8 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_psi_func_td_with_state(
         object H_func,
         object args):
 
-    H = CSR_from_scipy(H_func(t, psi, args))
-    return -1j * H.spmv(psi)
+    H = H_func(t, psi, args).data.cdata
+    return -1j * H.mulvec(psi)
 
 
 @cython.boundscheck(False)
@@ -44,5 +44,5 @@ cpdef cnp.ndarray[complex, ndim=1, mode="c"] cy_ode_rho_func_td(
         object L_func,
         object args):
     cdef object L
-    L = CSR_from_scipy(L0 + L_func(t, args).data)
-    return L.spmv(rho)
+    L = (L0 + L_func(t, args).data).cdata
+    return L.mulvec(rho)

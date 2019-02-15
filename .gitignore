@@ -28,6 +28,7 @@ qutip/cy/*.c
 qutip/cy/*.cpp
 qutip/control/*.cpp
 qutip/cy/openmp/*.cpp
+qutip/matrix/cy/*.cpp
 *.dat
 
 *.qo

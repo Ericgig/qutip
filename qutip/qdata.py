@@ -77,12 +77,6 @@ class _qdata:
         """
         raise NotImplementedError("dummy class")
 
-    def eliminate_zeros(self):
-        """ remove zeros from sparse
-        Could be considered private
-        """
-        raise NotImplementedError("dummy class")
-
     def dot(self, other):
         """ self * other
         """

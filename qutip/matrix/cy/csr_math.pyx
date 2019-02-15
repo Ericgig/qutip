@@ -8,32 +8,19 @@ cimport cython
 cimport libc.math
 from libcpp cimport bool
 
+np.import_array()
+cdef extern from "numpy/arrayobject.h" nogil:
+    void PyArray_ENABLEFLAGS(np.ndarray arr, int flags)
+    void PyDataMem_FREE(void * ptr)
+    void PyDataMem_RENEW(void * ptr, size_t size)
+    void PyDataMem_NEW_ZEROED(size_t size, size_t elsize)
+    void PyDataMem_NEW(size_t size)
+
 cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
     double         real(double complex)
     double         imag(double complex)
     double         abs(double complex)
-
-from cpython.mem cimport PyMem_Malloc, PyMem_Realloc, PyMem_Free
-
-cnp.import_array()
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.cdivision(True)
-cdef void * PyMem_Malloc_Zeroed(size_t size, size_t elsize):
-    cdef size_t i, full_size = size * elsize
-    cdef void * mem = PyMem_Malloc(full_size)
-    cdef int * mem_as_int
-    if elsize % 4 == 0:
-        mem_as_int = <int *> mem
-        for i in range(elsize // 4 * size):
-            mem_as_int[i] = 0
-        return mem
-    cdef char * mem_as_char = <char *> mem
-    for i in range(full_size):
-        mem_as_char[i] = 0
-    return mem
-
 
 @cython.overflowcheck(True)
 cdef _safe_multiply(int A, int B):
@@ -47,7 +34,6 @@ cdef _safe_multiply(int A, int B):
 @cython.boundscheck(False)
 @cython.wraparound(False) ##
 cpdef cy_csr_matrix zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex alpha = 1):
-
     """
     Adds two sparse CSR matries. Like SciPy, we assume the worse case
     for the fill A.nnz + B.nnz.
@@ -217,7 +203,7 @@ cdef int _zcsr_mult_pass1(double complex * Adata, int * Aind, int * Aptr,
     cdef int j, k, nnz = 0
     cdef size_t ii,jj,kk
     #Setup mask array
-    cdef int * mask = <int *>PyMem_Malloc(ncols*sizeof(int))
+    cdef int * mask = <int *>PyDataMem_NEW(ncols*sizeof(int))
     for ii in range(ncols):
         mask[ii] = -1
     #Pass 1
@@ -229,7 +215,7 @@ cdef int _zcsr_mult_pass1(double complex * Adata, int * Aind, int * Aptr,
                 if mask[k] != ii:
                     mask[k] = ii
                     nnz += 1
-    PyMem_Free(mask)
+    PyDataMem_FREE(mask)
     return nnz
 
 
@@ -243,8 +229,8 @@ cdef void _zcsr_mult_pass2(double complex * Adata, int * Aind, int * Aptr,
     cdef int head, length, temp, j, k, nnz = 0
     cdef size_t ii,jj,kk
     cdef double complex val
-    cdef double complex * sums = <double complex *>PyMem_Malloc_Zeroed(ncols, sizeof(double complex))
-    cdef int * nxt = <int *>PyMem_Malloc(ncols*sizeof(int))
+    cdef double complex * sums = <double complex *>PyDataMem_NEW_ZEROED(ncols, sizeof(double complex))
+    cdef int * nxt = <int *>PyDataMem_NEW(ncols*sizeof(int))
     for ii in range(ncols):
         nxt[ii] = -1
 
@@ -276,8 +262,8 @@ cdef void _zcsr_mult_pass2(double complex * Adata, int * Aind, int * Aptr,
         C.indptr[ii+1] = nnz
 
     #Free temp arrays
-    PyMem_Free(sums)
-    PyMem_Free(nxt)
+    PyDataMem_FREE(sums)
+    PyDataMem_FREE(nxt)
 
 
 @cython.boundscheck(False)

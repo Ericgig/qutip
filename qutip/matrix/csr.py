@@ -7,7 +7,7 @@ from scipy.sparse.sputils import (upcast, upcast_char, to_native, isdense, issha
                       getdtype, isscalarlike, IndexMixin, get_index_dtype)
 from scipy.sparse.base import spmatrix, isspmatrix, SparseEfficiencyWarning
 from qutip.csr_math import mult
-from qutip.qdata import cdata_from_scipy
+from qutip.qdata import
 from warnings import warn
 
 from qutip.cy.utils import cy_tidyup
@@ -104,14 +104,17 @@ class csr_qmatrix(csr_matrix, _qdata):
         self.cdata.transpose()
         return self
 
-    def adjoint(self):
+    def adjoint(self, copy=True):
         """
         Returns the conj transpose of the matrix, keeping
         it in csr_qdata format.
         """
-        mat = cdata_from_scipy(self, copy=1)
-        mat.adjoint()
-        return mat.to_scipy()
+        if copy:
+            ccdata = self.cdata.copy()
+            ccdata.adjoint()
+            return ccdata.to_qdata()
+        self.cdata.adjoint()
+        return self
 
     def tidyup(self, atol=settings.auto_tidyup_atol):
         """
@@ -143,6 +146,8 @@ class csr_qmatrix(csr_matrix, _qdata):
             return sp_fro_norm(self)
         elif norm == 'one':
             return sp_one_norm(self)
+        elif norm == 'inf':
+            return sp_inf_norm(self)
         elif norm == 'max':
             return sp_max_norm(self)
         elif norm == 'l2':
@@ -172,7 +177,7 @@ class csr_qmatrix(csr_matrix, _qdata):
         """
         Matrix exponential of quantum operator.
         """
-        sp_expm(self.data, sparse=method=="sparse")
+        sp_expm(self, sparse=(method=="sparse"))
 
     def ptrace(self, selection):
         """
@@ -230,4 +235,19 @@ class csr_qmatrix(csr_matrix, _qdata):
         self.cdata._get_diag(L)
 
     def isherm(self):
-        return self.cdata.isherm()
+        if self._isherm is not None:
+            return self._isherm
+        self._isherm = self.cdata.isherm()
+        return self._isherm
+
+    def isdiag(self):
+        if self._isdiag is not None:
+            return self._isdiag
+        self._isdiag = self.cdata.isdiag()
+        return self._isdiag
+
+    def tocsr():
+        return self
+
+    def tocsc():
+        return = qdata(csr_matrix.tocsc(self))
