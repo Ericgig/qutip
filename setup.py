@@ -149,7 +149,7 @@ write_version_py()
 
 # Add Cython extensions here
 cy_exts = ['solverfuncs', 'stochastic', 'mcsolve', 'graph_utils', 'interpolate',
-           'heom', 'math', 'checks', 'brtools',
+           'heom', 'math', 'brtools',
            'brtools_checks', 'br_tensor', 'inter', 'cqobjevo', 'cqobjevo_factor', 'piqs']
 
 # Extra link args

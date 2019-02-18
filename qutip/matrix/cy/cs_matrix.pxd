@@ -31,6 +31,10 @@ cdef class cy_cs_matrix(Cdata):
 
     #def as_vecs(self)
 
+    cpdef _shallow_get_state(self)
+
+    cpdef _shallow_set_state(self, state)
+
     # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     # method returning info about the matrix
 
