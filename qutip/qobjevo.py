@@ -44,8 +44,10 @@ import numpy as np
 from numbers import Number
 from qutip.qobjevo_codegen import _compile_str_single, _compiled_coeffs
 from qutip.cy.data_convert import cdata_from_scipy
-from qutip.cy.cqobjevo import (CQobjCte, CQobjCteDense, CQobjEvoTd,
-                                 CQobjEvoTdMatched, CQobjEvoTdDense)
+from qutip.matrix.cy.cqe_dense import (CQobjCteDense, CQobjEvoTdDense)
+
+from qutip.matrix.cy.cqe_csr import (CQobjCte, CQobjEvoTd)
+
 from qutip.cy.cqobjevo_factor import (InterCoeffT, InterCoeffCte,
                                       InterpolateCoeff)
 import pickle
@@ -1202,6 +1204,8 @@ class QobjEvo:
             self.compiled_qobjevo.set_data(self.cte)
         else:
             if matched:
+                pass
+                """ disabled for now
                 if omp:
                     self.compiled_qobjevo = CQobjEvoTdMatchedOmp()
                     self.compiled = "matched omp "
@@ -1210,6 +1214,7 @@ class QobjEvo:
                 else:
                     self.compiled_qobjevo = CQobjEvoTdMatched()
                     self.compiled = "matched single "
+                    """
             elif dense:
                 self.compiled_qobjevo = CQobjEvoTdDense()
                 self.compiled = "dense single "
@@ -1336,6 +1341,8 @@ class QobjEvo:
                 self.compiled_qobjevo.__setstate__(state[1])
 
             elif mat_type == "matched":
+                pass
+                """ disabled temporarly
                 if threading == "single":
                     self.compiled_qobjevo = \
                         CQobjEvoTdMatched.__new__(CQobjEvoTdMatched)
@@ -1344,7 +1351,7 @@ class QobjEvo:
                         CQobjEvoTdMatchedOmp.__new__(CQobjEvoTdMatchedOmp)
                     self.compiled_qobjevo.set_threads(self.omp)
                 self.compiled_qobjevo.__setstate__(state[1])
-
+                """
 
 # Function defined inside another function cannot be pickled,
 # Using class instead

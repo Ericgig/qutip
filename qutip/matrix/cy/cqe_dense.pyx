@@ -76,24 +76,13 @@ import scipy.sparse as sp
 cimport numpy as np
 import cython
 cimport cython
+from qutip.matrix.cy.cqobjevo cimport CQobjEvo
+from qutip.qdata import qdata_from_dense
 from qutip.qobj import Qobj
-from qutip.cy.spmath cimport _zcsr_add_core
-from qutip.cy.spmatfuncs cimport spmvpy, _spmm_c_py, _spmm_f_py
-from qutip.cy.spmath import zcsr_add
 from qutip.cy.cqobjevo_factor cimport CoeffFunc
 cimport libc.math
 
 from qutip.cy.complex_math cimport *
-np.import_array()
-
-cdef extern from "numpy/arrayobject.h" nogil:
-    void PyDataMem_FREE(void * ptr)
-    void PyDataMem_NEW_ZEROED(size_t size, size_t elsize)
-    void PyDataMem_NEW(size_t size)
-
-cdef extern from "Python.h":
-    object PyLong_FromVoidPtr(void *)
-    void* PyLong_AsVoidPtr(object)
 
 
 cdef class CQobjCteDense(CQobjEvo):
@@ -117,13 +106,13 @@ cdef class CQobjCteDense(CQobjEvo):
 
     def call(self, double t, int data=0):
         if data:
-            return sp.csr_matrix(self.cte, dtype=complex, copy=True)
+            return qdata_from_dense(self.cte, copy=True)
         else:
             return Qobj(self.cte, dims = self.dims)
 
     def call_with_coeff(self, complex[::1] coeff, int data=0):
         if data:
-            return sp.csr_matrix(self.cte, dtype=complex, copy=True)
+            return qdata_from_dense(self.cte, copy=True)
         else:
             return Qobj(self.cte, dims = self.dims)
 
@@ -263,7 +252,7 @@ cdef class CQobjEvoTdDense(CQobjEvo):
         self._call_core(data_t, self.coeff_ptr)
 
         if data:
-            return sp.csr_matrix(data_t, dtype=complex, copy=True)
+            return qdata_from_dense(data_t, copy=True)
         else:
             return Qobj(data_t, dims = self.dims)
 
@@ -272,7 +261,7 @@ cdef class CQobjEvoTdDense(CQobjEvo):
                     np.empty((self.shape0, self.shape1), dtype=complex)
         self._call_core(data_t, &coeff[0])
         if data:
-            return sp.csr_matrix(data_t, dtype=complex, copy=True)
+            return qdata_from_dense(data_t, copy=True)
         else:
             return Qobj(data_t, dims = self.dims)
 

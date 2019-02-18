@@ -2,7 +2,7 @@
 #cython: language_level=3
 # This file is part of QuTiP: Quantum Toolbox in Python.
 #
-#    Copyright (c) 2011 and later, The QuTiP Project.
+#    Copyright (c) 2011 and later, Paul D. Nation and Robert J. Johansson.
 #    All rights reserved.
 #
 #    Redistribution and use in source and binary forms, with or without
@@ -32,25 +32,19 @@
 #    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
+from qutip.matrix.cy.cqobjevo cimport CQobjEvo
+cdef class CQobjCteDense(CQobjEvo):
+    # pointer to data
+    cdef complex[:, ::1] cte
 
-from qutip.matrix.cy.csr_matrix cimport cy_csr_matrix
+cdef class CQobjEvoTdDense(CQobjEvo):
+    # data as array
+    cdef complex[:, ::1] cte
+    cdef complex[:, :, ::1] ops
 
-cdef cy_csr_matrix _zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex alpha)
+    # prepared buffer
+    cdef complex[:, ::1] data_t
+    cdef complex* data_ptr
 
-cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
-                        double complex * Bdata, int * Bind, int * Bptr,
-                        double complex alpha,
-                        double complex * Cdata, int * Cind, int * Cptr,
-                        int nrows, int ncols) nogil
-
-cdef cy_csr_matrix zcsr_mult(cy_csr_matrix A, cy_csr_matrix B, int sorted=*)
-
-cpdef cy_csr_matrix zcsr_kron(cy_csr_matrix A, cy_csr_matrix B)
-
-cdef void _zcsr_kron_core(double complex * dataA, int * indsA, int * indptrA,
-                          double complex * dataB, int * indsB, int * indptrB,
-                          CSR_Matrix * out,
-                          int rowsA, int rowsB, int colsB) nogil
-
-cpdef double complex zcsr_mat_elem(cy_csr_matrix A, cy_csr_matrix left,
-                                   cy_csr_matrix right)
+    cdef void _factor(self, double t)
+    cdef void _call_core(self, complex[:,::1] out, complex* coeff)

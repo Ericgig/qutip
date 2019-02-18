@@ -33,7 +33,6 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 
-from qutip.cy.sparse_structs cimport CSR_Matrix, COO_Matrix
 from qutip.cy.cqobjevo_factor cimport CoeffFunc
 
 cdef class CQobjEvo:
@@ -58,56 +57,3 @@ cdef class CQobjEvo:
                     int nrow, int ncols)
     cdef complex _expect(self, double t, complex* vec, int isherm)
     cdef complex _expect_super(self, double t, complex* rho, int isherm)
-
-
-cdef class CQobjCte(CQobjEvo):
-    cdef int total_elem
-    # pointer to data
-    cdef CSR_Matrix cte
-
-
-cdef class CQobjCteDense(CQobjEvo):
-    # pointer to data
-    cdef complex[:, ::1] cte
-
-
-cdef class CQobjEvoTd(CQobjEvo):
-    cdef long total_elem
-    # pointer to data
-    cdef CSR_Matrix cte
-    cdef CSR_Matrix ** ops
-    cdef long[::1] sum_elem
-
-
-    cdef void _factor(self, double t)
-    cdef void _call_core(self, CSR_Matrix * out, complex* coeff)
-
-
-cdef class CQobjEvoTdDense(CQobjEvo):
-    # data as array
-    cdef complex[:, ::1] cte
-    cdef complex[:, :, ::1] ops
-
-    # prepared buffer
-    cdef complex[:, ::1] data_t
-    cdef complex* data_ptr
-
-    cdef void _factor(self, double t)
-    cdef void _call_core(self, complex[:,::1] out, complex* coeff)
-
-
-cdef class CQobjEvoTdMatched(CQobjEvo):
-    cdef int nnz
-
-    # data as array
-    cdef int[::1] indptr
-    cdef int[::1] indices
-    cdef complex[::1] cte
-    cdef complex[:, ::1] ops
-
-    # prepared buffer
-    cdef complex[::1] data_t
-    cdef complex* data_ptr
-
-    cdef void _factor(self, double t)
-    cdef void _call_core(self, complex[::1] out, complex* coeff)

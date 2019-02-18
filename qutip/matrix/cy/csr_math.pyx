@@ -61,7 +61,9 @@ cpdef cy_csr_matrix zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex al
 
     nnz = _zcsr_add_core(A.data, A.indices, A.indptr,
                          B.data, B.indices, B.indptr,
-                         alpha, out, A.nrows, A.ncols)
+                         alpha,
+                         out.data, out.indices, out.indptr,
+                         A.nrows, A.ncols)
     #Shorten data and indices if needed
     if out.nnz > nnz:
         out._shorten(nnz)
@@ -73,14 +75,14 @@ cpdef cy_csr_matrix zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex al
 cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
                         double complex * Bdata, int * Bind, int * Bptr,
                         double complex alpha,
-                        cy_csr_matrix C,
+                        double complex * Cdata, int * Cind, int * Cptr,
                         int nrows, int ncols) nogil:
 
     cdef int j1, j2, kc = 0
     cdef int ka, kb, ka_max, kb_max
     cdef size_t ii
     cdef double complex tmp
-    C.indptr[0] = 0
+    Cptr[0] = 0
     if alpha != 1:
         for ii in range(nrows):
             ka = Aptr[ii]
@@ -101,23 +103,23 @@ cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
                 if j1 == j2:
                     tmp = Adata[ka] + alpha*Bdata[kb]
                     if tmp != 0:
-                        C.data[kc] = tmp
-                        C.indices[kc] = j1
+                        Cdata[kc] = tmp
+                        Cind[kc] = j1
                         kc += 1
                     ka += 1
                     kb += 1
                 elif j1 < j2:
-                    C.data[kc] = Adata[ka]
-                    C.indices[kc] = j1
+                    Cdata[kc] = Adata[ka]
+                    Cind[kc] = j1
                     ka += 1
                     kc += 1
                 elif j1 > j2:
-                    C.data[kc] = alpha*Bdata[kb]
-                    C.indices[kc] = j2
+                    Cdata[kc] = alpha*Bdata[kb]
+                    Cind[kc] = j2
                     kb += 1
                     kc += 1
 
-            C.indptr[ii+1] = kc
+            Cptr[ii+1] = kc
     else:
         for ii in range(nrows):
             ka = Aptr[ii]
@@ -138,23 +140,23 @@ cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
                 if j1 == j2:
                     tmp = Adata[ka] + Bdata[kb]
                     if tmp != 0:
-                        C.data[kc] = tmp
-                        C.indices[kc] = j1
+                        Cdata[kc] = tmp
+                        Cind[kc] = j1
                         kc += 1
                     ka += 1
                     kb += 1
                 elif j1 < j2:
-                    C.data[kc] = Adata[ka]
-                    C.indices[kc] = j1
+                    Cdata[kc] = Adata[ka]
+                    Cind[kc] = j1
                     ka += 1
                     kc += 1
                 elif j1 > j2:
-                    C.data[kc] = Bdata[kb]
-                    C.indices[kc] = j2
+                    Cdata[kc] = Bdata[kb]
+                    Cind[kc] = j2
                     kb += 1
                     kc += 1
 
-            C.indptr[ii+1] = kc
+            Cptr[ii+1] = kc
     return kc
 
 

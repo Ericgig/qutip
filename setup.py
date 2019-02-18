@@ -150,7 +150,7 @@ write_version_py()
 # Add Cython extensions here
 cy_exts = ['solverfuncs', 'stochastic', 'mcsolve', 'graph_utils', 'interpolate',
            'heom', 'math', 'brtools',
-           'brtools_checks', 'br_tensor', 'inter', 'cqobjevo', 'cqobjevo_factor', 'piqs']
+           'brtools_checks', 'br_tensor', 'inter', 'cqobjevo_factor', 'piqs']
 
 # Extra link args
 _link_flags = []
@@ -189,7 +189,8 @@ _mod = Extension('qutip.control.cy_grape',
             language='c++')
 EXT_MODULES.append(_mod)
 
-mat_cy_exts = ['cs_matrix', 'csr_matrix', 'utils', 'csr_math']
+mat_cy_exts = ['cs_matrix', 'csr_matrix', 'utils', 'csr_math',
+               'cqobjevo', 'cqe_dense', 'cqe_csr']
 
 # Add Cython files from qutip/matrix/cy
 for ext in cy_exts:

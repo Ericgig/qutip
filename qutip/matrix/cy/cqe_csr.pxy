@@ -71,16 +71,16 @@ In omp/cqobjevo_omp:
   - CQobjEvoTdOmp
   - CQobjEvoTdMatchedOmp
 """
-import numpy as np
-import scipy.sparse as sp
-cimport numpy as np
 import cython
 cimport cython
-from qutip.qobj import Qobj
-from qutip.cy.spmath cimport _zcsr_add_core
-from qutip.cy.spmatfuncs cimport spmvpy, _spmm_c_py, _spmm_f_py
-from qutip.cy.spmath import zcsr_add
+import numpy as np
+cimport numpy as np
+import scipy.sparse as sp
+from qutip.matrix.cy.cqobjevo cimport CQobjEvo
+from qutip.matrix.cy.csr_matrix cimport cy_csr_matrix, spmvpy, _spmm_c_py, _spmm_f_py
+from qutip.matrix.cy.csr_math cimport _zcsr_add_core, zcsr_add
 from qutip.cy.cqobjevo_factor cimport CoeffFunc
+from qutip.qobj import Qobj
 cimport libc.math
 
 from qutip.cy.complex_math cimport *
@@ -95,68 +95,38 @@ cdef extern from "Python.h":
     object PyLong_FromVoidPtr(void *)
     void* PyLong_AsVoidPtr(object)
 
-
-def _zcsr_match(sparses_list):
-    """
-    For a list of csr sparse matrice A,
-    set them so the their indptr and indices be all equal.
-    Require keeping 0s in the data, but summation can be done in vector form.
-    """
-    full_shape = sparses_list[0].copy()
-    for sparse_elem in sparses_list[1:]:
-        full_shape.data *= 0.
-        full_shape.data += 1.
-        if sparse_elem.indptr[-1] != 0:
-            full_shape = zcsr_add(
-                      full_shape.data, full_shape.indices, full_shape.indptr,
-                      sparse_elem.data, sparse_elem.indices, sparse_elem.indptr,
-                      full_shape.shape[0], full_shape.shape[1],
-                      full_shape.indptr[-1], sparse_elem.indptr[-1], 0.)
-    out = []
-    for sparse_elem in sparses_list[:]:
-        full_shape.data *= 0.
-        if sparse_elem.indptr[-1] != 0:
-            out.append(zcsr_add(
-                      full_shape.data, full_shape.indices, full_shape.indptr,
-                      sparse_elem.data, sparse_elem.indices, sparse_elem.indptr,
-                      full_shape.shape[0], full_shape.shape[1],
-                      full_shape.indptr[-1], sparse_elem.indptr[-1], 1.))
-        else:
-            out.append(full_shape.copy())
+cdef _csr_mat* set_csr_mat(cy_csr_matrix mat):
+    cdef _csr_mat* out = <_csr_mat*> PyDataMem_NEW(sizeof(_csr_mat))
+    out.data = mat.data
+    out.indices = mat.indices
+    out.indptr = mat.indptr
     return out
 
+cdef _csr_mat_get_state(_csr_mat* mat):
+    return (PyLong_FromVoidPtr(mat.data),
+            PyLong_FromVoidPtr(mat.indices),
+            PyLong_FromVoidPtr(mat.indptr))
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cdef _shallow_set_state(CSR_Matrix* mat, state):
-        """
-        Converts a CSR sparse matrix to a tuples for pickling.
-        No deep copy of the data, pointer are passed.
-        """
-        mat.data = <complex*>PyLong_AsVoidPtr(state[0])
-        mat.indices = <int*>PyLong_AsVoidPtr(state[1])
-        mat.indptr = <int*>PyLong_AsVoidPtr(state[2])
-        mat.nrows = state[3]
-        mat.ncols = state[4]
-        mat.nnz = state[5]
-        mat.max_length = state[6]
-        mat.is_set = state[7]
-        mat.numpy_lock = state[8]
-
+cdef _csr_mat* _csr_mat_set_state(state):
+    cdef _csr_mat* out = <_csr_mat*> PyDataMem_NEW(sizeof(_csr_mat))
+    out.data = PyLong_AsVoidPtr(state[0])
+    out.indices = PyLong_AsVoidPtr(state[1])
+    out.indptr = PyLong_AsVoidPtr(state[2])
+    return out
 
 cdef class CQobjCte(CQobjEvo):
     def set_data(self, cte):
         self.shape0 = cte.shape[0]
         self.shape1 = cte.shape[1]
         self.dims = cte.dims
-        self.cte = CSR_from_scipy(cte.data)
+        self.cte = cte.data.cdata
         self.total_elem = cte.data.data.shape[0]
         self.super = cte.issuper
 
     def __getstate__(self):
-        CSR_info = _shallow_get_state(&self.cte)
+        csr_info = self.cte._shallow_get_state()
         return (self.shape0, self.shape1, self.dims,
-                self.total_elem, self.super, CSR_info)
+                self.total_elem, self.super, csr_info)
 
     def __setstate__(self, state):
         self.shape0 = state[0]
@@ -167,22 +137,16 @@ cdef class CQobjCte(CQobjEvo):
         _shallow_set_state(&self.cte, state[5])
 
     def call(self, double t, int data=0):
-        cdef CSR_Matrix out
-        out.is_set = 0
-        copy_CSR(&out, &self.cte)
-        scipy_obj = CSR_to_scipy(&out)
-        # free_CSR(&out)? data is own by the scipy_obj?
+        cdef cy_csr_matrix out = self.cte.copy()
+        scipy_obj = out.to_qdata()
         if data:
             return scipy_obj
         else:
             return Qobj(scipy_obj, dims=self.dims)
 
     def call_with_coeff(self, complex[::1] coeff, int data=0):
-        cdef CSR_Matrix out
-        out.is_set = 0
-        copy_CSR(&out, &self.cte)
-        scipy_obj = CSR_to_scipy(&out)
-        # free_CSR(&out)? data is own by the scipy_obj?
+        cdef cy_csr_matrix out = self.cte.copy()
+        scipy_obj = out.to_qdata()
         if data:
             return scipy_obj
         else:
@@ -252,7 +216,7 @@ cdef class CQobjCte(CQobjEvo):
 cdef class CQobjEvoTd(CQobjEvo):
     def __init__(self):
         self.num_ops = 0
-        self.ops = <CSR_Matrix**> PyDataMem_NEW(0 * sizeof(CSR_Matrix*))
+        self.ops = <_csr_mat**> PyDataMem_NEW(0 * sizeof(_csr_mat*))
 
     def __del__(self):
         for i in range(self.num_ops):
@@ -264,7 +228,7 @@ cdef class CQobjEvoTd(CQobjEvo):
         self.shape0 = cte.shape[0]
         self.shape1 = cte.shape[1]
         self.dims = cte.dims
-        self.cte = CSR_from_scipy(cte.data)
+        self.cte = cte.data.cdata
         cummulative_op = cte.data
         self.super = cte.issuper
 
@@ -272,22 +236,21 @@ cdef class CQobjEvoTd(CQobjEvo):
         self.coeff = np.empty((self.num_ops,), dtype=complex)
         self.coeff_ptr = &self.coeff[0]
         PyDataMem_FREE(self.ops)
-        self.ops = <CSR_Matrix**> PyDataMem_NEW(self.num_ops * sizeof(CSR_Matrix*))
+        self.ops = <_csr_mat**> PyDataMem_NEW(self.num_ops * sizeof(_csr_mat*))
         self.sum_elem = np.zeros(self.num_ops, dtype=int)
         for i, op in enumerate(ops):
-            self.ops[i] = <CSR_Matrix*> PyDataMem_NEW(sizeof(CSR_Matrix))
-            CSR_from_scipy_inplace(op[0].data, self.ops[i])
+            self.ops[i] = set_csr_mat(op[0].data.cdata)
             cummulative_op += op[0].data
             self.sum_elem[i] = cummulative_op.data.shape[0]
 
         self.total_elem = self.sum_elem[self.num_ops-1]
 
     def __getstate__(self):
-        cte_info = _shallow_get_state(&self.cte)
+        cte_info = self.cte._shallow_get_state()
         ops_info = ()
         sum_elem = ()
         for i in range(self.num_ops):
-            ops_info += (_shallow_get_state(self.ops[i]),)
+            ops_info += (_csr_mat_get_state(self.ops[i]),)
             sum_elem += (self.sum_elem[i],)
 
         return (self.shape0, self.shape1, self.dims, self.total_elem, self.super,
@@ -307,62 +270,84 @@ cdef class CQobjEvoTd(CQobjEvo):
         self.num_ops = state[8]
         _shallow_set_state(&self.cte, state[10])
         self.sum_elem = np.zeros(self.num_ops, dtype=int)
-        self.ops = <CSR_Matrix**> PyDataMem_NEW(self.num_ops * sizeof(CSR_Matrix*))
-        for i in range(self.num_ops):
-            self.ops[i] = <CSR_Matrix*> PyDataMem_NEW(sizeof(CSR_Matrix))
+        self.ops = <_csr_mat**> PyDataMem_NEW(self.num_ops * sizeof(_csr_mat*))
+        for i in range(self.num_ops
             self.sum_elem[i] = state[9][i]
-            _shallow_set_state(self.ops[i], state[11][i])
+            self.ops[i] = _csr_mat_set_state(state[11][i])
         self.coeff = np.empty((self.num_ops,), dtype=complex)
         self.coeff_ptr = &self.coeff[0]
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
     @cython.cdivision(True)
-    cdef void _call_core(self, CSR_Matrix * out, complex* coeff):
+    cdef void _call_core(self, cy_csr_matrix out, complex* coeff):
         cdef int i
-        cdef CSR_Matrix previous, next
+        cdef _csr_mat* previous, next
 
         if(self.num_ops ==1):
             _zcsr_add_core(self.cte.data, self.cte.indices, self.cte.indptr,
-                         self.ops[0].data, self.ops[0].indices,
-                         self.ops[0].indptr,
-                         coeff[0], out, self.shape0, self.shape1)
+                           self.ops[0].data, self.ops[0].indices,
+                           self.ops[0].indptr,
+                           coeff[0],
+                           out.data, out.indices, out.indptr,
+                           self.shape0, self.shape1)
         else:
             # Ugly with a loop for 1 to N-2...
             # It save the copy of data from cte and out
             # no init/free to cte, out
-            init_CSR(&next, self.sum_elem[0], self.shape0, self.shape1)
+            previous = <_csr_mat *>PyDataMem_NEW(sizeof(_csr_mat))
+            next = <_csr_mat *>PyDataMem_NEW(sizeof(_csr_mat))
+            previous.indptr = <int *>PyDataMem_NEW((self.shape0+1), sizeof(int))
+            previous.indices = <int *>PyDataMem_NEW(self.sum_elem[self.num_ops-1], sizeof(int))
+            previous.data = <double complex *>PyDataMem_NEW(self.sum_elem[self.num_ops-1], sizeof(double complex))
+            next.indptr = <int *>PyDataMem_NEW((self.shape0+1), sizeof(int))
+            next.indices = <int *>PyDataMem_NEW(self.sum_elem[self.num_ops-1], sizeof(int))
+            next.data = <double complex *>PyDataMem_NEW(self.sum_elem[self.num_ops-1], sizeof(double complex))
+
             _zcsr_add_core(self.cte.data, self.cte.indices, self.cte.indptr,
                            self.ops[0].data,
                            self.ops[0].indices,
                            self.ops[0].indptr,
-                           coeff[0], &next, self.shape0, self.shape1)
+                           coeff[0],
+                           next.data, next.indices, next.indptr,
+                           self.shape0, self.shape1)
             previous, next = next, previous
 
-            for i in range(1,self.num_ops-1):
-                init_CSR(&next, self.sum_elem[i], self.shape0, self.shape1)
+            for i in range(1, self.num_ops-1):
+                #init_CSR(&next, self.sum_elem[i], self.shape0, self.shape1)
                 _zcsr_add_core(previous.data, previous.indices,
                                previous.indptr,
                                self.ops[i].data,
                                self.ops[i].indices,
                                self.ops[i].indptr,
-                               coeff[i], &next, self.shape0, self.shape1)
-                free_CSR(&previous)
+                               coeff[i],
+                               next.data, next.indices, next.indptr,
+                               self.shape0, self.shape1)
+                #free_CSR(&previous)
                 previous, next = next, previous
 
             _zcsr_add_core(previous.data, previous.indices, previous.indptr,
                            self.ops[self.num_ops-1].data,
                            self.ops[self.num_ops-1].indices,
                            self.ops[self.num_ops-1].indptr,
-                           coeff[self.num_ops-1], out, self.shape0, self.shape1)
-            free_CSR(&previous)
+                           coeff[self.num_ops-1],
+                           out.data, out.indices, out.indptr,
+                           self.shape0, self.shape1)
+            PyDataMem_FREE(previous.indptr)
+            PyDataMem_FREE(previous.indices)
+            PyDataMem_FREE(previous.data)
+            PyDataMem_FREE(next.indptr)
+            PyDataMem_FREE(next.indices)
+            PyDataMem_FREE(next.data)
+            PyDataMem_FREE(previous)
+            PyDataMem_FREE(next)
 
     def call(self, double t, int data=0):
-        cdef CSR_Matrix out
-        init_CSR(&out, self.total_elem, self.shape0, self.shape1)
+        cdef cy_csr_matrix out
+        out.init_CSR(self.total_elem, self.shape0, self.shape1, self.shape0)
         self._factor(t)
         self._call_core(&out, self.coeff_ptr)
-        scipy_obj = CSR_to_scipy(&out)
+        scipy_obj = out.to_qdata()
         # free_CSR(&out)? data is own by the scipy_obj?
         if data:
             return scipy_obj
@@ -370,10 +355,10 @@ cdef class CQobjEvoTd(CQobjEvo):
             return Qobj(scipy_obj, dims=self.dims)
 
     def call_with_coeff(self, complex[::1] coeff, int data=0):
-        cdef CSR_Matrix out
-        init_CSR(&out, self.total_elem, self.shape0, self.shape1)
+        cdef cy_csr_matrix out
+        out.init_CSR(self.total_elem, self.shape0, self.shape1, self.shape0)
         self._call_core(&out, &coeff[0])
-        scipy_obj = CSR_to_scipy(&out)
+        scipy_obj = out.to_qdata()
         # free_CSR(&out)? data is own by the scipy_obj?
         if data:
             return scipy_obj
@@ -461,6 +446,36 @@ cdef class CQobjEvoTd(CQobjEvo):
         else:
             return dot
 
+
+""" Temporary disabled
+def _zcsr_match(sparses_list):
+    """
+    For a list of csr sparse matrice A,
+    set them so the their indptr and indices be all equal.
+    Require keeping 0s in the data, but summation can be done in vector form.
+    """
+    full_shape = sparses_list[0].copy()
+    for sparse_elem in sparses_list[1:]:
+        full_shape.data *= 0.
+        full_shape.data += 1.
+        if sparse_elem.indptr[-1] != 0:
+            full_shape = zcsr_add(
+                      full_shape.data, full_shape.indices, full_shape.indptr,
+                      sparse_elem.data, sparse_elem.indices, sparse_elem.indptr,
+                      full_shape.shape[0], full_shape.shape[1],
+                      full_shape.indptr[-1], sparse_elem.indptr[-1], 0.)
+    out = []
+    for sparse_elem in sparses_list[:]:
+        full_shape.data *= 0.
+        if sparse_elem.indptr[-1] != 0:
+            out.append(zcsr_add(
+                      full_shape.data, full_shape.indices, full_shape.indptr,
+                      sparse_elem.data, sparse_elem.indices, sparse_elem.indptr,
+                      full_shape.shape[0], full_shape.shape[1],
+                      full_shape.indptr[-1], sparse_elem.indptr[-1], 1.))
+        else:
+            out.append(full_shape.copy())
+    return out
 
 cdef class CQobjEvoTdMatched(CQobjEvo):
     def set_data(self, cte, ops):
@@ -636,3 +651,4 @@ cdef class CQobjEvoTdMatched(CQobjEvo):
             return real(dot)
         else:
             return dot
+"""
