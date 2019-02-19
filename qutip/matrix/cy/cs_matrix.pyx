@@ -5,7 +5,7 @@ cimport numpy as np
 cimport numpy as cnp
 cimport cython
 np.import_array()
-from qutip.fastsparse import fast_csr_matrix
+from qutip.matrix.cy.cdata cimport Cdata
 import qutip.settings as qset
 from libcpp cimport bool
 from libcpp.algorithm cimport sort
@@ -23,12 +23,6 @@ from libc.math cimport abs, fabs, sqrt
 cdef extern from "Python.h":
     object PyLong_FromVoidPtr(void *)
     void* PyLong_AsVoidPtr(object)
-
-#include "parameters.pxi"
-DTYPE = np.float64
-ITYPE = np.int32
-CTYPE = np.complex128
-CTYPE = np.int64
 
 cdef extern from "stdlib.h":
     ctypedef struct div_t:
@@ -90,7 +84,7 @@ cdef void raise_error_cs(int E):
     else:
         raise Exception('Error in Cython code.')
 
-cdef class cy_cs_matrix(cdata):
+cdef class cy_cs_matrix(Cdata):
     def __init__(self):
         self.is_set = 0
         self.nnz = 0
@@ -343,7 +337,7 @@ cdef class cy_cs_matrix(cdata):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    def isherm(self, double tol = qset.atol):
+    cpdef isherm(self, double tol = qset.atol):
         """
         Determines if a given input sparse CSR matrix is Hermitian
         to within a specified floating-point tolerance.
@@ -430,7 +424,7 @@ cdef class cy_cs_matrix(cdata):
         cdef int abs_k = abs(k)
         cdef int start, stop
         cdef cnp.ndarray[complex, ndim=1, mode='c'] out = np.zeros(self.nptrs-abs_k, dtype=complex)
-        k = k is self.is_csr else -k
+        k = k if self.is_csr else -k
 
         if k >= 0:
             start = 0
@@ -455,9 +449,11 @@ cdef class cy_cs_matrix(cdata):
         if self.numpy_lock:
             raise_error_cs(-4)
         cdef cy_cs_matrix B = cy_cs_matrix()
-        B.init(self.nnz, self.ncols, self.nrows, csr=self.is_csr)
+        B.init(self.nnz, self.ncols, self.nrows,
+               nptrs=self.ncols if self.is_csr else self.nrows,
+               max_length =self.nnz, init_zeros = 0, csr=self.is_csr)
 
-        self._zcsr_trans_core(B)
+        self._zcs_trans_core(B)
 
         self.free()
         self.ncols = B.ncols
@@ -478,9 +474,11 @@ cdef class cy_cs_matrix(cdata):
             raise_error_cs(-4)
 
         cdef cy_cs_matrix B = cy_cs_matrix()
-        B.init(self.nnz, self.ncols, self.nrows, csr=self.is_csr)
+        B.init(self.nnz, self.ncols, self.nrows,
+               nptrs=self.ncols if self.is_csr else self.nrows,
+               max_length =self.nnz, init_zeros = 0, csr=self.is_csr)
 
-        self._zcsr_adjoint_core(B)
+        self._zcs_adjoint_core(B)
 
         self.free()
         self.ncols = B.ncols
@@ -494,8 +492,8 @@ cdef class cy_cs_matrix(cdata):
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cpdef void sparse_permute(self,
-            cnp.ndarray[ITYPE_t, ndim=1] rperm,
-            cnp.ndarray[ITYPE_t, ndim=1] cperm):
+            cnp.ndarray[int, ndim=1] rperm,
+            cnp.ndarray[int, ndim=1] cperm):
         """
         Permutes the rows and columns of a sparse CSR matrix according to
         the permutation arrays rperm and cperm, respectively.
@@ -506,17 +504,17 @@ cdef class cy_cs_matrix(cdata):
         cdef double complex * new_data = <double complex *>PyDataMem_NEW_ZEROED(self.nnz, sizeof(double complex))
         cdef int * new_idx = <int *>PyDataMem_NEW_ZEROED(self.nnz, sizeof(int))
         cdef int * new_ptr = <int *>PyDataMem_NEW_ZEROED((self.nrows+1), sizeof(int))
-        cdef cnp.ndarray[ITYPE_t, ndim=1] perm_r
-        cdef cnp.ndarray[ITYPE_t, ndim=1] perm_c
-        cdef cnp.ndarray[ITYPE_t, ndim=1] inds
+        cdef cnp.ndarray[int, ndim=1] perm_r
+        cdef cnp.ndarray[int, ndim=1] perm_c
+        cdef cnp.ndarray[int, ndim=1] inds
 
         if self.is_csr != 1:
             # csr and csc computation are the same but row/col are inverted
             rperm, cperm = cperm, rperm
 
         if rperm.shape[0] != 0:
-            inds = np.argsort(rperm).astype(ITYPE)
-            perm_r = np.arange(rperm.shape[0], dtype=ITYPE)[inds]
+            inds = np.argsort(rperm).astype(np.int32)
+            perm_r = np.arange(rperm.shape[0], dtype=np.int32)[inds]
 
             for jj in range(self.nptrs):
                 ii = perm_r[jj]
@@ -533,8 +531,8 @@ cdef class cy_cs_matrix(cdata):
                     k0 = k0 + 1
 
         if cperm.shape[0] != 0:
-            inds = np.argsort(cperm).astype(ITYPE)
-            perm_c = np.arange(cperm.shape[0], dtype=ITYPE)[inds]
+            inds = np.argsort(cperm).astype(np.int32)
+            perm_c = np.arange(cperm.shape[0], dtype=np.int32)[inds]
             for jj in range(self.nnz):
                 new_idx[jj] = perm_c[new_idx[jj]]
 
@@ -558,8 +556,8 @@ cdef class cy_cs_matrix(cdata):
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cpdef void sparse_reverse_permute(self,
-            cnp.ndarray[ITYPE_t, ndim=1] rperm,
-            cnp.ndarray[ITYPE_t, ndim=1] cperm):
+            cnp.ndarray[int, ndim=1] rperm,
+            cnp.ndarray[int, ndim=1] cperm):
         """
         Reverse permutes the rows and columns of a sparse CSR or CSC matrix
         according to the original permutation arrays rperm and cperm, respectively.
@@ -690,7 +688,7 @@ cdef class cy_cs_matrix(cdata):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void _zcsr_trans_core(self, cy_cs_matrix out) nogil:
+    cdef void _zcs_trans_core(self, cy_cs_matrix out) nogil:
         cdef int k, nxt, other_shape
         cdef size_t ii, jj
         other_shape = self.ncols if self.is_csr else self.nrows
@@ -718,7 +716,7 @@ cdef class cy_cs_matrix(cdata):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void _zcsr_adjoint_core(self, cy_cs_matrix out) nogil:
+    cdef void _zcs_adjoint_core(self, cy_cs_matrix out) nogil:
         cdef int k, nxt, other_shape
         cdef size_t ii, jj
         other_shape = self.ncols if self.is_csr else self.nrows

@@ -46,8 +46,6 @@ import numpy as np
 import scipy.linalg as la
 from scipy.linalg.blas import get_blas_funcs
 _dznrm2 = get_blas_funcs("znrm2")
-from qutip.qdata import cdata_from_scipy
-from qutip.fastsparse import fast_csr_matrix
 from qutip.settings import debug
 
 import qutip.logging_utils
@@ -525,7 +523,7 @@ def sp_bandwidth(A):
     """
     nrows = A.shape[0]
     ncols = A.shape[1]
-    mat = cdata_from_scipy(A)
+    mat = A.cdata
 
     if A.getformat() == 'csr':
         return mat.bandwidth()

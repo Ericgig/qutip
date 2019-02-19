@@ -5,7 +5,8 @@ cimport numpy as cnp
 cimport cython
 cnp.import_array()
 
-from qutip.fastsparse import fast_csr_matrix
+from qutip.matrix.csr import csr_qmatrix, csr_qmatrix_from_data
+import scipy.sparse as sp
 import qutip.settings as qset
 from libcpp cimport bool
 from libcpp.algorithm cimport sort
@@ -22,6 +23,13 @@ DTYPE = np.float64
 ITYPE = np.int32
 CTYPE = np.complex128
 CTYPE = np.int64
+
+# Todo: move to right place
+cdef np.ndarray[int, ndim=1] prt2array(int* ptr, int N):
+    cdef np.npy_intp Ns[1]
+    Ns[0] = N
+    return np.PyArray_SimpleNewFromData(1, Ns, np.NPY_INT32, ptr)
+
 cdef extern from "stdlib.h":
   ctypedef struct ldiv_t:
     long quot
@@ -64,7 +72,7 @@ ctypedef int (*cfptr)(data_ind_pair, data_ind_pair)
 cdef int ind_sort(data_ind_pair x, data_ind_pair y):
     return x.ind < y.ind
 
-cdef extern from "src/zspmv.hpp" nogil:
+cdef extern from "../../cy/src/zspmv.hpp" nogil:
     void zspmvpy(double complex *data, int *ind, int *ptr, double complex *vec,
                 double complex a, double complex *out, int nrows)
 
@@ -128,7 +136,7 @@ cdef void _i2_k_t(int N,
     cdef int ii, t1, t2
     out[0] = 0
     out[1] = 0
-    for ii in range(rho2ten.shape[0]):
+    for ii in range(tensor_table.shape[1]):
         t1 = tensor_table[0, ii]
         t2 = N / t1
         N = N % t1
@@ -159,6 +167,8 @@ cdef class cy_csr_matrix(cy_cs_matrix):
         self.is_csr = 1
 
     def __init__(self, qdata=None):
+        cdef int[::1] ind, ptr
+        cdef complex[::1] data
         if qdata is None:
             self.is_set = 0
             self.nnz = 0
@@ -171,6 +181,9 @@ cdef class cy_csr_matrix(cy_cs_matrix):
             self.indices = NULL
             self.indptr = NULL
         else:
+            data = qdata.data
+            ind = qdata.indices
+            ptr = qdata.indptr
             self.is_set = 1
             self.nnz = qdata.nnz
             self.nrows = qdata.shape[0]
@@ -178,9 +191,9 @@ cdef class cy_csr_matrix(cy_cs_matrix):
             self.nptrs = qdata.shape[0]
             self.max_length = qdata.nnz
             self.numpy_lock = 1
-            self.data = qdata.data
-            self.indices = qdata.indices
-            self.indptr = qdata.indptr
+            self.data = &data[0]
+            self.indices = &ind[0]
+            self.indptr = &ptr[0]
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -216,7 +229,16 @@ cdef class cy_csr_matrix(cy_cs_matrix):
             _ptr = np.PyArray_SimpleNewFromData(1, &ptr_len, np.NPY_INT32, self.indptr)
             PyArray_ENABLEFLAGS(_ptr, np.NPY_OWNDATA)
             self.numpy_lock = 1
-            return csr_qmatrix_from_cdata(self)
+
+            out = csr_qmatrix(shape=(0,0))
+            out.data = _data
+            out.indices = _ind
+            out.indptr = _ptr
+            out._shape = (self.nrows, self.ncols)
+            out._cdata = self
+
+            return out
+
         else:
             if self.numpy_lock:
                 raise_error_csr(-4)
@@ -271,7 +293,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
             Returns dense array.
 
         """
-        cdef cnp.ndarray[complex, ndim=1, mode="c"] out = np.zeros((op.nrows), dtype=np.complex)
+        cdef cnp.ndarray[complex, ndim=1, mode="c"] out = np.zeros((self.nrows), dtype=np.complex)
         zspmvpy(self.data, self.indices, self.indptr, &vec[0], 1.0, &out[0], self.nrows)
         return out
 
@@ -303,7 +325,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
 
     cpdef cnp.ndarray[complex, ndim=2] spmmf(self, complex[::1, :] mat):
         cdef cnp.ndarray[complex, ndim=2, mode="fortran"] out = \
-                          np.zeros((sp_rows, ncols), dtype=complex, order="F")
+                          np.zeros((self.nrows, mat.shape[1]), dtype=complex, order="F")
         _spmm_f_py(self.data, self.indices, self.indptr,
                    &mat[0,0], (1.0+0j), &out[0,0],
                    self.nrows, self.ncols, mat.shape[1])
@@ -311,7 +333,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
 
     cpdef cnp.ndarray[complex, ndim=2] spmmc(self, complex[:, ::1] mat):
         cdef cnp.ndarray[complex, ndim=2, mode="c"] out = \
-                          np.zeros((sp_rows, ncols), dtype=complex)
+                          np.zeros((self.nrows, mat.shape[1]), dtype=complex)
         _spmm_c_py(self.data, self.indices, self.indptr,
                    &mat[0,0], (1.0+0j), &out[0,0],
                    self.nrows, self.ncols, mat.shape[1])
@@ -357,7 +379,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
         cdef size_t row
         cdef int jj, row_start, row_end
         cdef int num_rows = rho_vec.shape[0]
-        cdef int n = <int>libc.math.sqrt(num_rows)
+        cdef int n = <int>sqrt(num_rows)
         cdef complex dot = 0.0
         for row from 0 <= row < num_rows by n+1:
             row_start = self.indptr[row]
@@ -498,9 +520,10 @@ cdef class cy_csr_matrix(cy_cs_matrix):
         cdef cy_csr_matrix _oper
         cdef size_t ii
         cdef size_t factor_keep = 1, factor_trace = 1, factor_tensor = 1
-        cdef int[:, ::1] tensor_table = np.zeros((3, num_dims), dtype=np.int32)
         cdef int[::1] drho = np.asarray(dims[0], dtype=np.int32).ravel()
         cdef int num_dims = drho.shape[0]
+        cdef int[:, ::1] tensor_table = np.zeros((3, num_dims), dtype=np.int32)
+
 
         if isinstance(sel, int):
             _sel = np.array([sel], dtype=np.int32)
@@ -517,8 +540,8 @@ cdef class cy_csr_matrix(cy_cs_matrix):
             _oper = self
 
         for ii in range(num_dims-1,-1,-1):
-            tensor_table[0, d] = factor_tensor
-            factor_tensor *= drho[d]
+            tensor_table[0, ii] = factor_tensor
+            factor_tensor *= drho[ii]
             if _in(ii, _sel):
                 tensor_table[1, ii] = factor_keep
                 factor_keep *= drho[ii]
@@ -526,7 +549,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
                 tensor_table[2, ii] = factor_trace
                 factor_trace *= drho[ii]
 
-        dims_kept0 = np.asarray(rho.dims[0]).take(_sel).tolist()
+        dims_kept0 = np.asarray(dims).take(_sel).tolist()
         rho1_dims = [dims_kept0, dims_kept0]
 
         # Try to evaluate how sparse the result will be.
@@ -539,30 +562,29 @@ cdef class cy_csr_matrix(cy_cs_matrix):
     @cython.wraparound(False)
     @cython.cdivision(True)
     cdef cy_csr_matrix _ptrace_core_sp(self, int[:, ::1] tensor_table):
-        cdef int p = 0, nnz, ii
+        cdef int p = 0, nnz = self.nnz, ii
         cdef int[::1] pos_c = np.empty(2, dtype=np.int32)
         cdef int[::1] pos_r = np.empty(2, dtype=np.int32)
         cdef int[::1] col = np.empty(self.nnz, dtype=np.int32)
         cdef int[::1] row = np.empty(self.nnz, dtype=np.int32)
-        cdef cnp.ndarray[complex, ndim=1, mode='c'] new_data = np.zeros(cco.nnz, dtype=complex)
-        cdef cnp.ndarray[int, ndim=1, mode='c'] new_col = np.zeros(cco.nnz, dtype=np.int32)
-        cdef cnp.ndarray[int, ndim=1, mode='c'] new_row = np.zeros(cco.nnz, dtype=np.int32)
+        cdef cnp.ndarray[complex, ndim=1, mode='c'] new_data = np.zeros(nnz, dtype=complex)
+        cdef cnp.ndarray[int, ndim=1, mode='c'] new_col = np.zeros(nnz, dtype=np.int32)
+        cdef cnp.ndarray[int, ndim=1, mode='c'] new_row = np.zeros(nnz, dtype=np.int32)
 
-        nnz = self.nnz
-        _coo_indices(self, row, col)
+        self._coo_indices(row, col)
 
         for ii in range(nnz):
             _i2_k_t(col[ii], tensor_table, pos_c)
             _i2_k_t(row[ii], tensor_table, pos_r)
             if pos_c[1] == pos_r[1]:
-                new_data[p] = self.data[i]
+                new_data[p] = self.data[p]
                 new_col[p] = (pos_c[0])
                 new_row[p] = (pos_r[0])
                 p += 1
 
         # Here there can be redundance in (new_col, new_row) pairs.
         # scipy coo_matrix does the sum but _from_coo_indices does not.
-        cdef object out = coo_matrix((new_data, [new_col, new_row])).tocsr()
+        cdef object out = sp.coo_matrix((new_data, [new_col, new_row])).tocsr()
         return csr_from_scipy(out, False)
 
     @cython.boundscheck(False)
@@ -577,7 +599,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
         cdef complex[:, ::1] data = np.zeros((num_sel_dims, num_sel_dims),
                                               dtype=complex)
         nnz = self.nnz
-        _coo_indices(self, row, col)
+        self._coo_indices(row, col)
         for ii in range(nnz):
             _i2_k_t(col[ii], tensor_table, pos_c)
             _i2_k_t(row[ii], tensor_table, pos_r)
@@ -683,7 +705,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
     cpdef void matmat_as_vec_f(self, complex[::1] vec, complex[::1] out, complex alpha):
         # shortcut function for solver, only work for square self and mat
         _spmm_f_py(self.data, self.indices, self.indptr,
-                   &mat[0], alpha, &out[0],
+                   &vec[0], alpha, &out[0],
                    self.nrows, self.ncols, self.ncols)
 
 
@@ -762,14 +784,37 @@ cpdef cy_csr_matrix identity_csr(unsigned int nrows):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef object csr_qmatrix_from_cdata(cy_csr_matrix cdata):
-    if not cdata.numpy_lock:
-        return cdata.to_qdata()
+    cdef np.npy_intp dat_len, ptr_len
+    cdef np.ndarray[complex, ndim=1] _data
+    cdef np.ndarray[int, ndim=1] _ind, _ptr
+
+    if not cdata.is_set:
+        raise_error_csr(-3)
+
+    if cdata.numpy_lock:
+        #make a copy without lock
+        cdata = cdata.copy()
+
+    dat_len = cdata.nnz
+    ptr_len = cdata.nrows+1
     out = csr_qmatrix(shape=(0,0))
-    out.data = cdata.data
-    out.indices = cdata.indices
-    out.indptr = cdata.indptr
+
+    _data = np.PyArray_SimpleNewFromData(1, &dat_len, np.NPY_COMPLEX128, cdata.data)
+    PyArray_ENABLEFLAGS(_data, np.NPY_OWNDATA)
+
+    _ind = np.PyArray_SimpleNewFromData(1, &dat_len, np.NPY_INT32, cdata.indices)
+    PyArray_ENABLEFLAGS(_ind, np.NPY_OWNDATA)
+
+    _ptr = np.PyArray_SimpleNewFromData(1, &ptr_len, np.NPY_INT32, cdata.indptr)
+    PyArray_ENABLEFLAGS(_ptr, np.NPY_OWNDATA)
+
+    cdata.numpy_lock = 1
+    out.data = _data
+    out.indices = _ind
+    out.indptr = _ptr
     out._shape = (cdata.nrows, cdata.ncols)
     out._cdata = cdata
+
     return out
 
 

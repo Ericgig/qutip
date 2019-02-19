@@ -59,13 +59,14 @@ cdef struct _long_pair:
 
 # Even if csr matrix are used here, these matrix do not represent Qobj:
 # data is double instead of complex.
-# Therefore we can't use the exising crs_matrix cdef class. 
+# Therefore we can't use the exising crs_matrix cdef class.
 # Since these functions are used by only graph.py, the indptr, indices
 # are kept in the python call. int32/int64 is supported through fused types.
 ctypedef fused integer:
     int
     long
 
+#qutip/cy/graph_utils.pyx:203:9: Compiler crash in AnalyseDeclarationsTransform
 ctypedef fused uinteger:
     unsigned int
     unsigned long
@@ -126,7 +127,7 @@ cdef long * long_argsort(long * x, long nrows):
 @cython.wraparound(False)
 cpdef integer[::1] _node_degrees(integer[::1] ind,
                                  integer[::1] ptr,
-                                 uinteger num_rows):
+                                 integer num_rows): #uinteger
     cdef size_t ii, jj
     cdef integer[::1] degree
     if integer is int:
@@ -150,16 +151,16 @@ cpdef integer[::1] _node_degrees(integer[::1] ind,
 def _breadth_first_search(
         cnp.ndarray[integer, ndim=1, mode="c"] ind,
         cnp.ndarray[integer, ndim=1, mode="c"] ptr,
-        uinteger num_rows, integer seed):
+        integer num_rows, integer seed): #uinteger
     """
     Does a breath first search (BSF) of a graph in sparse CSR format matrix
     form starting at a given seed node.
     """
 
-    cdef uinteger i, j, ii, jj, N = 1
-    cdef uinteger level_start = 0
-    cdef uinteger level_end = N
-    cdef uinteger current_level = 1
+    cdef integer i, j, ii, jj, N = 1 #uinteger
+    cdef integer level_start = 0 #uinteger
+    cdef integer level_end = N #uinteger
+    cdef integer current_level = 1 #uinteger
     cdef cnp.ndarray[integer] order
     cdef cnp.ndarray[integer] level
 
@@ -200,8 +201,8 @@ def _reverse_cuthill_mckee(integer[::1] ind,
     """
     Reverse Cuthill-McKee ordering of a sparse csr or csc matrix.
     """
-    cdef uinteger N = 0, N_old, seed, level_start, level_end
-    cdef uinteger zz, i, j, ii, jj, kk, ll, level_len, temp, temp2, size
+    cdef integer N = 0, N_old, seed, level_start, level_end  #uinteger
+    cdef integer zz, i, j, ii, jj, kk, ll, level_len, temp, temp2, size  #uinteger
     cdef cnp.ndarray[integer, ndim=1] order
     cdef integer[::1] degree = _node_degrees(ind, ptr, num_rows)
     cdef integer * inds
@@ -244,7 +245,7 @@ def _reverse_cuthill_mckee(integer[::1] ind,
                             N += 1
 
                     # Add values to temp_degrees array for insertion sort
-                    temp_degrees = <int *>PyDataMem_RENEW(temp_degrees, (N-N_old)*size)
+                    temp_degrees = <integer *>PyDataMem_RENEW(temp_degrees, (N-N_old)*size)
                     level_len = 0
                     for kk in range(N_old, N):
                         temp_degrees[level_len] = degree[order[kk]]
@@ -274,29 +275,33 @@ def _reverse_cuthill_mckee(integer[::1] ind,
     # return reversed order for RCM ordering
     return order[::-1]
 
-
+"""
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def __pseudo_peripheral_node(
-        cnp.ndarray[cython.integral, ndim=1, mode="c"] ind,
-        cnp.ndarray[cython.integral, ndim=1, mode="c"] ptr,
-        cython.integral num_rows):
-    """
+        cnp.ndarray[integer, ndim=1, mode="c"] ind,
+        cnp.ndarray[integer, ndim=1, mode="c"] ptr,
+        integer num_rows):
+    \"""
     Find a pseudo peripheral node of a graph represented by a sparse
     csr_matrix.
     Never used in qutip and would fail.
     Left here for futur reference if ever useful/needed.
-    """
+    \"""
     cdef unsigned int flag
-    cdef unsigned cython.integral ii, jj, delta, node, start
-    cdef cython.integral maxlevel, minlevel, minlastnodesdegree
-    cdef cnp.ndarray[cython.integral] lastnodes
-    cdef cnp.ndarray[cython.integral] lastnodesdegree
-    cdef cnp.ndarray[cython.integral] degree = np.zeros(num_rows, dtype=ITYPE)
+    cdef integer ii, jj, delta, node, start
+    cdef integer maxlevel, minlevel, minlastnodesdegree
+    cdef cnp.ndarray[integer] lastnodes
+    cdef cnp.ndarray[integer] lastnodesdegree
+    cdef cnp.ndarray[integer] degree
+    cdef integer[::1] tmp
 
-    degree = _node_degrees(ind, ptr, num_rows).astype(ITYPE) # error
-    # _node_degrees return a memory view which does not have the astype method
-    # deprecated use?
+    tmp = _node_degrees(ind, ptr, num_rows)
+    if integer is int:
+        degree = np.asarray(tmp, dtype=np.int32)
+    else:
+        degree = np.asarray(tmp, dtype=np.int64)
+
     start = 0
     delta = 0
     flag = 1
@@ -321,7 +326,7 @@ def __pseudo_peripheral_node(
             flag = 0
 
     return start, order, level
-
+"""
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -403,7 +408,7 @@ def _max_row_weights(
     This keeps us from having to call abs over and over.
 
     """
-    cdef cnp.ndarray[double] weights = np.zeros(ncols + 1, dtype=double)
+    cdef cnp.ndarray[double] weights = np.zeros(ncols + 1, dtype=np.double)
     cdef integer ln, mx, ii, jj
     cdef double weight, current
 
@@ -444,7 +449,7 @@ def _weighted_bipartite_matching(
     cdef cnp.ndarray[double] weights = _max_row_weights(data, inds, ptrs, n)
     cdef cnp.ndarray[integer] order
     cdef cnp.ndarray[integer] row_order
-    cdef cnp.ndarray[double] temp_weights = np.zeros(int(weights[n]), dtype=double)
+    cdef cnp.ndarray[double] temp_weights = np.zeros(int(weights[n]), dtype=np.double)
     cdef integer queue_ptr, queue_col, queue_size, next_num
     cdef integer i, j, zz, ll, kk, row, col, temp, eptr, temp2
     if integer is int:

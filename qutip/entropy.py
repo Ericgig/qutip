@@ -40,7 +40,7 @@ from qutip.qobj import ptrace
 from qutip.states import ket2dm
 from qutip.tensor import tensor
 from qutip.operators import sigmay
-from qutip.sparse import sp_eigs
+from qutip.matrix_utils import eigs
 from qutip.qip.gates import swap
 from qutip.partial_transpose import partial_transpose
 
@@ -72,7 +72,7 @@ def entropy_vn(rho, base=e, sparse=False):
     """
     if rho.type == 'ket' or rho.type == 'bra':
         rho = ket2dm(rho)
-    vals = sp_eigs(rho.data, rho.isherm, vecs=False, sparse=sparse)
+    vals = eigs(rho.data, rho.isherm, vecs=False, sparse=sparse)
     nzvals = vals[vals != 0]
     if base == 2:
         logvals = log2(nzvals)
@@ -249,7 +249,7 @@ def _entropy_relative(rho, sigma, base=e, sparse=False):
     if rho.type != 'oper' or sigma.type != 'oper':
         raise TypeError("Inputs must be density matrices..")
     # sigma terms
-    svals = sp_eigs(sigma.data, sigma.isherm, vecs=False, sparse=sparse)
+    svals = eigs(sigma.data, sigma.isherm, vecs=False, sparse=sparse)
     snzvals = svals[svals != 0]
     if base == 2:
         slogvals = log2(snzvals)
@@ -258,7 +258,7 @@ def _entropy_relative(rho, sigma, base=e, sparse=False):
     else:
         raise ValueError("Base must be 2 or e.")
     # rho terms
-    rvals = sp_eigs(rho.data, rho.isherm, vecs=False, sparse=sparse)
+    rvals = eigs(rho.data, rho.isherm, vecs=False, sparse=sparse)
     rnzvals = rvals[rvals != 0]
     # calculate tr(rho*log sigma)
     rel_trace = float(real(sum(rnzvals * slogvals)))

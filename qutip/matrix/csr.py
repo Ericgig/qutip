@@ -1,4 +1,3 @@
-from base import _qdata
 import numpy as np
 import operator
 from scipy.sparse import (_sparsetools, isspmatrix, isspmatrix_csr,
@@ -6,12 +5,13 @@ from scipy.sparse import (_sparsetools, isspmatrix, isspmatrix_csr,
 from scipy.sparse.sputils import (upcast, upcast_char, to_native, isdense, isshape,
                       getdtype, isscalarlike, IndexMixin, get_index_dtype)
 from scipy.sparse.base import spmatrix, isspmatrix, SparseEfficiencyWarning
-from qutip.qdata_math import mult
+
 from warnings import warn
 from qutip.matrix.qdata import _qdata
+from qutip.matrix.sparse import *
 
-
-from qutip.cy.utils import cy_tidyup
+import qutip.settings as settings
+from qutip.matrix.cy.utils import cy_tidyup
 from qutip.cy.openmp.utilities import use_openmp
 if settings.has_openmp:
     from qutip.cy.openmp.omp_utils import omp_tidyup
@@ -97,7 +97,7 @@ class csr_qmatrix(csr_matrix, _qdata):
         """
         if isinstance(other, csr_qmatrix):
             # use our product
-            return zcrs_mult(self, other, sorted=1)
+            return zcsr_mult(self, other, sorted=1)
         return csr_matrix._mul_sparse_matrix(self, other, op)
 
     def _with_data(self,data,copy=True):
@@ -227,31 +227,31 @@ class csr_qmatrix(csr_matrix, _qdata):
         """
         return self.cdata.expect_psi_vec(vec)
 
-    def mul_vec(self, in):
+    def mul_vec(self, in_):
         """
         out = self * in
         used in solver iterations: should be fast
         """
-        return self.cdata.spmv(in)
+        return self.cdata.spmv(in_)
 
-    def mul_vec_py(self, in, out, alpha):
+    def mul_vec_py(self, in_, out, alpha):
         """ out = out + alpha * self * in
         used in solver iterations: should be fast
         """
-        self.cdata.spmvpy(in, out, alpha)
+        self.cdata.spmvpy(in_, out, alpha)
 
-    def mul_mat(self, in):
+    def mul_mat(self, in_):
         """
         out = self @ in
         used in solver iterations: should be fast
         """
-        return self.cdata.spmm(in)
+        return self.cdata.spmm(in_)
 
-    def mul_mat_py(self, in, out, alpha):
+    def mul_mat_py(self, in_, out, alpha):
         """ out = out + alpha * self @ in
         used in solver iterations: should be fast
         """
-        self.cdata.spmmpy(in, out, alpha)
+        self.cdata.spmmpy(in_, out, alpha)
 
     def unit_row_norm(self):
         """ normalize each row
@@ -308,3 +308,7 @@ def csr_qmatrix_from_dense(data):
 def csr_qmatrix_from_sparse(A):
     csr = sp.csr_matrix(A)
     return csr_qmatrix_from_csr(csr)
+
+
+from qutip.matrix.cy.csr_matrix import cy_csr_matrix
+from qutip.matrix.cy.csr_math import zcsr_mult

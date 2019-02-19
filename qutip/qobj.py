@@ -58,13 +58,11 @@ import qutip.settings as settings
 from qutip import __version__
 from qutip.dimensions import type_from_dims, enumerate_flat, collapse_dims_super
 
-from qutip.csr_math import inner, mat_elem
-
 # all this to be removed
 import scipy.sparse as sp
-from qutip.qdata import qdata_empty, qdata_identity,
+from qutip.qdata import qdata_empty, qdata_identity, qdata
 from qutip.matrix.qdata import _qdata
-from qutip.matrix.permute import _permute
+from qutip.permute import _permute
 
 import sys
 if sys.version_info.major >= 3:
@@ -72,6 +70,27 @@ if sys.version_info.major >= 3:
 elif sys.version_info.major < 3:
     from itertools import izip_longest
     zip_longest = izip_longest
+
+
+# Test
+class cached_property(object):
+    """ A property that is only computed once per instance and then replaces
+        itself with an ordinary attribute. Deleting the attribute resets the
+        property.
+
+        Source: https://github.com/bottlepy/bottle/commit/fa7733e075da0d790d809aa3d2f53071897e6f76
+        """
+
+    def __init__(self, func):
+        self.__doc__ = getattr(func, '__doc__')
+        self.func = func
+
+    def __get__(self, obj, cls):
+        if obj is None:
+            return self
+        value = obj.__dict__[self.func.__name__] = self.func(obj)
+        return value
+
 
 class Qobj(object):
     """A class for representing quantum objects, such as quantum operators
@@ -1007,7 +1026,7 @@ class Qobj(object):
         if self.isket:
             _out = self.data.proj()
             _dims = [self.dims[0],self.dims[0]]
-        elif :
+        elif self.isbra:
             _out = self.data.proj()
             _dims = [self.dims[1],self.dims[1]]
         else:
@@ -1541,18 +1560,16 @@ class Qobj(object):
 
             elif self.isket and (other.isbra or other.isket):
                 return inner(other.data, self.data)
-            else:
-                raise TypeError("Can only calculate overlap for state vector Qobjs")
 
             elif self.isoper:
                 if other.isket or other.isbra:
                     return (self.dag() * qutip.states.ket2dm(other)).tr()
                 elif other.isoper:
                     return (self.dag() * other).tr()
-                else:
-                    raise TypeError("Can only calculate overlap for state vector Qobjs")
+            else:
+                raise TypeError("Can only calculate overlap for state vector Qobjs")
 
-        raise TypeError("Can only calculate overlap for state vector Qobjs")
+        raise TypeError("Can only calculate overlap for state vector and oper Qobjs")
 
     def eigenstates(self, sparse=False, sort='low',
                     eigvals=0, tol=0, maxiter=100000):
@@ -2352,23 +2369,4 @@ import qutip.operators as ops
 import qutip.metrics as mts
 import qutip.states
 import qutip.superoperator
-
-
-# Test
-class cached_property(object):
-    """ A property that is only computed once per instance and then replaces
-        itself with an ordinary attribute. Deleting the attribute resets the
-        property.
-
-        Source: https://github.com/bottlepy/bottle/commit/fa7733e075da0d790d809aa3d2f53071897e6f76
-        """
-
-    def __init__(self, func):
-        self.__doc__ = getattr(func, '__doc__')
-        self.func = func
-
-    def __get__(self, obj, cls):
-        if obj is None:
-            return self
-        value = obj.__dict__[self.func.__name__] = self.func(obj)
-        return value
+from qutip.matrix.qdata_math import inner, mat_elem

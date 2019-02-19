@@ -32,16 +32,19 @@
 #    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
+cimport cython
 from scipy.linalg.cython_lapack cimport zheevr
 from scipy.linalg.cython_blas cimport zgemm, zgemv, zaxpy
-from qutip.cy.csr_math cimport (_zcsr_kron_core, zcsr_kron,
-                                zcsr_add, zcsr_mult)
-from qutip.cy.csr_matrix cimport dense2D_to_CSR, identity_CSR, cy_csr_matrix, spmvpy
+# limited to csr for now ...
+from qutip.matrix.cy.csr_math cimport (_zcsr_kron_core, zcsr_kron,
+                                        zcsr_add, zcsr_mult)
+from qutip.matrix.cy.csr_matrix cimport csr_from_dense, identity_csr, cy_csr_matrix, spmvpy
+from qutip.matrix.csr import csr_qmatrix_from_data
+
 from qutip.cy.brtools cimport spec_func
 from libc.math cimport fabs, fmin
 from libc.float cimport DBL_MAX
 from libcpp.vector cimport vector
-
 
 cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
@@ -177,7 +180,9 @@ def liou_from_diag_ham(double[::1] diags):
                 nnz += 1
             else:
                 ptr[idx+jj] = nnz
-    return fast_csr_matrix((data[:nnz],ind[:nnz],ptr), shape=(nrows**2,nrows**2))
+    return csr_qmatrix_from_data((data[:nnz],ind[:nnz],ptr),
+                                  shape=(nrows**2,nrows**2),
+                                  copy=0)
 
 
 
@@ -326,7 +331,7 @@ cpdef cop_super_term(complex[::1,:] cop, complex[::1,:] evecs,
 
     cdef complex[::1,:] cop_eig = dense_to_eigbasis(cop, evecs, nrows, atol)
 
-    c = dense2D_to_CSR(cop_eig)
+    c = csr_from_dense(cop_eig)
     #Multiply by alpha for time-dependence
     for kk in range(c.nnz):
         c.data[kk] *= alpha
@@ -350,13 +355,14 @@ cpdef cop_super_term(complex[::1,:] cop, complex[::1,:] evecs,
     #Free temp conj_data array
     PyDataMem_FREE(conj_data)
     #Create identity in id_
-    id_ = identity_CSR(nrows)
+    id_ = identity_csr(nrows)
     #Take adjoint cop.H -> cd
     # _zcsr_adjoint(&mat1, &mat4)
-    cd.init(cop_csr.nnz, cop_csr.ncols, cop_csr.nrows)
-    cop_csr._zcsr_adjoint_core(cd) # .adjoint is inplace
+    cd = cy_csr_matrix()
+    cd.init(c.nnz, c.ncols, c.nrows)
+    c._zcsr_adjoint_core(cd) # .adjoint is inplace
     #multiply cop.dag() * c -> cdc
-    cdc = zcsr_mult(adj, c)
+    cdc = zcsr_mult(cd, c)
     # kron(eye, cdc) -> id_cdc
     id_cdc = zcsr_kron(id_, cdc)
     # Add data from cc_c - 0.5 * id_cdc -> out_tmp
@@ -380,7 +386,6 @@ cpdef cop_super_term(complex[::1,:] cop, complex[::1,:] evecs,
     return out.to_scipy()
 
 
-
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void cop_super_mult(complex[::1,:] cop, complex[::1,:] evecs,
@@ -396,8 +401,8 @@ cdef void cop_super_mult(complex[::1,:] cop, complex[::1,:] evecs,
     cdef complex[::1,:] cop_eig = dense_to_eigbasis(cop, evecs, nrows, atol)
 
     #Mat1 holds cop_eig in CSR format
-    #fdense2D_to_CSR(cop_eig, &mat1, nrows, nrows)
-    cop_csr = dense2D_to_CSR(cop_eig)
+    #fcsr_from_dense(cop_eig, &mat1, nrows, nrows)
+    cop_csr = csr_from_dense(cop_eig)
 
     #Multiply by alpha for time-dependence
     for kk in range(cop_csr.nnz):
@@ -418,12 +423,11 @@ cdef void cop_super_mult(complex[::1,:] cop, complex[::1,:] evecs,
     _zcsr_kron_core(conj_data, cop_csr.indices, cop_csr.indptr,
                     cop_csr.data, cop_csr.indices, cop_csr.indptr,
                     mat2,
-                    mat1.nrows, mat1.nrows, mat1.ncols)
+                    cop_csr.nrows, cop_csr.nrows, cop_csr.ncols)
 
     #Do spmv with kron(cop.dag(), c)
     spmvpy(mat2.data, mat2.indices, mat2.indptr,
            vec, 1, out, nrows**2)
-
 
     #Free temp conj_data array
     PyDataMem_FREE(conj_data)
@@ -432,7 +436,7 @@ cdef void cop_super_mult(complex[::1,:] cop, complex[::1,:] evecs,
     mat2.free()
 
     #Create identity in mat3
-    id_ = identity_CSR(nrows)
+    id_ = identity_csr(nrows)
 
     #Take adjoint of cop (mat1) -> mat2
     mat2.init(cop_csr.nnz, cop_csr.ncols, cop_csr.nrows)
@@ -450,7 +454,7 @@ cdef void cop_super_mult(complex[::1,:] cop, complex[::1,:] evecs,
 
     # kron(eye, cdc) -> mat1
     #_zcsr_kron(&mat3, &mat4, &mat1)
-    mat2 = zcrs_kron(id_, cdc)
+    mat2 = zcsr_kron(id_, cdc)
 
     #Do spmv with -0.5*kron(eye, cdc)
     spmvpy(mat2.data, mat2.indices, mat2.indptr,
@@ -465,7 +469,7 @@ cdef void cop_super_mult(complex[::1,:] cop, complex[::1,:] evecs,
     cdc.transpose()
 
     #Free mat4 (mat2 and mat4 currently free)
-    free_CSR(&mat4)
+    #mat4.free()
 
     # kron(cdct, eye) -> mat2
     mat2 = zcsr_kron(cdc, id_)
@@ -630,7 +634,7 @@ cdef cy_csr_matrix sparse_ZHEEVR(complex[::1,:] H, double * eigvals,
         for ii in range(nrows):
             if cabs(Z[ii,jj]) < atol:
                 Z[ii,jj] = 0
-    evecs = dense2D_to_CSR(Z)
+    evecs = csr_from_dense(Z)
     PyDataMem_FREE(&Z[0,0])
     return evecs
 
@@ -656,6 +660,6 @@ cdef cy_csr_matrix sparse_to_eigbasis(complex[::1] Adata, int[::1] Aind, int[::1
     ed.adjoint()
     A_eig = zcsr_mult(ed, Ae)
     # sort_indices(&A_eig)
-    A_e.free()
+    Ae.free()
     ed.free()
     return A_eig

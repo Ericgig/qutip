@@ -1,8 +1,8 @@
 #!python
 #cython: language_level=3
-from qutip.cy.csr_matrix cimport cy_csr_matrix
+from qutip.matrix.cy.csr_matrix cimport cy_csr_matrix
 import numpy as np
-cimport numpy as cnp
+cimport numpy as np
 import qutip.settings as qset
 cimport cython
 cimport libc.math

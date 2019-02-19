@@ -152,6 +152,9 @@ cy_exts = ['solverfuncs', 'stochastic', 'mcsolve', 'graph_utils', 'interpolate',
            'heom', 'math', 'brtools',
            'brtools_checks', 'br_tensor', 'inter', 'cqobjevo_factor', 'piqs']
 
+mat_cy_exts = ['cs_matrix', 'csr_matrix', 'utils', 'csr_math',
+               'cqobjevo', 'cqe_dense', 'cqe_csr', 'cdata', 'utils']
+
 # Extra link args
 _link_flags = []
 
@@ -167,9 +170,18 @@ else:
         _compiler_flags.append('-mmacosx-version-min=10.9')
         _link_flags.append('-mmacosx-version-min=10.9')
 
-
-
 EXT_MODULES =[]
+
+# Add Cython files from qutip/matrix/cy
+for ext in mat_cy_exts:
+    _mod = Extension('qutip.matrix.cy.'+ext,
+            sources = ['qutip/matrix/cy/'+ext+'.pyx', 'qutip/cy/src/zspmv.cpp'],
+            include_dirs = [np.get_include()],
+            extra_compile_args=_compiler_flags,
+            extra_link_args=_link_flags,
+            language='c++')
+    EXT_MODULES.append(_mod)
+
 # Add Cython files from qutip/cy
 for ext in cy_exts:
     _mod = Extension('qutip.cy.'+ext,
@@ -188,19 +200,6 @@ _mod = Extension('qutip.control.cy_grape',
             extra_link_args=_link_flags,
             language='c++')
 EXT_MODULES.append(_mod)
-
-mat_cy_exts = ['cs_matrix', 'csr_matrix', 'utils', 'csr_math',
-               'cqobjevo', 'cqe_dense', 'cqe_csr']
-
-# Add Cython files from qutip/matrix/cy
-for ext in cy_exts:
-    _mod = Extension('qutip.matrix.cy.'+ext,
-            sources = ['qutip/matrix/cy/'+ext+'.pyx', 'qutip/cy/src/zspmv.cpp'],
-            include_dirs = [np.get_include()],
-            extra_compile_args=_compiler_flags,
-            extra_link_args=_link_flags,
-            language='c++')
-    EXT_MODULES.append(_mod)
 
 # Add optional ext modules here
 if "--with-openmp" in sys.argv:

@@ -1,17 +1,17 @@
 
 
 import numpy as np
-from scipy.sparse import issparse, coo_matrix
+from scipy.sparse import issparse, coo_matrix, csr_matrix
 
 from qutip.matrix.qdata import _qdata
-from qutip.matrix.crs import (csr_qmatrix, csr_qmatrix_identity,
+from qutip.matrix.csr import (csr_qmatrix, csr_qmatrix_identity,
                               csr_qmatrix_from_csr,
                               csr_qmatrix_from_coo,
                               csr_qmatrix_from_dense)
 
 KNOWN_FORMAT = "csr"
 
-def qdata(data, format="csr", copy=False):
+def qdata(data, format="csr", copy=False, shape=()):
     if isinstance(data, Qobj):
         return qdata(data.data, format, copy)
     if isinstance(data, _qdata) and not copy:
@@ -22,6 +22,10 @@ def qdata(data, format="csr", copy=False):
         return qdata_from_sparse(data, format, copy)
     elif isinstance(data, np.ndarray):
         return qdata_from_dense(data, format, copy)
+    elif isinstance(data, tuple) and len(data) == 3:
+        # expect (data, ind, ptr)
+        return qdata_from_sparse(csr_matrix(data, copy=copy, shape=shape),
+                                 format, False)
     else:
         # cross fingers
         return qdata_from_dense(np.array(data), format, copy)
@@ -34,7 +38,7 @@ def qdata_from_dense(dense_data, format="csr", copy=False):
 
 def qdata_from_sparse(sparse, format="csr", copy=False):
     if format == "crs":
-        if sparse.format = "coo":
+        if sparse.format == "coo":
             return csr_qmatrix_from_coo(sparse)
         if sparse.format != "csr":
             sparse = sparse.tocsr()

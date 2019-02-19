@@ -43,11 +43,8 @@ from types import FunctionType, BuiltinFunctionType
 import numpy as np
 from numbers import Number
 from qutip.qobjevo_codegen import _compile_str_single, _compiled_coeffs
-from qutip.cy.data_convert import cdata_from_scipy
 from qutip.matrix.cy.cqe_dense import (CQobjCteDense, CQobjEvoTdDense)
-
 from qutip.matrix.cy.cqe_csr import (CQobjCte, CQobjEvoTd)
-
 from qutip.cy.cqobjevo_factor import (InterCoeffT, InterCoeffCte,
                                       InterpolateCoeff)
 import pickle
@@ -1137,7 +1134,7 @@ class QobjEvo:
             herm = bool(herm)
         if self.compiled:
             return self.compiled_qobjevo.expect(t, vec, herm)
-        mat = cdata_from_scipy(self.__call__(t, data=True))
+        mat = self.__call__(t, data=True)
         if self.cte.issuper:
             return mat.expect_rho_vec(vec, herm)
         else:
@@ -1162,8 +1159,8 @@ class QobjEvo:
         if self.compiled:
             out = self.compiled_qobjevo.mul_vec(t, vec)
         else:
-            mat = cdata_from_scipy(self.__call__(t, data=True))
-            out = mat.spmv(vec)
+            mat = self.__call__(t, data=True)
+            out = mat.mul_vec(vec)
         if was_Qobj:
             return Qobj(out, dims=dims)
         else:

@@ -4,20 +4,29 @@ import numpy as np
 cimport numpy as np
 cimport numpy as cnp
 cimport cython
-cimport qutip.matrix.cy.cs_matrix
+from qutip.matrix.cy.cs_matrix cimport cy_cs_matrix
 import qutip.settings as qset
 from libcpp cimport bool
-from qutip.qdata import _qdata, qdata
+
+
+cdef void spmvpy(complex * data, int * ind, int * ptr,
+            complex * vec,
+            complex a,
+            complex * out,
+            unsigned int nrows)
+
+
+cdef void _spmm_c_py(complex* data, int* ind, int* ptr,
+            complex* mat, complex a, complex* out,
+            unsigned int sp_rows, unsigned int nrows, unsigned int ncols)
+
+
+cdef void _spmm_f_py(complex* data, int* ind, int* ptr,
+            complex* mat, complex a, complex* out,
+            unsigned int sp_rows, unsigned int nrows, unsigned int ncols)
+
 
 cdef class cy_csr_matrix(cy_cs_matrix):
-    def __init__(self, object data=None):
-        if data is None:
-            cy_cs_matrix.__init__(self)
-            return
-        elif not isinstance(data, _qdata):
-            data = qdata(data)
-
-
     cpdef cy_csr_matrix copy(self) ##
 
     #def object to_qdata(self)

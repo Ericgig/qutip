@@ -39,8 +39,8 @@ import scipy.sparse as sp
 import numpy as np
 from qutip.qobj import Qobj
 from qutip.qobjevo import QobjEvo
-from qutip.fastsparse import fast_csr_matrix, fast_identity
-from qutip.sparse import sp_reshape
+from qutip.qdata import qdata, qdata_identity
+from qutip.matrix_utils import reshape
 from qutip.data_math import kron
 from functools import partial
 
@@ -105,7 +105,7 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
     sop_dims = [[op_dims[0], op_dims[0]], [op_dims[1], op_dims[1]]]
     sop_shape = [np.prod(op_dims), np.prod(op_dims)]
 
-    spI = fast_identity(op_shape[0])
+    spI = qdata_identity(op_shape[0])
 
     td = False
     L = None
@@ -128,7 +128,7 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
         else:
             data = H.data
     else:
-        data = fast_csr_matrix(shape=(sop_shape[0], sop_shape[1]))
+        data = qdata(shape=(sop_shape[0], sop_shape[1]))
 
     td_c_ops = []
     for idx, c_op in enumerate(c_ops):
@@ -261,7 +261,7 @@ def operator_to_vector(op):
 
     q = Qobj()
     q.dims = [op.dims, [1]]
-    q.data = sp_reshape(op.data.T, (np.prod(op.shape), 1))
+    q.data = reshape(op.data.T, (np.prod(op.shape), 1))
     return q
 
 
@@ -276,7 +276,7 @@ def vector_to_operator(op):
     q = Qobj()
     q.dims = op.dims[0]
     n = int(np.sqrt(op.shape[0]))
-    q.data = sp_reshape(op.data.T, (n, n)).T
+    q.data = reshape(op.data.T, (n, n)).T
     return q
 
 
@@ -338,7 +338,7 @@ def spost(A):
     S = Qobj(isherm=A.isherm, superrep='super')
     S.dims = [[A.dims[0], A.dims[1]], [A.dims[0], A.dims[1]]]
     S.data = kron(A.data.T,
-                       fast_identity(np.prod(A.shape[0])))
+                       qdata_identity(np.prod(A.shape[0])))
     return S
 
 
@@ -366,7 +366,7 @@ def spre(A):
 
     S = Qobj(isherm=A.isherm, superrep='super')
     S.dims = [[A.dims[0], A.dims[1]], [A.dims[0], A.dims[1]]]
-    S.data = kron(fast_identity(np.prod(A.shape[1])), A.data)
+    S.data = kron(qdata_identity(np.prod(A.shape[1])), A.data)
     return S
 
 

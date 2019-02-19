@@ -40,9 +40,11 @@ cimport numpy as np
 np.import_array()
 cimport cython
 from libcpp cimport bool
+from libcpp.vector cimport vector
 from qutip.cy.brtools cimport (vec2mat_index, dense_to_eigbasis,
                               ZHEEVR, skew_and_dwmin)
 from qutip.cy.brtools import (liou_from_diag_ham, cop_super_term)
+from qutip.matrix.cy.csr_matrix cimport cy_csr_matrix
 from libc.math cimport fabs
 
 cdef extern from "numpy/arrayobject.h" nogil:
@@ -67,8 +69,8 @@ def _br_term(complex[::1,:] A, complex[::1,:] evecs,
     cdef vector[int] coo_rows, coo_cols
     cdef vector[complex] coo_data
     cdef unsigned int nnz
-    cdef COO_Matrix coo
-    cdef CSR_Matrix csr
+    #cdef COO_Matrix coo
+    #cdef CSR_Matrix csr
 
     for I in range(nrows**2):
         vec2mat_index(nrows, I, ab)
@@ -111,7 +113,7 @@ def _br_term(complex[::1,:] A, complex[::1,:] evecs,
     mat.indices = <int *>PyDataMem_NEW(mat.nnz * sizeof(int))
     mat.indptr = <int *>PyDataMem_NEW((mat.nrows+1) * sizeof(int))
     #vector to memoryview using a ptr (make a function?)
-    cdef npy_intp nnzs[1]
+    cdef np.npy_intp nnzs[1]
     nnzs[0] = nnz
     cdef int[::1] rows = np.PyArray_SimpleNewFromData(1, nnzs, np.NPY_INT32, coo_rows.data())
     cdef int[::1] cols = np.PyArray_SimpleNewFromData(1, nnzs, np.NPY_INT32, coo_cols.data())

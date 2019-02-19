@@ -1,3 +1,5 @@
+#!python
+#cython: language_level=3
 from qutip.matrix.cy.cdata cimport Cdata
 cimport cython
 cimport numpy as cnp

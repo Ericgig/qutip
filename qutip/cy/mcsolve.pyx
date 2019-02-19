@@ -1,5 +1,7 @@
-# cython: profile=True
-# cython: linetrace=True
+#!python
+#cython: language_level=3
+## cython: profile=True
+## cython: linetrace=True
 # This file is part of QuTiP: Quantum Toolbox in Python.
 #
 #    Copyright (c) 2011 and later, Paul D. Nation and Robert J. Johansson.
@@ -36,15 +38,12 @@
 import numpy as np
 import scipy.sparse as sp
 from qutip.qobj import Qobj
-# from qutip.fastsparse import csr2fast
-# from qutip.cy.spmatfuncs import cy_expect_psi_csr, spmv_csr
-# from qutip.cy.spconvert import dense2D_to_fastcsr_cmode
 # from qutip.cy.dopri5 import ode_td_dopri
 cimport numpy as np
 cimport cython
 from scipy.linalg.cython_blas cimport dznrm2 as raw_dznrm2
-from qutip.cy.cqobjevo cimport CQobjEvo
-from qutip.cy.cdata cimport cdata
+from qutip.matrix.cy.cqobjevo cimport CQobjEvo
+from qutip.matrix.cy.cdata cimport Cdata
 from qutip.cy.complex_math cimport conj
 
 cdef int ONE = 1
@@ -86,6 +85,7 @@ def cy_mc_run_ode(ODE, config, prng):
     cdef CQobjEvo[::1] c_ops = config.td_c_ops
     cdef CQobjEvo[::1] n_ops = config.td_n_ops
     cdef Cdata[::1] e_ops = config.e_ops_cdata
+    cdef Cdata cdat
 
     cdef np.ndarray[complex, ndim=2] states_out
     if config.options.steady_state_average:
@@ -104,7 +104,8 @@ def cy_mc_run_ode(ODE, config, prng):
         states_out[0, :] = out_psi
 
     for ii in range(num_e):
-        expect_out[0, ii] = e_ops[ii].expect_psi_vec(out_psi)
+        cdat = e_ops[ii]
+        expect_out[0, ii] = cdat.expect_psi_vec(out_psi)
 
     # first rand is collapse norm, second is which operator
     rand_vals = prng.rand(2)
@@ -197,7 +198,8 @@ def cy_mc_run_ode(ODE, config, prng):
             states_out[k, :] = out_psi
 
         for ii in range(num_e):
-            expect_out[k, ii] = e_ops[ii].expect_psi_vec(out_psi)
+            cdat = e_ops[ii]
+            expect_out[k, ii] = cdat.expect_psi_vec(out_psi)
 
 
     return states_out, expect_out, collapse_times, which_oper

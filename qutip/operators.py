@@ -46,7 +46,7 @@ import numpy as np
 import scipy
 import scipy.sparse as sp
 from qutip.qobj import Qobj
-from qutip.fastsparse import fast_csr_matrix, fast_identity
+from qutip.qdata import qdata_identity, qdata
 
 #
 # Spin operators
@@ -130,7 +130,7 @@ def _jplus(j):
     ind = np.arange(1, N, dtype=np.int32)
     ptr = np.array(list(range(N-1))+[N-1]*2, dtype=np.int32)
     ptr[-1] = N-1
-    return fast_csr_matrix((data,ind,ptr), shape=(N,N))
+    return qdata((data,ind,ptr), shape=(N,N))
 
 
 def _jz(j):
@@ -150,7 +150,7 @@ def _jz(j):
         ind = np.array(list(range(j))+list(range(j+1,N)), dtype=np.int32)
         ptr = np.array(list(range(j+1))+list(range(j,N)), dtype=np.int32)
         ptr[-1] = N-1
-    return fast_csr_matrix((data,ind,ptr), shape=(N,N))
+    return qdata((data,ind,ptr), shape=(N,N))
 
 
 #
@@ -380,7 +380,7 @@ shape = [4, 4], type = oper, isHerm = False
     ind = np.arange(1,N, dtype=np.int32)
     ptr = np.arange(N+1, dtype=np.int32)
     ptr[-1] = N-1
-    return Qobj(fast_csr_matrix((data,ind,ptr),shape=(N,N)), isherm=False)
+    return Qobj(qdata((data,ind,ptr),shape=(N,N)), isherm=False)
 
 
 #
@@ -458,7 +458,7 @@ shape = [3, 3], type = oper, isHerm = True
     N = int(N)
     if N < 0:
         raise ValueError("N must be integer N>=0")
-    return Qobj(fast_identity(N), isherm=True, isunitary=True)
+    return Qobj(qdata_identity(N), isherm=True, isunitary=True)
 
 
 def identity(N):
@@ -563,7 +563,7 @@ shape = [4, 4], type = oper, isHerm = True
         ptr = np.arange(N+1,dtype=np.int32)
         ptr[-1] = N
 
-    return Qobj(fast_csr_matrix((data,ind,ptr), shape=(N,N)), isherm=True)
+    return Qobj(qdata((data,ind,ptr), shape=(N,N)), isherm=True)
 
 
 def squeeze(N, z, offset=0):

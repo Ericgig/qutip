@@ -53,7 +53,7 @@ from qutip.solver import Options, Result, Stats
 from qutip.ui.progressbar import BaseProgressBar, TextProgressBar
 from qutip.cy.heom import cy_pad_csr
 from qutip.data_math import kron
-from qutip.fastsparse import fast_csr_matrix, fast_identity
+from qutip.qdata import qdata_empty, qdata_identity
 
 
 class HEOMSolver(object):
@@ -327,7 +327,7 @@ class HSolverDL(HEOMSolver):
         # Turns out to be the same as nstates from state_number_enumerate
         N_he, he2idx, idx2he = enr_state_dictionaries([N_c + 1]*N_m , N_c)
 
-        unit_helems = fast_identity(N_he)
+        unit_helems = qdata_identity(N_he)
         if self.bnd_cut_approx:
             # the Tanimura boundary cut off operator
             if stats:
@@ -340,7 +340,7 @@ class HSolverDL(HEOMSolver):
             L_bnd = -approx_factr*op.data
             L_helems = kron(unit_helems, L_bnd)
         else:
-            L_helems = fast_csr_matrix(shape=(N_he*sup_dim, N_he*sup_dim))
+            L_helems = qdata_empty(shape=(N_he*sup_dim, N_he*sup_dim))
 
         # Build the hierarchy element interaction matrix
         if stats: start_helem_constr = timeit.default_timer()

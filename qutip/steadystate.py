@@ -52,11 +52,9 @@ from scipy.sparse.linalg import (use_solver, splu, spilu, spsolve, eigs,
 from qutip.qobj import Qobj, issuper, isoper
 
 from qutip.superoperator import liouvillian, vec2mat, spre
-from qutip.sparse import sp_permute, sp_bandwidth, sp_reshape, sp_profile
+from qutip.matrix_utils import permute, bandwidth, reshape, profile
 
 from qutip.superoperator import liouvillian, vec2mat
-from qutip.sparse import (sp_permute, sp_bandwidth, sp_reshape,
-                          sp_profile)
 from qutip.data_math import kron
 from qutip.graph import reverse_cuthill_mckee, weighted_bipartite_matching
 from qutip import (mat2vec, tensor, identity, operator_to_vector)
@@ -345,8 +343,8 @@ def _steadystate_LU_liouvillian(L, ss_args, has_mkl=0):
              for nn in range(n)])), shape=(n ** 2, n ** 2))
 
     if settings.debug:
-        old_band = sp_bandwidth(L)[0]
-        old_pro = sp_profile(L)[0]
+        old_band = bandwidth(L)[0]
+        old_pro = profile(L)[0]
         logger.debug('Orig. NNZ: %i' % L.nnz)
         if ss_args['use_rcm']:
             logger.debug('Original bandwidth: %i' % old_band)
@@ -357,11 +355,11 @@ def _steadystate_LU_liouvillian(L, ss_args, has_mkl=0):
         _wbm_start = time.time()
         perm = weighted_bipartite_matching(L)
         _wbm_end = time.time()
-        L = sp_permute(L, perm, [], form)
+        L = permute(L, perm, [], form)
         ss_args['info']['perm'].append('wbm')
         ss_args['info']['wbm_time'] = _wbm_end-_wbm_start
         if settings.debug:
-            wbm_band = sp_bandwidth(L)[0]
+            wbm_band = bandwidth(L)[0]
             logger.debug('WBM bandwidth: %i' % wbm_band)
 
     if ss_args['use_rcm']:
@@ -371,12 +369,12 @@ def _steadystate_LU_liouvillian(L, ss_args, has_mkl=0):
         perm2 = reverse_cuthill_mckee(L)
         _rcm_end = time.time()
         rev_perm = np.argsort(perm2)
-        L = sp_permute(L, perm2, perm2, form)
+        L = permute(L, perm2, perm2, form)
         ss_args['info']['perm'].append('rcm')
         ss_args['info']['rcm_time'] = _rcm_end-_rcm_start
         if settings.debug:
-            rcm_band = sp_bandwidth(L)[0]
-            rcm_pro = sp_profile(L)[0]
+            rcm_band = bandwidth(L)[0]
+            rcm_pro = profile(L)[0]
             logger.debug('RCM bandwidth: %i' % rcm_band)
             logger.debug('Bandwidth reduction factor: %f' %
                          (old_band/rcm_band))
@@ -521,13 +519,13 @@ def _steadystate_eigen(L, ss_args):
     if ss_args['use_rcm']:
         ss_args['info']['perm'].append('rcm')
         if settings.debug:
-            old_band = sp_bandwidth(L)[0]
+            old_band = bandwidth(L)[0]
             logger.debug('Original bandwidth: %i' % old_band)
         perm = reverse_cuthill_mckee(L)
         rev_perm = np.argsort(perm)
-        L = sp_permute(L, perm, perm, 'csc')
+        L = permute(L, perm, perm, 'csc')
         if settings.debug:
-            rcm_band = sp_bandwidth(L)[0]
+            rcm_band = bandwidth(L)[0]
             logger.debug('RCM bandwidth: %i' % rcm_band)
             logger.debug('Bandwidth reduction factor: %f' %
                          (old_band/rcm_band))
@@ -769,8 +767,8 @@ def _steadystate_power_liouvillian(L, ss_args, has_mkl=0):
         kind = 'csc'
     orig_nnz = L.nnz
     if settings.debug:
-        old_band = sp_bandwidth(L)[0]
-        old_pro = sp_profile(L)[0]
+        old_band = bandwidth(L)[0]
+        old_pro = profile(L)[0]
         logger.debug('Original bandwidth: %i' % old_band)
         logger.debug('Original profile: %i' % old_pro)
 
@@ -780,12 +778,12 @@ def _steadystate_power_liouvillian(L, ss_args, has_mkl=0):
         _wbm_start = time.time()
         perm = weighted_bipartite_matching(L)
         _wbm_end = time.time()
-        L = sp_permute(L, perm, [], kind)
+        L = permute(L, perm, [], kind)
         ss_args['info']['perm'].append('wbm')
         ss_args['info']['wbm_time'] = _wbm_end-_wbm_start
         if settings.debug:
-            wbm_band = sp_bandwidth(L)[0]
-            wbm_pro = sp_profile(L)[0]
+            wbm_band = bandwidth(L)[0]
+            wbm_pro = profile(L)[0]
             logger.debug('WBM bandwidth: %i' % wbm_band)
             logger.debug('WBM profile: %i' % wbm_pro)
 
@@ -798,10 +796,10 @@ def _steadystate_power_liouvillian(L, ss_args, has_mkl=0):
         _rcm_end = time.time()
         ss_args['info']['rcm_time'] = _rcm_end-_rcm_start
         rev_perm = np.argsort(perm2)
-        L = sp_permute(L, perm2, perm2, kind)
+        L = permute(L, perm2, perm2, kind)
         if settings.debug:
-            new_band = sp_bandwidth(L)[0]
-            new_pro = sp_profile(L)[0]
+            new_band = bandwidth(L)[0]
+            new_pro = profile(L)[0]
             logger.debug('RCM bandwidth: %i' % new_band)
             logger.debug('Bandwidth reduction factor: %f'
                          % (old_band/new_band))
@@ -1162,8 +1160,8 @@ def _pseudo_inverse_sparse(L, rhoss, w=None, **pseudo_args):
 
     if pseudo_args['use_rcm']:
         perm = reverse_cuthill_mckee(L.data)
-        A = sp_permute(L.data, perm, perm)
-        Q = sp_permute(Q, perm, perm)
+        A = permute(L.data, perm, perm)
+        Q = permute(Q, perm, perm)
     else:
         if ss_args['solver'] == 'scipy':
             A = L.data.tocsc()
@@ -1196,7 +1194,7 @@ def _pseudo_inverse_sparse(L, rhoss, w=None, **pseudo_args):
 
     if pseudo_args['use_rcm']:
         rev_perm = np.argsort(perm)
-        R = sp_permute(R, rev_perm, rev_perm, 'csr')
+        R = permute(R, rev_perm, rev_perm, 'csr')
 
     return Qobj(R, dims=L.dims)
 

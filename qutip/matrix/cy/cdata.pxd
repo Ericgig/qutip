@@ -1,3 +1,8 @@
+#!python
+#cython: language_level=3
+
+cimport numpy as cnp
+
 cdef class Cdata:
   cdef:
     int nrows

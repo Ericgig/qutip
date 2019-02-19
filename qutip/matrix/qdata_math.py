@@ -1,5 +1,5 @@
 
-from qutip.cy.csr_math import *
+from qutip.matrix.cy.csr_math import zcsr_mult, zcsr_spmm_tr, zcsr_inner, zcsr_mult, zcsr_kron, zcsr_expect_ket
 
 def mult(op1, op2, isherm):
     if op1.format == op2.format:

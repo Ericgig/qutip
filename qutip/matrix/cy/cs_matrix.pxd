@@ -4,7 +4,7 @@ import numpy as np
 cimport numpy as np
 cimport numpy as cnp
 cimport cython
-cimport qutip.matrix.cy.cdata
+from qutip.matrix.cy.cdata cimport Cdata
 import qutip.settings as qset
 from libcpp cimport bool
 
@@ -50,7 +50,7 @@ cdef class cy_cs_matrix(Cdata):
 
     cpdef isdiag(self)
 
-    cpdef isherm(self, double tol = qset.atol)
+    cpdef isherm(self, double tol=*)
 
     cpdef complex trace(self)
 
@@ -81,6 +81,6 @@ cdef class cy_cs_matrix(Cdata):
 
     cdef double _max_sum_sec(self)
 
-    cdef void _zcsr_trans_core(self, cy_csr_matrix out) nogil
+    cdef void _zcs_trans_core(self, cy_cs_matrix out) nogil
 
-    cdef void _zcsr_adjoint_core(self, cy_csr_matrix out) nogil
+    cdef void _zcs_adjoint_core(self, cy_cs_matrix out) nogil

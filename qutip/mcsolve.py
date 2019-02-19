@@ -271,7 +271,7 @@ class SolverConfiguration():
             self.H_td = sys.H_td
             self.Hc_td = sys.Hc_td
             self.h_func = sys.h_func
-            self.h_func_args = [args if args or sys.h_func_args]
+            self.h_func_args = [args if args else sys.h_func_args]
 
             if args:
                 [c_op.arguments(args) for c_op in self.td_c_ops]
@@ -441,12 +441,13 @@ def mcsolve(H, psi0, tlist, c_ops=[], e_ops=[], ntraj=None,
     output.seeds = config.options.seeds
 
     # state vectors
-    if (mc.psi_out is not None
+    """if (mc.psi_out is not None and
             config.options.average_states and
             config.ntraj != 1):
+        
 
     elif mc.psi_out is not None:
-        output.states = mc.psi_out
+        output.states = mc.psi_out"""
 
     if mc.psi_out is not None:
         if config.options.steady_state_average:

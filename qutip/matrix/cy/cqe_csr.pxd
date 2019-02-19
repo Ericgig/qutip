@@ -1,4 +1,5 @@
-
+#!python
+#cython: language_level=3
 
 
 from qutip.matrix.cy.csr_matrix cimport cy_csr_matrix

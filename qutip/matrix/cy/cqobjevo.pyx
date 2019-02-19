@@ -33,6 +33,8 @@
 #    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
+cimport numpy as np
+import numpy as np
 """
 Contain the cython interface of QobjEvo.
 The parent class "CQobjEvo" set the interface.
@@ -71,6 +73,7 @@ In omp/cqobjevo_omp:
   - CQobjEvoTdOmp
   - CQobjEvoTdMatchedOmp
 """
+
 cdef class CQobjEvo:
     """
     Interface for the CQobjEvo's variantes

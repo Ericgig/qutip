@@ -1,6 +1,10 @@
 # base class for all Qobj data, mainly here as a template to know what to do
 # when adding a new format. also for type checks
 # Instanting it would not result in much.
+
+import qutip.settings as settings
+
+
 class _qdata:
     def __init__(self):
         self.format = "None"
@@ -137,13 +141,13 @@ class _qdata:
         """
         raise NotImplementedError("dummy class")
 
-    def mul_vec(self, in ):
+    def mul_vec(self, in_):
         """ out = self * in
         used in solver iterations: should be fast
         """
         raise NotImplementedError("dummy class")
 
-    def mul_vec_py(self, in, out, alpha):
+    def mul_vec_py(self, in_, out, alpha):
         """ out = out + alpha * self * in
         used in solver iterations: should be fast
         """

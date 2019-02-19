@@ -1,5 +1,19 @@
+#!python
+#cython: language_level=3
 cimport cython
 from libc.math cimport fabs
+from qutip.cy.complex_math cimport real, imag
+from libcpp cimport bool
+cimport numpy as cnp
+import numpy as np
+
+cnp.import_array()
+cdef extern from "numpy/arrayobject.h" nogil:
+    void PyArray_ENABLEFLAGS(cnp.ndarray arr, int flags)
+    void PyDataMem_FREE(void * ptr)
+    void PyDataMem_RENEW(void * ptr, size_t size)
+    void PyDataMem_NEW_ZEROED(size_t size, size_t elsize)
+    void PyDataMem_NEW(size_t size)
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -45,7 +59,8 @@ cpdef cnp.ndarray[int, ndim=2, mode='c'] select(int[::1] sel, int[::1] dims, int
         for kk in range(jj+1,sel.shape[0]):
             _prd *= dims[sel[kk]]
         for ii in range(M):
-            ilist[ii, _sel] = <int>(trunc(ii / _prd) % dims[_sel])
+            #ilist[ii, _sel] = <int>(trunc(ii / _prd) % dims[_sel])
+            ilist[ii, _sel] = ((ii // _prd) % dims[_sel])
     return ilist
 
 
@@ -60,7 +75,7 @@ def index_permute(int [::1] idx_arr,
     cdef int ii, n, dim, idx, orderr
 
     #the fastest way to allocate memory for a temporary array
-    cdef int * multi_idx = <int*> malloc(sizeof(int) * ndims)
+    cdef int * multi_idx = <int*> PyDataMem_NEW(sizeof(int) * ndims)
 
     try:
         for ii from 0 <= ii < idx_arr.shape[0]:
@@ -82,4 +97,4 @@ def index_permute(int [::1] idx_arr,
 
             idx_arr[ii] = idx
     finally:
-        free(multi_idx)
+        PyDataMem_FREE(multi_idx)
