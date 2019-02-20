@@ -34,7 +34,7 @@
 operators, and related functions.
 """
 
-__all__ = ['Qobj', 'qobj_list_evaluate', 'ptrace', 'dag', 'isequal',
+__all__ = ['Qobj', 'ptrace', 'dag', 'isequal',
            'issuper', 'isoper', 'isoperket', 'isoperbra', 'isket', 'isbra',
            'isherm', 'shape', 'dims']
 
@@ -57,12 +57,10 @@ import scipy.linalg as la
 import qutip.settings as settings
 from qutip import __version__
 from qutip.dimensions import type_from_dims, enumerate_flat, collapse_dims_super
+from qutip.matrix.qdata import _qdata
 
 # all this to be removed
 import scipy.sparse as sp
-from qutip.qdata import qdata_empty, qdata_identity, qdata
-from qutip.matrix.qdata import _qdata
-from qutip.permute import _permute
 
 import sys
 if sys.version_info.major >= 3:
@@ -221,7 +219,7 @@ class Qobj(object):
     __array_priority__ = 100  # sets Qobj priority above numpy arrays
 
     def __init__(self, inpt=None, dims=[[], []], shape=[],
-                 type=None, isherm=None, copy=True,
+                 type=None, isherm=None, copy=True, format="csr",
                  fast=False, superrep=None, isunitary=None):
         """
         Qobj constructor.
@@ -248,7 +246,7 @@ class Qobj(object):
         if isinstance(inpt, Qobj):
             # if input is already Qobj then return identical copy
 
-            self._data = inpt.copy()
+            self._data = inpt.data.copy()
 
             if not np.any(dims):
                 # Dimensions of quantum object used for keeping track of tensor
@@ -263,14 +261,9 @@ class Qobj(object):
             self._data = inpt.copy()
 
             if not np.any(dims):
-                # Dimensions of quantum object used for keeping track of tensor
-                # components
-                self.dims = inpt.dims
+                self.dims = [[int(inpt.shape[0])], [int(inpt.shape[1])]]
             else:
                 self.dims = dims
-
-            self.superrep = inpt.superrep
-            self._isunitary = inpt._isunitary
 
         elif inpt is None:
             # initialize an empty Qobj with correct dimensions and shape
@@ -291,7 +284,7 @@ class Qobj(object):
 
         elif isinstance(inpt, (list, tuple, np.ndarray)):
             # case where input is a list
-            data = np.array(inpt)
+            data = np.array(inpt, dtype=complex)
             if len(data.shape) == 1:
                 # if list has only one dimension (i.e [5,4])
                 data = data.transpose()
@@ -309,7 +302,7 @@ class Qobj(object):
             if inpt.ndim == 1:
                 inpt = inpt[:, np.newaxis]
 
-            self._data = qdata_from_sparse(_tmp, format=format, copy=copy)
+            self._data = qdata_from_sparse(inpt, format=format, copy=copy)
 
             if not np.any(dims):
                 self.dims = [[int(inpt.shape[0])], [int(inpt.shape[1])]]
@@ -750,7 +743,7 @@ class Qobj(object):
 
         else:
             full = self.full()
-            if all(np.imag(full) == 0):
+            if np.all(np.imag(full) == 0):
                 s += str(np.real(full))
             else:
                 s += str(full)
@@ -2363,6 +2356,8 @@ def isherm(Q):
 # TRAILING IMPORTS
 # We do a few imports here to avoid circular dependencies.
 from qutip.eseries import eseries
+from qutip.qdata import (qdata_empty, qdata_identity, qdata,
+                        qdata_from_sparse, qdata_from_dense)
 import qutip.superop_reps as sr
 import qutip.tensor as tensor
 import qutip.operators as ops
@@ -2370,3 +2365,4 @@ import qutip.metrics as mts
 import qutip.states
 import qutip.superoperator
 from qutip.matrix.qdata_math import inner, mat_elem
+from qutip.permute import _permute

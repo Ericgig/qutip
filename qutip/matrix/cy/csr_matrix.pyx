@@ -836,7 +836,7 @@ cpdef cy_csr_matrix csr_from_dense(complex[:, :] mat):
     """
     cdef int nnz = 0
     cdef size_t ii, jj
-    cdef cy_csr_matrix out = cy_csr_matrix
+    cdef cy_csr_matrix out = cy_csr_matrix()
     cdef int nrows = mat.shape[0], ncols = mat.shape[1]
     out.init(nrows*ncols, nrows, ncols, nrows*ncols)
 

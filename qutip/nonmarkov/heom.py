@@ -52,7 +52,7 @@ from qutip.cy.solverfuncs import cy_ode_rhs
 from qutip.solver import Options, Result, Stats
 from qutip.ui.progressbar import BaseProgressBar, TextProgressBar
 from qutip.cy.heom import cy_pad_csr
-from qutip.data_math import kron
+from qutip.matrix.qdata_math import kron
 from qutip.qdata import qdata_empty, qdata_identity
 
 

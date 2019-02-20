@@ -55,12 +55,12 @@ from qutip.superoperator import liouvillian, vec2mat, spre
 from qutip.matrix_utils import permute, bandwidth, reshape, profile
 
 from qutip.superoperator import liouvillian, vec2mat
-from qutip.data_math import kron
+from qutip.matrix.qdata_math import kron
 from qutip.graph import reverse_cuthill_mckee, weighted_bipartite_matching
 from qutip import (mat2vec, tensor, identity, operator_to_vector)
 import qutip.settings as settings
 from qutip.utilities import _version2int
-from qutip.qdata import qdata_from_numpy
+from qutip.qdata import qdata_from_dense
 
 import qutip.logging_utils
 logger = qutip.logging_utils.get_logger()
@@ -468,7 +468,7 @@ def _steadystate_direct_sparse(L, ss_args):
     if ss_args['use_rcm']:
         v = v[np.ix_(rev_perm,)]
 
-    data = qdata_from_numpy(vec2mat(v), n, n)
+    data = qdata_from_dense(vec2mat(v), n, n)
     data = 0.5 * (data + data.H)
     if ss_args['return_info']:
         return Qobj(data, dims=dims, isherm=True), ss_args['info']
@@ -540,7 +540,7 @@ def _steadystate_eigen(L, ss_args):
     if ss_args['use_rcm']:
         eigvec = eigvec[np.ix_(rev_perm,)]
     _temp = vec2mat(eigvec)
-    data = qdata_from_numpy(_temp, _temp.shape[0], _temp.shape[1])
+    data = qdata_from_dense(_temp, _temp.shape[0], _temp.shape[1])
     data = 0.5 * (data + data.H)
     out = Qobj(data, dims=dims, isherm=True)
     if ss_args['return_info']:
@@ -966,7 +966,7 @@ def _steadystate_power(L, ss_args):
     else:
         data = data / la.norm(v)
 
-    data = qdata_from_numpy(vec2mat(data),
+    data = qdata_from_dense(vec2mat(data),
                                     rhoss.shape[0],
                                     rhoss.shape[0])
     rhoss.data = 0.5 * (data + data.H)

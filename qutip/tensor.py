@@ -40,7 +40,7 @@ __all__ = [
 
 import numpy as np
 import scipy.sparse as sp
-from qutip.data_math import kron
+from qutip.matrix.qdata_math import kron
 from qutip.qobj import Qobj
 from qutip.permute import reshuffle
 from qutip.superoperator import operator_to_vector

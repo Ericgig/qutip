@@ -282,7 +282,8 @@ cdef class CQobjEvoTd(CQobjEvo):
     @cython.cdivision(True)
     cdef void _call_core(self, cy_csr_matrix out, complex* coeff):
         cdef int i
-        cdef _csr_mat* previous, * next
+        cdef _csr_mat* previous
+        cdef _csr_mat* next
 
         if(self.num_ops ==1):
             _zcsr_add_core(self.cte.data, self.cte.indices, self.cte.indptr,

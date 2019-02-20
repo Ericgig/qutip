@@ -41,7 +41,7 @@ from qutip.qobj import Qobj
 from qutip.qobjevo import QobjEvo
 from qutip.qdata import qdata, qdata_identity
 from qutip.matrix_utils import reshape
-from qutip.data_math import kron
+from qutip.matrix.qdata_math import kron
 from functools import partial
 
 

@@ -36,7 +36,7 @@ import numpy as np
 cimport numpy as np
 cimport cython
 cimport libc.math
-from qutip.cy.cqobjevo cimport CQobjEvo
+from qutip.matrix.cy.cqobjevo cimport CQobjEvo
 from qutip.cy.brtools cimport ZHEEVR
 from qutip.qobj import Qobj
 from qutip.superoperator import vec2mat

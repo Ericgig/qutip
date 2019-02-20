@@ -38,7 +38,7 @@ import scipy.sparse as sp
 
 from qutip.qobj import Qobj, isoper
 from qutip.eseries import eseries
-from qutip.data_math import expect_ket, spmm_tr
+from qutip.matrix.qdata_math import expect_ket, spmm_tr
 
 def expect_rho_vec(operdata, vec, herm):
     expt = operdata.expect_rho_vec(vec)

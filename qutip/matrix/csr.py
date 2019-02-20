@@ -85,7 +85,8 @@ class csr_qmatrix(csr_matrix, _qdata):
         csr_qmatrix only when other is also a csr_qmatrix.
         """
         other_csr_qmatrix = isinstance(other, csr_qmatrix)
-        out = csr_matrix._binopt(self, other, op)
+        self_sp = csr_matrix(self, copy=False)
+        out = csr_matrix._binopt(self_sp, other, op)
         if other_csr_qmatrix and out.data.dtype != np.bool_:
             out = csr_qmatrix(out)
         return out
@@ -138,8 +139,9 @@ class csr_qmatrix(csr_matrix, _qdata):
             ccdata = self.cdata.copy()
             ccdata.adjoint()
             return ccdata.to_qdata()
-        self.cdata.adjoint()
-        return self
+        else:
+            self.cdata.adjoint()
+            return self
 
     def tidyup(self, atol=settings.auto_tidyup_atol):
         """
@@ -152,12 +154,12 @@ class csr_qmatrix(csr_matrix, _qdata):
                 if omp_tidyup(self.data, atol, self.nnz, settings.num_cpus):
                     self.eliminate_zeros()
             else:
-                if tidyup(self.data, atol, self.nnz):
+                if cy_tidyup(self.data, atol, self.nnz):
                     self.eliminate_zeros()
         return self
 
     @property
-    def cdata():
+    def cdata(self):
         if self._cdata is None:
             self._cdata = cy_csr_matrix(self)
         return self._cdata
@@ -310,5 +312,5 @@ def csr_qmatrix_from_sparse(A):
     return csr_qmatrix_from_csr(csr)
 
 
-from qutip.matrix.cy.csr_matrix import cy_csr_matrix
+from qutip.matrix.cy.csr_matrix import cy_csr_matrix, csr_from_dense
 from qutip.matrix.cy.csr_math import zcsr_mult

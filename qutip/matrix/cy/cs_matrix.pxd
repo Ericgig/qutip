@@ -22,7 +22,7 @@ cdef class cy_cs_matrix(Cdata):
         int numpy_lock
         int is_csr
 
-    cdef void init(self, int nnz, int nrows, int ncols = *, int nptrs = *,
+    cpdef void init(self, int nnz, int nrows, int ncols = *, int nptrs = *,
                         int max_length = *, int init_zeros = *, int csr = *)
 
     cdef void free(self)
@@ -81,6 +81,6 @@ cdef class cy_cs_matrix(Cdata):
 
     cdef double _max_sum_sec(self)
 
-    cdef void _zcs_trans_core(self, cy_cs_matrix out) nogil
+    cpdef void _zcs_trans_core(self, cy_cs_matrix out) # nogil
 
-    cdef void _zcs_adjoint_core(self, cy_cs_matrix out) nogil
+    cpdef void _zcs_adjoint_core(self, cy_cs_matrix out) # nogil

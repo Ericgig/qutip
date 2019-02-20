@@ -55,7 +55,7 @@ import qutip.settings as qset
 from qutip.cy.openmp.utilities import check_use_openmp
 
 from qutip.cy.solverfuncs import cy_ode_rhs
-from qutip.qdata import qdata_from_numpy
+from qutip.qdata import qdata_from_dense
 
 from qutip.cy.br_codegen import BR_Codegen
 from qutip.cy.br_tensor import bloch_redfield_tensor
@@ -351,7 +351,7 @@ def bloch_redfield_solve(R, ekets, rho0, tlist, e_ops=[], options=None, progress
         if not r.successful():
             break
 
-        rho_eb.data = qdata_from_numpy(vec2mat(r.y))
+        rho_eb.data = qdata_from_dense(vec2mat(r.y))
 
         # calculate all the expectation values, or output rho_eb if no
         # expectation value operators are given
@@ -592,7 +592,7 @@ def _td_brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[], args={},
                             "the nsteps parameter in the Options class.")
 
         if options.store_states or expt_callback:
-            rho.data = qdata_from_numpy(vec2mat(_ode.y))
+            rho.data = qdata_from_dense(vec2mat(_ode.y))
 
             if options.store_states:
                 output.states.append(Qobj(rho, isherm=True))
@@ -621,7 +621,7 @@ def _td_brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[], args={},
         _cython_build_cleanup(config.tdname)
 
     if options.store_final_state:
-        rho.data = qdata_from_numpy(vec2mat(_ode.y))
+        rho.data = qdata_from_dense(vec2mat(_ode.y))
         output.final_state = Qobj(rho, dims=rho0.dims, isherm=True)
 
     return output

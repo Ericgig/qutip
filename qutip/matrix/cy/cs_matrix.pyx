@@ -99,7 +99,7 @@ cdef class cy_cs_matrix(Cdata):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void init(self, int nnz, int nrows, int ncols = 0, int nptrs = 0,
+    cpdef void init(self, int nnz, int nrows, int ncols = 0, int nptrs = 0,
                         int max_length = 0, int init_zeros = 1, int csr = 1):
             """
             Initialize CS_Matrix struct. Matrix is assumed to be square with
@@ -146,6 +146,7 @@ cdef class cy_cs_matrix(Cdata):
                 raise_error_cs(-1)
             self.nnz = nnz
             self.nrows = nrows
+            self.ncols = ncols
             self.nptrs = nptrs
             self.is_set = 1
             self.max_length = max_length
@@ -370,7 +371,7 @@ cdef class cy_cs_matrix(Cdata):
         if self.nrows != self.ncols:
             return 0
 
-        cdef int * out_ptr = <int *>PyDataMem_NEW_ZEROED(self.ncols+1, sizeof(int))
+        cdef int * out_ptr = <int *>PyDataMem_NEW_ZEROED(self.nptrs+1, sizeof(int))
 
         for ii in range(self.nptrs):
             for jj in range(self.indptr[ii], self.indptr[ii+1]):
@@ -451,13 +452,15 @@ cdef class cy_cs_matrix(Cdata):
         cdef cy_cs_matrix B = cy_cs_matrix()
         B.init(self.nnz, self.ncols, self.nrows,
                nptrs=self.ncols if self.is_csr else self.nrows,
-               max_length =self.nnz, init_zeros = 0, csr=self.is_csr)
+               max_length=self.nnz, init_zeros=1, csr=self.is_csr)
 
         self._zcs_trans_core(B)
 
         self.free()
         self.ncols = B.ncols
         self.nrows = B.nrows
+        self.nptrs = B.nptrs
+        self.is_csr = B.is_csr
         self.is_set = 1
         self.data = B.data
         self.indptr = B.indptr
@@ -476,13 +479,15 @@ cdef class cy_cs_matrix(Cdata):
         cdef cy_cs_matrix B = cy_cs_matrix()
         B.init(self.nnz, self.ncols, self.nrows,
                nptrs=self.ncols if self.is_csr else self.nrows,
-               max_length =self.nnz, init_zeros = 0, csr=self.is_csr)
+               max_length=self.nnz, init_zeros=1, csr=self.is_csr)
 
         self._zcs_adjoint_core(B)
 
         self.free()
         self.ncols = B.ncols
         self.nrows = B.nrows
+        self.nptrs = B.nptrs
+        self.is_csr = B.is_csr
         self.is_set = 1
         self.data = B.data
         self.indptr = B.indptr
@@ -688,7 +693,7 @@ cdef class cy_cs_matrix(Cdata):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void _zcs_trans_core(self, cy_cs_matrix out) nogil:
+    cpdef void _zcs_trans_core(self, cy_cs_matrix out):# nogil:
         cdef int k, nxt, other_shape
         cdef size_t ii, jj
         other_shape = self.ncols if self.is_csr else self.nrows
@@ -716,7 +721,7 @@ cdef class cy_cs_matrix(Cdata):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void _zcs_adjoint_core(self, cy_cs_matrix out) nogil:
+    cpdef void _zcs_adjoint_core(self, cy_cs_matrix out):# nogil:
         cdef int k, nxt, other_shape
         cdef size_t ii, jj
         other_shape = self.ncols if self.is_csr else self.nrows
