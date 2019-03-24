@@ -93,15 +93,17 @@ import scipy.optimize as spopt
 # QuTiP
 from qutip import Qobj
 
-
-import importlib
-import importlib.util
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/stats.py"
-spec = importlib.util.spec_from_file_location("stats", moduleName)
-stats = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(stats)
-Stats = stats.Stats
-
+dev_import = False
+if dev_import:
+    import importlib
+    import importlib.util
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/stats.py"
+    spec = importlib.util.spec_from_file_location("stats", moduleName)
+    stats = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(stats)
+    Stats = stats.Stats
+else:
+    from qutip.control_2.stats import Stats
 
 
 class solverEnd(Exception):

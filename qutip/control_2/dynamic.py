@@ -55,45 +55,55 @@ logger = logging.get_logger()
 #import qutip.control.symplectic as sympl
 #import qutip.control.dump as qtrldump
 
-import importlib
-import importlib.util
+dev_import = False
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/matrix.py"
-spec = importlib.util.spec_from_file_location("matrix", moduleName)
-matrix = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(matrix)
+if dev_import:
+    import importlib
+    import importlib.util
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/tslotcomp.py"
-spec = importlib.util.spec_from_file_location("tslotcomp", moduleName)
-tslotcomp = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(tslotcomp)
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/matrix.py"
+    spec = importlib.util.spec_from_file_location("matrix", moduleName)
+    matrix = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(matrix)
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/fid_comp.py"
-spec = importlib.util.spec_from_file_location("fidcomp", moduleName)
-fidcomp = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(fidcomp)
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/tslotcomp.py"
+    spec = importlib.util.spec_from_file_location("tslotcomp", moduleName)
+    tslotcomp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tslotcomp)
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/transfer_function.py"
-spec = importlib.util.spec_from_file_location("transfer_functions", moduleName)
-transfer_functions = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(transfer_functions)
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/fid_comp.py"
+    spec = importlib.util.spec_from_file_location("fidcomp", moduleName)
+    fidcomp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fidcomp)
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/stats.py"
-spec = importlib.util.spec_from_file_location("stats", moduleName)
-stats = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(stats)
-Stats = stats.Stats
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/transfer_function.py"
+    spec = importlib.util.spec_from_file_location("transfer_functions", moduleName)
+    transfer_functions = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(transfer_functions)
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/optimize.py"
-spec = importlib.util.spec_from_file_location("optimize", moduleName)
-optimize = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(optimize)
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/stats.py"
+    spec = importlib.util.spec_from_file_location("stats", moduleName)
+    stats = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(stats)
+    Stats = stats.Stats
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/pulsegen.py"
-spec = importlib.util.spec_from_file_location("pulsegen", moduleName)
-pulsegen = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(pulsegen)
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/optimize.py"
+    spec = importlib.util.spec_from_file_location("optimize", moduleName)
+    optimize = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(optimize)
 
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/pulsegen.py"
+    spec = importlib.util.spec_from_file_location("pulsegen", moduleName)
+    pulsegen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pulsegen)
+else:
+    import qutip.control_2.pulsegen as pulsegen
+    import qutip.control_2.optimize as optimize
+    import qutip.control_2.transfer_function as transfer_functions
+    import qutip.control_2.fid_comp as fidcomp
+    import qutip.control_2.tslotcomp as tslotcomp
+    import qutip.control_2.matrix as matrix
+    from qutip.control_2.stats import Stats
 
 from qutip.control.optimresult import OptimResult
 """

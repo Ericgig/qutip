@@ -7,15 +7,22 @@ import qutip as qt
 import importlib
 import importlib.util
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/dynamic.py"
-spec = importlib.util.spec_from_file_location("dynamic", moduleName)
-dynamic = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(dynamic)
 
-"""moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/optimize.py"
-spec = importlib.util.spec_from_file_location("optimize", moduleName)
-optimize = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(optimize)"""
+dev_import = False
+if dev_import:
+    import importlib
+    import importlib.util
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/dynamic.py"
+    spec = importlib.util.spec_from_file_location("dynamic", moduleName)
+    dynamic = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dynamic)
+
+    """moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/optimize.py"
+    spec = importlib.util.spec_from_file_location("optimize", moduleName)
+    optimize = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(optimize)"""
+else:
+    import qutip.control_2.dynamic
 
 def grape_unitary(H, ctrls, target, times=None,
                   u_start=None, u_limits=None, phase_sensitive=False,

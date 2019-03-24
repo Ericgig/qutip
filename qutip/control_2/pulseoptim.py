@@ -107,16 +107,24 @@ import qutip.control.propcomp as propcomp
 import qutip.control.pulsegen as pulsegen
 #import qutip.control.pulsegencrab as pulsegencrab"""
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/pulsegen.py"
-spec = importlib.util.spec_from_file_location("pulsegen", moduleName)
-pulsegen = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(pulsegen)
+dev_import = False
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/transfer_functions.py"
-spec = importlib.util.spec_from_file_location("transfer_functions", moduleName)
-transfer_functions = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(transfer_functions)
+if dev_import:
+    import importlib
+    import importlib.util
 
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/pulsegen.py"
+    spec = importlib.util.spec_from_file_location("pulsegen", moduleName)
+    pulsegen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pulsegen)
+
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/transfer_functions.py"
+    spec = importlib.util.spec_from_file_location("transfer_functions", moduleName)
+    transfer_functions = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(transfer_functions)
+else:
+    import qutip.control_2.pulsegen as pulsegen
+    import qutip.control_2.transfer_function as transfer_function
 
 
 warnings.simplefilter('always', DeprecationWarning) #turn off filter

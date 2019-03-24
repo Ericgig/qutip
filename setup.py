@@ -64,7 +64,8 @@ REQUIRES = ['numpy (>=1.8)', 'scipy (>=0.15)', 'cython (>=0.21)']
 INSTALL_REQUIRES = ['numpy>=1.8', 'scipy>=0.15', 'cython>=0.21']
 PACKAGES = ['qutip', 'qutip/ui', 'qutip/cy', 'qutip/cy/src',
             'qutip/qip', 'qutip/qip/models',
-            'qutip/qip/algorithms', 'qutip/control', 'qutip/nonmarkov',
+            'qutip/qip/algorithms', 'qutip/control', 'qutip/control_2',
+            'qutip/nonmarkov',
             'qutip/_mkl', 'qutip/tests', 'qutip/legacy',
             'qutip/cy/openmp', 'qutip/cy/openmp/src']
 PACKAGE_DATA = {

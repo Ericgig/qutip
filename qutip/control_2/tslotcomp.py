@@ -96,15 +96,21 @@ from qutip import Qobj
 import qutip.logging_utils as logging
 logger = logging.get_logger()
 
-import importlib
-import importlib.util
+dev_import = False
 
-moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/matrix.py"
-spec = importlib.util.spec_from_file_location("mat", moduleName)
-mat = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mat)
+if dev_import:
+    import importlib
+    import importlib.util
+
+    moduleName = "/home/eric/algo/qutip/qutip/qutip/control_2/matrix.py"
+    spec = importlib.util.spec_from_file_location("mat", moduleName)
+    mat = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mat)
+else:
+    import qutip.control_2.matrix as mat
 control_dense = mat.control_dense
 control_sparse = mat.control_sparse
+
 
 """
 def _is_unitary(prop):
