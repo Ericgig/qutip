@@ -40,6 +40,7 @@ cdef class CQobjEvo:
     cdef object dims
     cdef int super
     cdef int num_ops
+    cdef int dyn_args
 
     #cdef void (*factor_ptr)(double, complex*)
     cdef object factor_func
@@ -50,10 +51,13 @@ cdef class CQobjEvo:
     cdef complex* coeff_ptr
 
     cdef void _factor(self, double t)
+    cdef void _factor_dyn(self, double t, complex* state, int[::1] state)
     cdef void _mul_vec(self, double t, complex* vec, complex* out)
     cdef void _mul_matf(self, double t, complex* mat, complex* out,
                     int nrow, int ncols)
     cdef void _mul_matc(self, double t, complex* mat, complex* out,
                     int nrow, int ncols)
-    cdef complex _expect(self, double t, complex* vec, int isherm)
-    cdef complex _expect_super(self, double t, complex* rho, int isherm)
+    cpdef complex expect(self, double t, complex[::1] vec)
+    cdef complex _expect(self, double t, complex* vec)
+    cdef complex _expect_super(self, double t, complex* rho)
+    cdef complex _overlapse(self, double t, complex* oper)

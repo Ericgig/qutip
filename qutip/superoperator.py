@@ -405,3 +405,5 @@ def sprepost(A, B):
                  _drop_projected_dims(B.dims[0])]]
         data = kron(B.data.T, A.data)
         return Qobj(data, dims=dims, superrep='super')
+
+from qutip.qobjevo import QobjEvo

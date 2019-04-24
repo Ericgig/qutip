@@ -146,6 +146,10 @@ cdef class CQobjEvo:
         """tr( self * rho )"""
         return 0.
 
+    cdef complex _overlapse(self, double t, complex* oper):
+        """tr( self * oper )"""
+        return 0.
+
     def set_factor(self, func=None, ptr=False, obj=None):
         self.factor_use_cobj = 0
         if func is not None:
@@ -165,6 +169,19 @@ cdef class CQobjEvo:
             for i in range(self.num_ops):
                 self.coeff_ptr[i] = coeff[i]
 
+    cdef void _factor_dyn(self, double t, complex* state, int[::1] shape):
+        cdef int len_
+        if self.dyn_args:
+            if self.factor_use_cobj:
+                # print("factor_use_cobj")
+                self.factor_cobj._dyn_args(t, state, shape)
+            else:
+                len_ = shape[0] * shape[1]
+                # print(len_, shape.shape[0])
+                self.factor_func.dyn_args(t, np.array(<complex[:len_]> state),
+                                          np.array(shape))
+        self._factor(t)
+
     def mul_vec(self, double t, complex[::1] vec):
         cdef np.ndarray[complex, ndim=1] out = np.zeros(self.shape0,
                                                         dtype=complex)
@@ -178,17 +195,17 @@ cdef class CQobjEvo:
         cdef unsigned int ncols = mat.shape[1]
         if mat.flags["F_CONTIGUOUS"]:
             out = np.zeros((sp_rows,ncols), dtype=complex, order="F")
-            self._mul_matf(t,&mat[0,0],&out[0,0],nrows,ncols)
+            self._mul_matf(t, &mat[0,0], &out[0,0], nrows, ncols)
         else:
             out = np.zeros((sp_rows,ncols), dtype=complex)
-            self._mul_matc(t,&mat[0,0],&out[0,0],nrows,ncols)
+            self._mul_matc(t, &mat[0,0], &out[0,0], nrows, ncols)
         return out
 
-    def expect(self, double t, complex[::1] vec, int isherm):
+    cpdef complex expect(self, double t, complex[::1] vec):
         if self.super:
-            return self._expect_super(t, &vec[0], isherm)
+            return self._expect_super(t, &vec[0])
         else:
-            return self._expect(t, &vec[0], isherm)
+            return self._expect(t, &vec[0])
 
     def ode_mul_mat_f_vec(self, double t, complex[::1] mat):
         cdef np.ndarray[complex, ndim=1] out = np.zeros(self.shape1*self.shape1,
@@ -201,6 +218,9 @@ cdef class CQobjEvo:
 
     def call_with_coeff(self, complex[::1] coeff, int data=0):
         return None
+
+    def has_dyn_args(self, int dyn_args):
+        self.dyn_args = dyn_args
 
     def set_data(self, cte):
         pass

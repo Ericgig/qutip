@@ -106,6 +106,7 @@ def stochastic_solvers():
         Scheme keeping the positivity of the density matrix. (smesolve only)
         -Order strong 1.0?
         -Code: 'rouchon', 'Rouchon'
+        Eq. 4 of arXiv:1410.5345 with eta=1 
         Efficient Quantum Filtering for Quantum Feedback Control
         Pierre Rouchon, Jason F. Ralph
         arXiv:1410.5345 [quant-ph]
@@ -643,7 +644,7 @@ def smesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
 def ssesolve(H, psi0, times, sc_ops=[], e_ops=[],
              _safe_mode=True, args={}, **kwargs):
     """
-    Solve stochastic master equation. Dispatch to specific solvers
+    Solve stochastic schrodinger equation. Dispatch to specific solvers
     depending on the value of the `solver` keyword argument.
 
     Parameters
@@ -702,7 +703,7 @@ def ssesolve(H, psi0, times, sc_ops=[], e_ops=[],
     if _safe_mode:
         _safety_checks(sso)
 
-    if sso.solver_code == 110:
+    if sso.solver_code == 120:
         raise Exception("rouchon only work with smesolve")
 
     if sso.method == 'homodyne' or sso.method is None:
@@ -744,7 +745,7 @@ def ssesolve(H, psi0, times, sc_ops=[], e_ops=[],
 
     sso.LH = sso.H * (-1j*sso.dt)
     for ops in sso.sops:
-        sso.LH -= ops[0].norm()*0.5*sso.dt
+        sso.LH -= ops[0]._cdc()*0.5*sso.dt
 
     sso.ce_ops = [QobjEvo(op) for op in sso.e_ops]
     sso.cm_ops = [QobjEvo(op) for op in sso.m_ops]
@@ -809,11 +810,11 @@ def _positive_map(sso, e_ops_dict):
         return spre(op) * spost(op.dag())
 
     for op in sso.c_ops:
-        LH -= op.norm() * sso.dt * 0.5
+        LH -= op._cdc() * sso.dt * 0.5
         sso.pp += op.apply(_prespostdag)._f_norm2() * sso.dt
 
     for i, op in enumerate(sops):
-        LH -= op.norm() * sso.dt * 0.5
+        LH -= op._cdc() * sso.dt * 0.5
         sso.sops += [(spre(op) + spost(op.dag())) * sso.dt]
         sso.preops += [spre(op)]
         sso.postops += [spost(op.dag())]
@@ -924,8 +925,8 @@ def photocurrent_mesolve(H, rho0, times, c_ops=[], sc_ops=[], e_ops=[],
     def _prespostdag(op):
         return spre(op) * spost(op.dag())
 
-    sso.sops = [[spre(op.norm()) + spost(op.norm()),
-                 spre(op.norm()),
+    sso.sops = [[spre(op._cdc()) + spost(op._cdc()),
+                 spre(op._cdc()),
                  op.apply(_prespostdag)._f_norm2()] for op in sso.sc_ops]
     sso.ce_ops = [QobjEvo(spre(op)) for op in sso.e_ops]
     sso.cm_ops = [QobjEvo(spre(op)) for op in sso.m_ops]
@@ -1006,10 +1007,10 @@ def photocurrent_sesolve(H, psi0, times, sc_ops=[], e_ops=[],
 
     sso.solver_obj = PcSSESolver
     sso.solver_name = "photocurrent_sesolve"
-    sso.sops = [[op, op.norm()] for op in sso.sc_ops]
+    sso.sops = [[op, op._cdc()] for op in sso.sc_ops]
     sso.LH = sso.H * (-1j*sso.dt)
     for ops in sso.sops:
-        sso.LH -= ops[0].norm()*0.5*sso.dt
+        sso.LH -= ops[0]._cdc()*0.5*sso.dt
     sso.ce_ops = [QobjEvo(op) for op in sso.e_ops]
     sso.cm_ops = [QobjEvo(op) for op in sso.m_ops]
 
@@ -1285,7 +1286,7 @@ def _sesolve_generic(sso, options, progress_bar):
         paths_expect = []
         for result in results:
             paths_expect.append(result[3])
-        data.paths_expect = np.stack(paths_expect)
+        data.runs_expect = np.stack(paths_expect)
 
     # average density matrices
     if options.average_states and np.any(data.states):

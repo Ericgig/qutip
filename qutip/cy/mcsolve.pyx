@@ -36,15 +36,16 @@
 ###############################################################################
 
 import numpy as np
-import scipy.sparse as sp
-from qutip.qobj import Qobj
-# from qutip.cy.dopri5 import ode_td_dopri
 cimport numpy as np
 cimport cython
+import scipy.sparse as sp
 from scipy.linalg.cython_blas cimport dznrm2 as raw_dznrm2
-from qutip.matrix.cy.cqobjevo cimport CQobjEvo
-from qutip.matrix.cy.cdata cimport Cdata
-from qutip.cy.complex_math cimport conj
+from qutip.qobj import Qobj
+from qutip.cy.cqobjevo cimport CQobjEvo
+from qutip.cy.spmatfuncs cimport cy_expect_psi
+# from qutip.cy.dopri5 import ode_td_dopri
+#from qutip.cy.complex_math cimport conj
+include "complex_math.pxi"
 
 cdef int ONE = 1
 
@@ -52,154 +53,410 @@ cdef double dznrm2(complex[::1] psi):
     cdef int l = psi.shape[0]
     return raw_dznrm2(&l, <complex*>&psi[0], &ONE)
 
-cdef complex[::1] normalize(complex[::1] psi):
+@cython.cdivision(True)
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef np.ndarray[complex, ndim=1] normalize(complex[::1] psi):
     cdef int i, l = psi.shape[0]
     cdef double norm = dznrm2(psi)
-    cdef complex[::1] out = np.empty(l, dtype=complex)
+    cdef np.ndarray[ndim=1, dtype=complex] out = np.empty(l, dtype=complex)
     for i in range(l):
         out[i] = psi[i] / norm
     return out
 
+cdef class CyMcOde:
+    cdef:
+        int steady_state, store_states, col_args
+        int norm_steps, l_vec, num_ops
+        double norm_t_tol, norm_tol
+        list collapses
+        list collapses_args
+        list c_ops
+        list n_ops
+        complex[:,::1] states_out
+        complex[:,::1] ss_out
+        double[::1] n_dp
 
-cdef void sumsteadystate(complex[:, ::1] mean, complex[::1] state):
-    cdef int ii, jj, l_vec = state.shape[0]
-    for ii in range(l_vec):
-      for jj in range(l_vec):
-        mean[ii,jj] += state[ii]*conj(state[jj])
+    def __init__(self, ss, opt):
+        self.c_ops = ss.td_c_ops
+        self.n_ops = ss.td_n_ops
+        self.norm_steps = opt.norm_steps
+        self.norm_t_tol = opt.norm_t_tol
+        self.norm_tol = opt.norm_tol
+        self.steady_state = opt.steady_state_average
+        self.store_states = opt.store_states or opt.average_states
+        self.collapses = []
+        self.l_vec = self.c_ops[0].cte.shape[0]
+        self.num_ops = len(ss.td_n_ops)
+        self.n_dp = np.zeros(self.num_ops)
+
+        if ss.col_args:
+            self.col_args = 1
+            self.collapses_args = ss.args[ss.col_args]
+            if ss.type == "QobjEvo":
+                ss.H_td.coeff_get.get_args()[ss.col_args] = self.collapses_args
+                for c in ss.td_c_ops:
+                    c.coeff_get.get_args()[ss.col_args] = self.collapses_args
+                for c in ss.td_n_ops:
+                    c.coeff_get.get_args()[ss.col_args] = self.collapses_args
+        else:
+            self.col_args = 0
+
+        if self.steady_state:
+            self.ss_out = np.zeros((self.l_vec, self.l_vec), dtype=complex)
+        else:
+            self.ss_out = np.zeros((0, 0), dtype=complex)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef void sumsteadystate(self, complex[::1] state):
+        cdef int ii, jj, l_vec
+        l_vec = state.shape[0]
+        for ii in range(l_vec):
+          for jj in range(l_vec):
+            self.ss_out[ii,jj] += state[ii]*conj(state[jj])
 
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
-def cy_mc_run_ode(ODE, config, prng):
-    cdef int ii, j, jj, k
-    cdef double norm2_psi, norm2_prev, norm2_guess, t_prev, t_final, t_guess
-    cdef np.ndarray[double, ndim=1] rand_vals
-    cdef np.ndarray[complex, ndim=1] y_prev, out_psi = config.psi0
-    cdef np.ndarray[double, ndim=1] tlist = config.tlist
-    cdef int num_times = len(tlist), l_vec = config.psi0.shape[0]
-    cdef int num_e = config.e_num
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def run_ode(self, ODE, tlist_, e_call, prng):
+        cdef np.ndarray[double, ndim=1] rand_vals
+        cdef np.ndarray[double, ndim=1] tlist = np.array(tlist_)
+        cdef np.ndarray[complex, ndim=1] y_prev
+        cdef np.ndarray[complex, ndim=1] out_psi = ODE._y
+        cdef int num_times = tlist.shape[0]
+        cdef int ii, which, k
+        cdef double norm2_prev, norm2_psi
+        cdef double t_prev
 
-    # make array for collapse operator inds
-    cdef np.ndarray[long, ndim=1] cinds = np.arange(len(config.td_c_ops))
+        if self.steady_state:
+            self.sumsteadystate(out_psi)
 
-    cdef CQobjEvo[::1] c_ops = config.td_c_ops
-    cdef CQobjEvo[::1] n_ops = config.td_n_ops
-    cdef Cdata[::1] e_ops = config.e_ops_cdata
-    cdef Cdata cdat
+        if self.store_states:
+            self.states_out = np.zeros((num_times, self.l_vec), dtype=complex)
+            for ii in range(self.l_vec):
+                self.states_out[0, ii] = out_psi[ii]
+        else:
+            self.states_out = np.zeros((1, self.l_vec), dtype=complex)
 
-    cdef np.ndarray[complex, ndim=2] states_out
-    if config.options.steady_state_average:
-        states_out = np.zeros((l_vec, l_vec), dtype=complex)
-    elif config.options.store_states:
-        states_out = np.zeros((num_times, l_vec), dtype=complex)
+        e_call.step(0, out_psi)
+        rand_vals = prng.rand(2)
 
-    cdef np.ndarray[complex, ndim=2] expect_out = np.empty((num_times, num_e),
-                                                           dtype=complex)
-    collapse_times = []
-    which_oper = []
+        # RUN ODE UNTIL EACH TIME IN TLIST
+        norm2_prev = dznrm2(ODE._y) ** 2
+        for k in range(1, num_times):
+            # ODE WHILE LOOP FOR INTEGRATE UP TO TIME TLIST[k]
+            t_prev = ODE.t
+            y_prev = ODE.y
+            while t_prev < tlist[k]:
+                # integrate up to tlist[k], one step at a time.
+                ODE.integrate(tlist[k], step=1)
+                if not ODE.successful():
+                    print(ODE.t, t_prev, tlist[k])
+                    print(ODE._integrator.call_args)
+                    raise Exception("ZVODE failed!")
+                norm2_psi = dznrm2(ODE._y) ** 2
+                if norm2_psi <= rand_vals[0]:
+                    # collapse has occured:
+                    self._find_collapse(ODE, norm2_psi, t_prev, y_prev,
+                                        norm2_prev, rand_vals[0])
+                    t_prev = ODE.t
+                    y_prev = ODE.y
 
-    if config.options.steady_state_average:
-        sumsteadystate(states_out, out_psi)
-    elif config.options.store_states:
-        states_out[0, :] = out_psi
+                    which = self._which_collapse(t_prev, y_prev, rand_vals[1])
+                    y_prev = self._collapse(t_prev, which, y_prev)
+                    ODE.set_initial_value(y_prev, t_prev)
 
-    for ii in range(num_e):
-        cdat = e_ops[ii]
-        expect_out[0, ii] = cdat.expect_psi_vec(out_psi)
+                    self.collapses.append((t_prev, which))
+                    if self.col_args:
+                        self.collapses_args.append((t_prev, which))
+                    rand_vals = prng.rand(2)
+                    norm2_prev = 1. # dznrm2(ODE._y)**2
+                else:
+                    norm2_prev = norm2_psi
+                    t_prev = ODE.t
+                    y_prev = ODE.y
 
-    # first rand is collapse norm, second is which operator
-    rand_vals = prng.rand(2)
+            # after while loop
+            # ----------------
+            out_psi = normalize(ODE._y)
+            e_call.step(k, out_psi)
+            if self.steady_state:
+                self.sumsteadystate(out_psi)
+            if self.store_states:
+                for ii in range(self.l_vec):
+                    self.states_out[k, ii] = out_psi[ii]
+        if not self.store_states:
+            for ii in range(self.l_vec):
+                self.states_out[0, ii] = out_psi[ii]
+        return np.array(self.states_out), np.array(self.ss_out), self.collapses
 
-    # RUN ODE UNTIL EACH TIME IN TLIST
-    norm2_prev = dznrm2(ODE._y) ** 2
-    for k in range(1, num_times):
-        # ODE WHILE LOOP FOR INTEGRATE UP TO TIME TLIST[k]
-        t_prev = ODE.t
-        y_prev = ODE.y
 
-        while t_prev < tlist[k]:
-            # integrate up to tlist[k], one step at a time.
-            ODE.integrate(tlist[k], step=1)
-            if not ODE.successful():
-                print(ODE.t, t_prev, tlist[k])
-                print(ODE._integrator.call_args)
-                raise Exception("ZVODE failed!")
-            norm2_psi = dznrm2(ODE._y) ** 2
-            if norm2_psi <= rand_vals[0]:
-                # collapse has occured:
-                # find collapse time to within specified tolerance
-                # ------------------------------------------------
-                ii = 0
-                t_final = ODE.t
-                while ii < config.norm_steps:
-                    ii += 1
-                    if (t_final - t_prev) < config.norm_t_tol:
-                        t_prev = t_final
-                        y_prev = ODE.y
-                        break
-                    t_guess = t_prev + \
-                        np.log(norm2_prev / rand_vals[0]) / \
-                        np.log(norm2_prev / norm2_psi) * (t_final - t_prev)
-                    if (t_guess - t_prev) < config.norm_t_tol:
-                        t_guess = t_prev + config.norm_t_tol
-                    ODE._y = y_prev
-                    ODE.t = t_prev
-                    ODE._integrator.call_args[3] = 1
-                    ODE.integrate(t_guess, step=0)
-                    if not ODE.successful():
-                        raise Exception(
-                              "ZVODE failed after adjusting step size!")
+    @cython.cdivision(True)
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef void _find_collapse(self, ODE, double norm2_psi,
+                             double t_prev, np.ndarray[complex, ndim=1] y_prev,
+                             double norm2_prev, double target_norm):
+        # find collapse time to within specified tolerance
+        cdef int ii = 0
+        cdef double t_final = ODE.t
+        cdef double t_guess, norm2_guess
 
-                    norm2_guess = dznrm2(ODE._y)**2
-                    if (np.abs(rand_vals[0] - norm2_guess) <
-                                config.norm_tol * rand_vals[0]):
-                            norm2_psi = norm2_guess
-                            t_prev = t_guess
-                            y_prev = ODE.y
-                            break
-                    elif (norm2_guess < rand_vals[0]):
-                        # t_guess is still > t_jump
-                        t_final = t_guess
-                        norm2_psi = norm2_guess
-                    else:
-                        # t_guess < t_jump
-                        t_prev = t_guess
-                        y_prev = ODE.y
-                        norm2_prev = norm2_guess
-                if ii > config.norm_steps:
-                    raise Exception("Norm tolerance not reached. " +
-                                    "Increase accuracy of ODE solver or " +
-                                    "Options.norm_steps.")
-
-                collapse_times.append(ODE.t)
-                # some string based collapse operators
-                n_dp = [op._expect(ODE.t, ODE._y).real() for op in n_ops]
-                # determine which operator does collapse and store it
-                kk = np.cumsum(n_dp / np.sum(n_dp))
-                j = cinds[kk >= rand_vals[1]][0]
-                which_oper.append(j)
-                state = c_ops[j].mat_mul(ODE.t, ODE._y)
-                state = normalize(state)
-                ODE.set_initial_value(state, t_prev)
-                rand_vals = prng.rand(2)
-                norm2_prev = dznrm2(ODE._y)**2
-            else:
-                norm2_prev = norm2_psi
-                t_prev = ODE.t
+        while ii < self.norm_steps:
+            ii += 1
+            if (t_final - t_prev) < self.norm_t_tol:
+                t_prev = t_final
                 y_prev = ODE.y
+                break
 
-        # after while loop
-        # ----------------
-        out_psi = normalize(ODE._y)
+            t_guess = (t_prev +
+                (log(norm2_prev / target_norm)).real  /
+                (log(norm2_prev / norm2_psi)).real    *
+                (t_final - t_prev))
+            if (t_guess - t_prev) < self.norm_t_tol:
+                t_guess = t_prev + self.norm_t_tol
 
-        if config.options.steady_state_average:
-            sumsteadystate(states_out, out_psi)
-        elif config.options.store_states:
-            states_out[k, :] = out_psi
+            ODE.t = t_prev
+            ODE._y = y_prev
+            ODE._integrator.call_args[3] = 1
+            ODE.integrate(t_guess, step=0)
+            if not ODE.successful():
+                raise Exception("ZVODE failed after adjusting step size!")
 
-        for ii in range(num_e):
-            cdat = e_ops[ii]
-            expect_out[k, ii] = cdat.expect_psi_vec(out_psi)
+            norm2_guess = dznrm2(ODE._y)**2
+            if (np.abs(target_norm - norm2_guess) < self.norm_tol * target_norm):
+                    break
+            elif (norm2_guess < target_norm):
+                # t_guess is still > t_jump
+                t_final = t_guess
+                norm2_psi = norm2_guess
+            else:
+                # t_guess < t_jump
+                t_prev = t_guess
+                y_prev = ODE.y
+                norm2_prev = norm2_guess
+
+        if ii > self.norm_steps:
+            raise Exception("Norm tolerance not reached. " +
+                            "Increase accuracy of ODE solver or " +
+                            "Options.norm_steps.")
+
+    @cython.cdivision(True)
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef int _which_collapse(self, double t, complex[::1] y, double rand):
+        # determine which operator does collapse
+        cdef int ii, j = self.num_ops
+        cdef double e, sum_ = 0
+        cdef CQobjEvo cobj
+        for ii in range(self.num_ops):
+            cobj = <CQobjEvo> self.n_ops[ii].compiled_qobjevo
+            e = real(cobj._expect(t, &y[0]))
+            self.n_dp[ii] = e
+            sum_ += e
+        rand *= sum_
+        for ii in range(self.num_ops):
+            if rand <= self.n_dp[ii]:
+                j = ii
+                break
+            else:
+                rand -= self.n_dp[ii]
+        return j
+
+    @cython.cdivision(True)
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef np.ndarray[complex, ndim=1] _collapse(self, double t, int j, complex[::1] y):
+                                               # np.ndarray[complex, ndim=1] y):
+        cdef CQobjEvo cobj
+        cdef np.ndarray[complex, ndim=1] state
+        cobj = <CQobjEvo> self.c_ops[j].compiled_qobjevo
+        state = cobj.mul_vec(t, y)
+        state = normalize(state)
+        return state
 
 
-    return states_out, expect_out, collapse_times, which_oper
+cdef class CyMcOdeDiag(CyMcOde):
+    cdef:
+        complex[::1] diag
+        complex[::1] diag_dt
+        complex[::1] psi
+        complex[::1] psi_temp
+        double t
+        object prng
+
+    def __init__(self, ss, opt):
+        self.c_ops = ss.td_c_ops
+        self.n_ops = ss.td_n_ops
+        self.diag = ss.H_diag
+        self.norm_steps = opt.norm_steps
+        self.norm_t_tol = opt.norm_t_tol
+        self.norm_tol = opt.norm_tol
+        self.steady_state = opt.steady_state_average
+        self.store_states = opt.store_states or opt.average_states
+        self.collapses = []
+        self.l_vec = self.c_ops[0].cte.shape[0]
+        self.num_ops = len(ss.td_n_ops)
+        self.n_dp = np.zeros(self.num_ops)
+        self.col_args = 0
+
+        if self.steady_state:
+            self.ss_out = np.zeros((self.l_vec, self.l_vec), dtype=complex)
+        else:
+            self.ss_out = np.zeros((0, 0), dtype=complex)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef void qode(self, complex[::1] psi_new):
+        cdef int i
+        for i in range(self.l_vec):
+            psi_new[i] = self.diag_dt[i] * self.psi[i]
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef void ode(self, double t_new,  complex[::1] psi_new):
+        cdef int i
+        cdef double dt = t_new - self.t
+        for i in range(self.l_vec):
+            psi_new[i] = exp(self.diag[i]*dt) * self.psi[i]
+
+    @cython.cdivision(True)
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef double advance(self, double t_target, double norm2_prev,
+                      double[::1] rand_vals, int use_quick):
+        target_norm = rand_vals[0]
+        if use_quick:
+            self.qode(self.psi_temp)
+        else:
+            self.ode(t_target, self.psi_temp)
+        norm2_psi = dznrm2(self.psi_temp) ** 2
+
+        if norm2_psi <= target_norm:
+            # collapse has occured:
+            self._find_collapse_diag(norm2_psi, t_target, self.psi_temp, norm2_prev, target_norm)
+            which = self._which_collapse(self.t, self.psi, rand_vals[1])
+            self.psi = self._collapse(self.t, which, self.psi)
+            self.collapses.append((self.t, which))
+            prn = self.prng.rand(2)
+            rand_vals[0] = prn[0]
+            rand_vals[1] = prn[1]
+            norm2_psi = 1.
+        else:
+            self.t = t_target
+            for ii in range(self.l_vec):
+                self.psi[ii] = self.psi_temp[ii]
+
+        return norm2_psi
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def run_ode(self, initial_vector, tlist_, e_call, prng):
+        cdef np.ndarray[double, ndim=1] rand_vals
+        cdef np.ndarray[double, ndim=1] tlist = np.array(tlist_)
+        cdef np.ndarray[complex, ndim=1] out_psi = initial_vector.copy()
+        cdef int ii, which, k, use_quick, num_times = tlist.shape[0]
+        cdef double norm2_prev
+        dt = tlist_[1]-tlist_[0]
+        if np.allclose(np.diff(tlist_), dt):
+            use_quick = 1
+            self.diag_dt = np.zeros(self.l_vec, dtype=complex)
+            for ii in range(self.l_vec):
+                self.diag_dt[ii] = exp(self.diag[ii]*dt)
+        else:
+            use_quick = 0
+
+        if self.steady_state:
+            self.sumsteadystate(out_psi)
+
+        if self.store_states:
+            self.states_out = np.zeros((num_times, self.l_vec), dtype=complex)
+            for ii in range(self.l_vec):
+                self.states_out[0, ii] = out_psi[ii]
+        else:
+            self.states_out = np.zeros((1, self.l_vec), dtype=complex)
+
+        e_call.step(0, out_psi)
+        rand_vals = prng.rand(2)
+        self.prng = prng
+
+        # RUN ODE UNTIL EACH TIME IN TLIST
+        self.psi = initial_vector.copy()
+        self.psi_temp = initial_vector.copy()
+        self.t = tlist[0]
+        norm2_prev = dznrm2(self.psi) ** 2
+        for k in range(1, num_times):
+            #print(self.t, tlist[k], norm2_prev, rand_vals[0])
+            norm2_prev = self.advance(tlist[k], norm2_prev, rand_vals, use_quick)
+            while self.t < tlist[k]:
+                #print(self.t, tlist[k], norm2_prev, rand_vals[0])
+                norm2_prev = self.advance(tlist[k], norm2_prev, rand_vals, 0)
+            # after while loop
+            # ----------------
+            out_psi = normalize(self.psi)
+            e_call.step(k, out_psi)
+            if self.steady_state:
+                self.sumsteadystate(out_psi)
+            if self.store_states:
+                for ii in range(self.l_vec):
+                    self.states_out[k, ii] = out_psi[ii]
+        if not self.store_states:
+            for ii in range(self.l_vec):
+                self.states_out[0, ii] = out_psi[ii]
+        return np.array(self.states_out), np.array(self.ss_out), self.collapses
+
+    @cython.cdivision(True)
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void _find_collapse_diag(self, double norm2_psi,
+                             double t_final, complex[::1] y_new,
+                             double norm2_prev, double target_norm):
+        # find collapse time to within specified tolerance
+        cdef int ii = 0, jj
+        cdef double t_guess, norm2_guess
+        # cdef double t_final = ODE.t
+        #print("before", self.t, norm2_prev)
+        #print("after", t_final, norm2_psi)
+        #print("target", target_norm)
+        while ii < self.norm_steps:
+            ii += 1
+            if (t_final - self.t) < self.norm_t_tol:
+                self.t = t_final
+                for jj in range(self.l_vec):
+                    self.psi[jj] = y_new[jj]
+                break
+
+            t_guess = (self.t +
+                (log(norm2_prev / target_norm)).real  /
+                (log(norm2_prev / norm2_psi)).real    *
+                (t_final - self.t))
+            if (t_guess - self.t) < self.norm_t_tol:
+                t_guess = self.t + self.norm_t_tol
+
+            self.ode(t_guess, y_new)
+            norm2_guess = dznrm2(y_new)**2
+            #print(ii, "guess", t_guess, norm2_guess)
+
+            if (np.abs(target_norm - norm2_guess) < self.norm_tol * target_norm):
+                self.t = t_guess
+                for jj in range(self.l_vec):
+                    self.psi[jj] = y_new[jj]
+                #print("found")
+                break
+            elif (norm2_guess < target_norm):
+                # t_guess is still > t_jump
+                t_final = t_guess
+                norm2_psi = norm2_guess
+            else:
+                # t_guess < t_jump
+                self.t = t_guess
+                for jj in range(self.l_vec):
+                    self.psi[jj] = y_new[jj]
+                norm2_prev = norm2_guess
+
+        #print("finish", ii, self.norm_steps)
+        if ii > self.norm_steps:
+            raise Exception("Norm tolerance not reached. " +
+                            "Increase accuracy of ODE solver or " +
+                            "Options.norm_steps.")

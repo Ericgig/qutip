@@ -155,6 +155,10 @@ cy_exts = ['solverfuncs', 'stochastic', 'mcsolve', 'graph_utils', 'interpolate',
 mat_cy_exts = ['cs_matrix', 'csr_matrix', 'utils', 'csr_math',
                'cqobjevo', 'cqe_dense', 'cqe_csr', 'cdata', 'utils']
 
+old_cy_exts = ['spmatfuncs', 'sparse_utils', 'spmath', 'spconvert',
+               'ptrace', 'checks']
+
+
 # Extra link args
 _link_flags = []
 
@@ -164,7 +168,7 @@ if (sys.platform == 'win32' and int(str(sys.version_info[0])+str(sys.version_inf
     _compiler_flags = ['/w', '/Ox']
 # Everything else
 else:
-    _compiler_flags = ['-w', '-O3', '-march=native', '-funroll-loops']
+    _compiler_flags = ['-w', '-O3', '-funroll-loops']
     if sys.platform == 'darwin':
         # These are needed for compiling on OSX 10.14+
         _compiler_flags.append('-mmacosx-version-min=10.9')
