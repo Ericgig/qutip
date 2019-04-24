@@ -45,7 +45,7 @@ from qutip.cy.cqobjevo cimport CQobjEvo
 from qutip.cy.spmatfuncs cimport cy_expect_psi
 # from qutip.cy.dopri5 import ode_td_dopri
 #from qutip.cy.complex_math cimport conj
-include "complex_math.pxi"
+from complex_math cimport *
 
 cdef int ONE = 1
 
