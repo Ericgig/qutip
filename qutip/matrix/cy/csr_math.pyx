@@ -1,6 +1,6 @@
 #!python
 #cython: language_level=3
-from qutip.matrix.cy.csr_matrix cimport cy_csr_matrix
+from qutip.matrix.cy.csr_matrix cimport cy_csr_matrix, csr_qmatrix_from_cdata
 import numpy as np
 cimport numpy as np
 import qutip.settings as qset
@@ -33,7 +33,7 @@ cdef _safe_multiply(int A, int B):
 
 @cython.boundscheck(False)
 @cython.wraparound(False) ##
-cpdef cy_csr_matrix zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex alpha = 1):
+cpdef object zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex alpha = 1):
     """
     Adds two sparse CSR matries. Like SciPy, we assume the worse case
     for the fill A.nnz + B.nnz.
@@ -67,7 +67,7 @@ cpdef cy_csr_matrix zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex al
     #Shorten data and indices if needed
     if out.nnz > nnz:
         out._shorten(nnz)
-    return out
+    return csr_qmatrix_from_cdata(out)
 
 
 @cython.boundscheck(False)
@@ -162,7 +162,7 @@ cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
 
 @cython.boundscheck(False)
 @cython.wraparound(False) ##
-cpdef cy_csr_matrix zcsr_mult(cy_csr_matrix A, cy_csr_matrix B, int sorted = 1):
+cpdef object zcsr_mult(cy_csr_matrix A, cy_csr_matrix B, int sorted = 1):
     cdef int Annz = A.nnz
     cdef int Bnnz = B.nnz
     cdef int nrows = A.nrows
@@ -193,7 +193,7 @@ cpdef cy_csr_matrix zcsr_mult(cy_csr_matrix A, cy_csr_matrix B, int sorted = 1):
 
     if sorted:
         out._sort_indices()
-    return out
+    return csr_qmatrix_from_cdata(out)
 
 
 @cython.boundscheck(False)
@@ -270,7 +270,7 @@ cdef void _zcsr_mult_pass2(double complex * Adata, int * Aind, int * Aptr,
 
 @cython.boundscheck(False)
 @cython.wraparound(False) ##
-cpdef cy_csr_matrix zcsr_kron(cy_csr_matrix A, cy_csr_matrix B):
+cpdef object zcsr_kron(cy_csr_matrix A, cy_csr_matrix B):
     """
     Computes the kronecker product between two complex
     sparse matrices in CSR format.
@@ -285,7 +285,7 @@ cpdef cy_csr_matrix zcsr_kron(cy_csr_matrix A, cy_csr_matrix B):
     _zcsr_kron_core(A.data, A.indices, A.indptr,
                     B.data, B.indices, B.indptr,
                     out, A.nrows, B.nrows, B.ncols)
-    return out
+    return csr_qmatrix_from_cdata(out)
 
 
 @cython.boundscheck(False)

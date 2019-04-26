@@ -37,7 +37,7 @@
 Parallel version of the cqobjevo's
 See ../cqobjevo.pyx for more details
 """
-from qutip.cy.cqobjevo cimport CQobjCte, CQobjEvoTd, CQobjEvoTdMatched
+from qutip.matrix.cy.cqobjevo cimport CQobjCte, CQobjEvoTd, CQobjEvoTdMatched
 from qutip.cy.openmp.parfuncs cimport spmvpy_openmp
 import numpy as np
 import scipy.sparse as sp
@@ -45,8 +45,7 @@ cimport numpy as np
 import cython
 cimport cython
 from cython.parallel import prange
-
-include "../complex_math.pxi"
+from qutip.cy.complex_math cimport *
 
 
 @cython.boundscheck(False)

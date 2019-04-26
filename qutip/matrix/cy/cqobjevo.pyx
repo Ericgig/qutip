@@ -138,11 +138,11 @@ cdef class CQobjEvo:
         """self * dense mat c ordered"""
         pass
 
-    cdef complex _expect(self, double t, complex* vec, int isherm):
+    cdef complex _expect(self, double t, complex* vec):
         """<vec| self |vec>"""
         return 0.
 
-    cdef complex _expect_super(self, double t, complex* rho, int isherm):
+    cdef complex _expect_super(self, double t, complex* rho):
         """tr( self * rho )"""
         return 0.
 

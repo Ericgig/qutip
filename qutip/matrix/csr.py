@@ -1,6 +1,6 @@
 import numpy as np
 import operator
-from scipy.sparse import (_sparsetools, isspmatrix, isspmatrix_csr,
+from scipy.sparse import (_sparsetools, isspmatrix, isspmatrix_csr, isspmatrix_coo,
                           csr_matrix, coo_matrix, csc_matrix, dia_matrix)
 from scipy.sparse.sputils import (upcast, upcast_char, to_native, isdense, isshape,
                       getdtype, isscalarlike, IndexMixin, get_index_dtype)
@@ -9,7 +9,6 @@ from scipy.sparse.base import spmatrix, isspmatrix, SparseEfficiencyWarning
 from warnings import warn
 from qutip.matrix.qdata import _qdata
 from qutip.matrix.sparse import *
-
 import qutip.settings as settings
 from qutip.matrix.cy.utils import cy_tidyup
 from qutip.cy.openmp.utilities import use_openmp
@@ -98,11 +97,13 @@ class csr_qmatrix(csr_matrix, _qdata):
         """
         if isinstance(other, csr_qmatrix):
             # use our product
-            return zcsr_mult(self, other, sorted=1)
+            return zcsr_mult(cy_csr_matrix(self),
+                             cy_csr_matrix(other), sorted=1)
         return csr_matrix._mul_sparse_matrix(self, other, op)
 
     def _with_data(self,data,copy=True):
-        """Returns a matrix with the same sparsity structure as self,
+        """
+        Returns a matrix with the same sparsity structure as self,
         but with different data.  By default the structure arrays
         (i.e. .indptr and .indices) are copied.
         """
@@ -118,6 +119,9 @@ class csr_qmatrix(csr_matrix, _qdata):
 
     # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     # Qutip methods
+    def transpose(self, axis=None, copy=True):
+        return self.trans(copy=copy)
+
     def trans(self, axis=None, copy=True):
         """
         Returns the transpose of the matrix, keeping
@@ -189,8 +193,8 @@ class csr_qmatrix(csr_matrix, _qdata):
         """
         eigenvalue and eigstates
         """
-        return sp_eigs(self, isherm, vecs=True, sparse=False, sort='low',
-                                   eigvals=0, tol=0, maxiter=100000)
+        return sp_eigs(self, isherm, vecs=vecs, sparse=sparse, sort=sort,
+                                   eigvals=eigvals, tol=tol, maxiter=maxiter)
 
     def proj(self):
         """
@@ -208,7 +212,7 @@ class csr_qmatrix(csr_matrix, _qdata):
         """
         Matrix exponential of quantum operator.
         """
-        sp_expm(self, sparse=(method=="sparse"))
+        return sp_expm(self, sparse=(method=="sparse"))
 
     def ptrace(self, selection):
         """
@@ -312,5 +316,5 @@ def csr_qmatrix_from_sparse(A):
     return csr_qmatrix_from_csr(csr)
 
 
-from qutip.matrix.cy.csr_matrix import cy_csr_matrix, csr_from_dense
+from qutip.matrix.cy.csr_matrix import cy_csr_matrix, csr_from_dense, csr_from_scipy_coo
 from qutip.matrix.cy.csr_math import zcsr_mult

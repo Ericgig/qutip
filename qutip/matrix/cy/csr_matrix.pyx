@@ -191,8 +191,12 @@ cdef class cy_csr_matrix(cy_cs_matrix):
             self.nptrs = qdata.shape[0]
             self.max_length = qdata.nnz
             self.numpy_lock = 1
-            self.data = &data[0]
-            self.indices = &ind[0]
+            if self.nnz:
+                self.data = &data[0]
+                self.indices = &ind[0]
+            else:
+                self.data = 0
+                self.indices = 0
             self.indptr = &ptr[0]
 
     @cython.boundscheck(False)
@@ -460,6 +464,7 @@ cdef class cy_csr_matrix(cy_cs_matrix):
 
         self.nrows = new_rows
         self.ncols = new_cols
+        self.nptrs = new_rows
         self.indptr = <int *>PyDataMem_RENEW(self.indptr, (new_rows+1) * sizeof(int))
         self._from_coo_indices(rows, cols)
         self._sort_indices()
@@ -723,6 +728,7 @@ cpdef cy_csr_matrix csr_from_scipy(object A, copy=False):
     cdef cy_csr_matrix mat = cy_csr_matrix.__new__(cy_csr_matrix)
     mat.nrows = A.shape[0]
     mat.ncols = A.shape[1]
+    mat.nptrs = A.shape[0]
     mat.nnz = ptr[mat.nrows]
     mat.max_length = mat.nnz
     mat.is_set = 1
@@ -754,6 +760,7 @@ cpdef cy_csr_matrix csr_from_scipy_coo(object A):
     cdef cy_csr_matrix mat = cy_csr_matrix.__new__(cy_csr_matrix)
     mat.nrows = A.shape[0]
     mat.ncols = A.shape[1]
+    mat.nptrs = A.shape[0]
     mat.nnz = A.data.shape[0]
     mat.max_length = mat.nnz
     mat.is_set = 1
@@ -772,7 +779,7 @@ cpdef cy_csr_matrix csr_from_scipy_coo(object A):
 cpdef cy_csr_matrix identity_csr(unsigned int nrows):
     cdef size_t kk
     cdef cy_csr_matrix mat = cy_csr_matrix.__new__(cy_csr_matrix)
-    mat.init(nrows, nrows, nrows, 0, 0)
+    mat.init(nrows, nrows, nrows)
     for kk in range(nrows):
         mat.data[kk] = 1
         mat.indices[kk] = kk
@@ -838,7 +845,7 @@ cpdef cy_csr_matrix csr_from_dense(complex[:, :] mat):
     cdef size_t ii, jj
     cdef cy_csr_matrix out = cy_csr_matrix()
     cdef int nrows = mat.shape[0], ncols = mat.shape[1]
-    out.init(nrows*ncols, nrows, ncols, nrows*ncols)
+    out.init(nrows*ncols, nrows, ncols)
 
     for ii in range(nrows):
         for jj in range(ncols):

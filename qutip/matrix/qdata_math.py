@@ -4,7 +4,7 @@ from qutip.matrix.cy.csr_math import zcsr_mult, zcsr_spmm_tr, zcsr_inner, zcsr_m
 def mult(op1, op2, isherm):
     if op1.format == op2.format:
         if op1.format == "csr":
-            return zcsr_mult(op1.cdata, op2.cdata, isherm).to_qdata()
+            return zcsr_mult(op1.cdata, op2.cdata, isherm)
     raise NotImplementedError("format mix not implemented")
 
 def spmm_tr(op1, op2, isherm):
@@ -28,7 +28,7 @@ def mat_elem(data_oper, data_bra, data_ket):
 def kron(op1, op2):
     if op1.format == op2.format:
         if op1.format == "csr":
-            return zcsr_kron(op1.cdata, op2.cdata).to_qdata()
+            return zcsr_kron(op1.cdata, op2.cdata)
     raise NotImplementedError("format mix not implemented")
 
 def expect_ket(oper, ket, isherm):

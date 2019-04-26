@@ -132,12 +132,11 @@ np.import_array()
 cdef extern from "numpy/arrayobject.h" nogil:
     void PyDataMem_NEW_ZEROED(size_t size, size_t elsize)
     void PyArray_ENABLEFLAGS(np.ndarray arr, int flags)
-from qutip.cy.spmatfuncs cimport spmvpy
 from qutip.cy.inter cimport _spline_complex_t_second, _spline_complex_cte_second
 from qutip.cy.inter cimport _spline_float_t_second, _spline_float_cte_second
 from qutip.cy.interpolate cimport (interp, zinterp)
 from qutip.cy.cqobjevo_factor cimport StrCoeff
-from qutip.cy.cqobjevo cimport CQobjEvo
+from qutip.matrix.cy.cqobjevo cimport CQobjEvo
 from qutip.cy.math cimport erf, zerf
 from qutip.qobj import Qobj
 cdef double pi = 3.14159265358979323

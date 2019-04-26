@@ -171,6 +171,13 @@ cdef class cy_cs_matrix(Cdata):
         else:
             raise_error_cs(-2)
 
+    def display(self):
+        """For debug purpose"""
+        print(self.nnz, self.nrows, self.ncols, self.nptrs)
+        print(self.is_set, self.max_length, self.numpy_lock, self.is_csr)
+        print(self.indices[0], self.data[0])
+        print(self.indptr[0], self.indptr[self.nptrs])
+
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef void copy_cs(self, cy_cs_matrix mat):

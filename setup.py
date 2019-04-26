@@ -149,7 +149,7 @@ write_version_py()
 
 # Add Cython extensions here
 cy_exts = ['solverfuncs', 'stochastic', 'mcsolve', 'graph_utils', 'interpolate',
-           'heom', 'math', 'brtools', 'complex_math',
+           'heom', 'math', 'brtools', #'complex_math',
            'brtools_checks', 'br_tensor', 'inter', 'cqobjevo_factor', 'piqs']
 
 mat_cy_exts = ['cs_matrix', 'csr_matrix', 'utils', 'csr_math',

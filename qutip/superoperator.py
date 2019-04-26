@@ -38,7 +38,6 @@ __all__ = ['liouvillian', 'liouvillian_ref', 'lindblad_dissipator',
 import scipy.sparse as sp
 import numpy as np
 from qutip.qobj import Qobj
-from qutip.qobjevo import QobjEvo
 from qutip.qdata import qdata, qdata_identity
 from qutip.matrix_utils import reshape
 from qutip.matrix.qdata_math import kron

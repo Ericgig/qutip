@@ -37,7 +37,7 @@ from numpy.testing import (assert_equal, assert_, assert_almost_equal,
 from functools import partial
 from types import FunctionType, BuiltinFunctionType
 from qutip.interpolate import Cubic_Spline
-from qutip.cy.spmatfuncs import (cy_expect_rho_vec, cy_expect_psi, spmv)
+from qutip.expect import expect_psi_vec, expect_rho_vec
 
 def _f1(t,args):
     return np.sin(t*args['w1'])
@@ -401,17 +401,17 @@ def test_QobjEvo_mul_vec():
     cqobjevos, base_qobjs = _rand_cqobjevo(N)
 
     for op in cqobjevos:
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
+        assert_allclose((op(t,data=1) * vec), op.mul_vec(t, vec))
         op.compile()
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
+        assert_allclose((op(t,data=1) * vec), op.mul_vec(t, vec))
         op.compile(dense=1)
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
-        op.compile(matched=1)
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
+        assert_allclose((op(t,data=1) * vec), op.mul_vec(t, vec))
+        #op.compile(matched=1)
+        #assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
         op.compile(omp=2)
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
-        op.compile(matched=1,omp=2)
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
+        assert_allclose((op(t,data=1) * vec), op.mul_vec(t, vec))
+        #op.compile(matched=1,omp=2)
+        #assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
 
 
 def test_QobjEvo_mul_mat():
@@ -463,17 +463,17 @@ def test_QobjEvo_expect_psi():
 
     for op in cqobjevos:
         Qo1 = op(t)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
+        assert_allclose(expect_psi_vec(Qo1.data, vec, 0), op.expect(t,vec,0))
         op.compile()
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
+        assert_allclose(expect_psi_vec(Qo1.data, vec, 0), op.expect(t,vec,0))
         op.compile(dense=1)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
+        assert_allclose(expect_psi_vec(Qo1.data, vec, 0), op.expect(t,vec,0))
         op.compile(matched=1)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
+        assert_allclose(expect_psi_vec(Qo1.data, vec, 0), op.expect(t,vec,0))
         op.compile(omp=2)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
+        assert_allclose(expect_psi_vec(Qo1.data, vec, 0), op.expect(t,vec,0))
         op.compile(matched=1,omp=2)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
+        assert_allclose(expect_psi_vec(Qo1.data, vec, 0), op.expect(t,vec,0))
 
 
 def test_QobjEvo_expect_rho():
@@ -486,22 +486,22 @@ def test_QobjEvo_expect_rho():
     for op_ in cqobjevos:
         op = liouvillian(op_)
         Qo1 = op(t)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
+        assert_allclose(expect_rho_vec(Qo1.data, vec, 0),
                         op.expect(t,vec,0), atol=1e-14)
         op.compile()
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
+        assert_allclose(expect_rho_vec(Qo1.data, vec, 0),
                         op.expect(t,vec,0), atol=1e-14)
         op.compile(dense=1)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
+        assert_allclose(expect_rho_vec(Qo1.data, vec, 0),
                         op.expect(t,vec,0), atol=1e-14)
         op.compile(matched=1)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
+        assert_allclose(expect_rho_vec(Qo1.data, vec, 0),
                         op.expect(t,vec,0), atol=1e-14)
         op.compile(omp=2)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
+        assert_allclose(expect_rho_vec(Qo1.data, vec, 0),
                         op.expect(t,vec,0), atol=1e-14)
         op.compile(matched=1,omp=2)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
+        assert_allclose(expect_rho_vec(Qo1.data, vec, 0),
                         op.expect(t,vec,0), atol=1e-14)
 
     tlist = np.linspace(0,1,300)
@@ -520,7 +520,7 @@ def test_QobjEvo_expect_rho():
     td_obj_sac.compile()
     v1 = td_obj_sa.expect(t, rho, 0)
     v2 = td_obj_sac.expect(t, rho, 0)
-    v3 = cy_expect_rho_vec(td_obj_sa(t, data=True), rho, 0)
+    v3 = expect_rho_vec(td_obj_sa(t, data=True), rho, 0)
     # check not compiled rhs const
     assert_allclose(v1, v3, rtol=1e-6)
     # check compiled rhs
@@ -530,7 +530,7 @@ def test_QobjEvo_expect_rho():
     td_obj_mc.compile()
     v1 = td_obj_m.expect(t, rho, 1)
     v2 = td_obj_mc.expect(t, rho, 1)
-    v3 = cy_expect_rho_vec(td_obj_m(t, data=True), rho, 1)
+    v3 = expect_rho_vec(td_obj_m(t, data=True), rho, 1)
     # check not compiled rhs func
     assert_allclose(v1, v3, rtol=1e-6)
     # check compiled rhs func

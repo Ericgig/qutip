@@ -41,11 +41,8 @@ cimport cython
 import scipy.sparse as sp
 from scipy.linalg.cython_blas cimport dznrm2 as raw_dznrm2
 from qutip.qobj import Qobj
-from qutip.cy.cqobjevo cimport CQobjEvo
-from qutip.cy.spmatfuncs cimport cy_expect_psi
-# from qutip.cy.dopri5 import ode_td_dopri
-#from qutip.cy.complex_math cimport conj
-from complex_math cimport *
+from qutip.matrix.cy.cqobjevo cimport CQobjEvo
+from qutip.cy.complex_math cimport *
 
 cdef int ONE = 1
 

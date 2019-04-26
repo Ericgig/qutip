@@ -44,7 +44,6 @@ from qutip.qobj import Qobj, isket, isoper, issuper
 from qutip.superoperator import spre, spost, liouvillian, mat2vec, vec2mat, lindblad_dissipator
 from qutip.expect import expect_rho_vec
 from qutip.solver import Options, Result, config, solver_safe, SolverSystem
-from qutip.cy.spmatfuncs import spmv
 from qutip.states import ket2dm
 from qutip.settings import debug
 from qutip.sesolve import sesolve
@@ -400,12 +399,12 @@ def _Lfunc_set(HS, rho0, args, opt):
 
 def _ode_rho_func_td(t, y, L_func, args):
     L = L_func(t, y, args)
-    return spmv(L, y)
+    return L * y
 
 def _ode_super_func_td(t, y, L_func, args):
     L = L_func(t, y, args)
     ym = vec2mat(y)
-    return (L*ym).ravel('F')
+    return (L * ym).ravel('F')
 
 # -----------------------------------------------------------------------------
 # Generic ODE solver: shared code among the various ODE solver

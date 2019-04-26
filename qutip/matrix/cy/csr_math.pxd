@@ -35,7 +35,7 @@
 
 from qutip.matrix.cy.csr_matrix cimport cy_csr_matrix
 
-cpdef cy_csr_matrix zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex alpha=*)
+cpdef object zcsr_add(cy_csr_matrix A, cy_csr_matrix B, double complex alpha=*)
 
 cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
                         double complex * Bdata, int * Bind, int * Bptr,
@@ -43,9 +43,9 @@ cdef int _zcsr_add_core(double complex * Adata, int * Aind, int * Aptr,
                         double complex * Cdata, int * Cind, int * Cptr,
                         int nrows, int ncols) nogil
 
-cpdef cy_csr_matrix zcsr_mult(cy_csr_matrix A, cy_csr_matrix B, int sorted=*)
+cpdef object zcsr_mult(cy_csr_matrix A, cy_csr_matrix B, int sorted=*)
 
-cpdef cy_csr_matrix zcsr_kron(cy_csr_matrix A, cy_csr_matrix B)
+cpdef object zcsr_kron(cy_csr_matrix A, cy_csr_matrix B)
 
 cdef void _zcsr_kron_core(double complex * dataA, int * indsA, int * indptrA,
                           double complex * dataB, int * indsB, int * indptrB,

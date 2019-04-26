@@ -44,8 +44,8 @@ from scipy.linalg import norm as la_norm
 import qutip.settings as qset
 from qutip.qobj import Qobj
 from qutip.qobjevo import QobjEvo
-from qutip.cy.spmatfuncs import (cy_expect_psi, cy_ode_psi_func_td,
-                                cy_ode_psi_func_td_with_state)
+from qutip.expect import expect_psi_vec
+from qutip.cy.solverfuncs import (cy_ode_psi_func_td, cy_ode_psi_func_td_with_state)
 from qutip.solver import Result, Options, config, solver_safe, SolverSystem
 from qutip.superoperator import vec2mat
 from qutip.ui.progressbar import (BaseProgressBar, TextProgressBar)
@@ -366,8 +366,8 @@ def _generic_ode_solve(func, ode_args, psi0, tlist, e_ops, opt,
                 output.expect[m][t_idx] = (e_ops_data[m] * cdata).trace()
         else:
             for m in range(n_expt_op):
-                output.expect[m][t_idx] = cy_expect_psi(e_ops_data[m], cdata,
-                                                        e_ops[m].isherm)
+                output.expect[m][t_idx] = expect_psi_vec(e_ops_data[m], cdata,
+                                                         e_ops[m].isherm)
 
         if t_idx < n_tsteps - 1:
             r.integrate(r.t + dt[t_idx])

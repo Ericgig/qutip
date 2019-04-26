@@ -253,9 +253,9 @@ class Qobj(object):
                 # components
                 self.dims = inpt.dims
             else:
-                self.dims = [[inpt.shape[0]], [inpt.shape[1]]]
+                self.dims = dims
 
-        if isinstance(inpt, _qdata):
+        elif isinstance(inpt, _qdata):
             # if input is already Qobj then return identical copy
 
             self._data = inpt.copy()
@@ -287,7 +287,7 @@ class Qobj(object):
             data = np.array(inpt, dtype=complex)
             if len(data.shape) == 1:
                 # if list has only one dimension (i.e [5,4])
-                data = data.transpose()
+                data = data.reshape(-1,1)
 
             #_tmp = sp.csr_matrix(data, dtype=complex)
             self._data = qdata_from_dense(data, format=format, copy=copy)

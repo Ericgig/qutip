@@ -33,7 +33,7 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 cimport cython
-from qutip.cy.spmatfuncs cimport spmvpy
+from qutip.matrix.cy.csr_matrix cimport spmvpy
 from qutip.cy.openmp.parfuncs cimport spmvpy_openmp
 
 
