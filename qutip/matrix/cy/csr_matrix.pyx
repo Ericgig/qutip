@@ -195,8 +195,9 @@ cdef class cy_csr_matrix(cy_cs_matrix):
                 self.data = &data[0]
                 self.indices = &ind[0]
             else:
-                self.data = 0
-                self.indices = 0
+                pass
+                #self.data = None
+                #self.indices = None
             self.indptr = &ptr[0]
 
     @cython.boundscheck(False)
@@ -484,9 +485,9 @@ cdef class cy_csr_matrix(cy_cs_matrix):
         cdef int offset = 0, new_idx, count, change_idx
         cdef size_t jj, kk
         cdef cy_csr_matrix out = cy_csr_matrix()
-        out.init(self.nnz**2, self.nrows)
 
         if self.ncols == 1: # is_ket:
+            out.init(self.nnz**2, self.nrows)
             #Compute new ptrs and inds
             for jj in range(self.nrows):
                 out.indptr[jj] = self.indptr[jj]*self.nnz
@@ -503,8 +504,9 @@ cdef class cy_csr_matrix(cy_cs_matrix):
                 for kk in range(self.nnz):
                     out.data[jj*self.nnz+kk] = self.data[jj]*conj(self.data[kk])
         else:
+            out.init(self.nnz**2, self.ncols)
             count = self.nnz**2
-            new_idx = self.nrows
+            new_idx = self.ncols
             for kk in range(self.nnz-1,-1,-1):
                 for jj in range(self.nnz-1,-1,-1):
                     out.indices[offset+jj] = self.indices[jj]

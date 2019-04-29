@@ -1503,7 +1503,7 @@ class Qobj(object):
             raise TypeError("Can only get matrix elements for an operator.")
 
         else:
-            return
+            # return
             if (bra.isbra or bra.isket) and ket.isket:
                 return mat_elem(self.data, bra.data, ket.data)
             else:
@@ -1551,7 +1551,10 @@ class Qobj(object):
                 else:
                     raise TypeError("Can only calculate overlap for state vector Qobjs")
 
-            elif self.isket and (other.isbra or other.isket):
+            elif self.isket and other.isket:
+                return np.conj(inner(other.data, self.data))
+
+            elif self.isket and other.isbra:
                 return inner(other.data, self.data)
 
             elif self.isoper:

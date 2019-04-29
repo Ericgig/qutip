@@ -200,7 +200,7 @@ class csr_qmatrix(csr_matrix, _qdata):
         """
         self*self.dag
         """
-        return self.cdata.proj()
+        return self.cdata.proj().to_qdata()
 
     def trace(self):
         """
