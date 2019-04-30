@@ -43,13 +43,13 @@ from qutip.matrix.qdata_math import expect_ket, spmm_tr
 def expect_rho_vec(operdata, vec, herm):
     expt = operdata.expect_rho_vec(vec)
     if herm:
-        return real(expt)
+        return np.real(expt)
     return  expt
 
 def expect_psi_vec(operdata, vec, herm):
     expt = operdata.expect_psi_vec(vec)
     if herm:
-        return real(expt)
+        return np.real(expt)
     return  expt
 
 def expect(oper, state):

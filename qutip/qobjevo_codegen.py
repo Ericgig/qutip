@@ -57,7 +57,7 @@ cimport numpy as np
 cimport cython
 from qutip.cy.math cimport erf, zerf
 cdef double pi = 3.14159265358979323
-include """+_include_string+"""
+"""+_include_string+"""
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -141,7 +141,7 @@ from qutip.cy.math cimport erf, zerf
 from qutip.qobj import Qobj
 cdef double pi = 3.14159265358979323
 
-include """ + _include_string + "\n\n"
+""" + _include_string + "\n\n"
 
     compile_list = []
     N_np = 0

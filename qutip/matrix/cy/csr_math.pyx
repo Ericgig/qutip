@@ -339,19 +339,21 @@ def zcsr_inner(cy_csr_matrix A, cy_csr_matrix B):
     cdef int a_idx, b_idx
 
     if A.nrows == 1:
-      for kk in range(A.nnz):
-          a_idx = A.indices[kk]
-          if (B.indptr[a_idx+1]-B.indptr[a_idx]) != 0:
-              inner += A.data[kk]*B.data[B.indptr[a_idx]]
+        # A is bra
+        for kk in range(A.nnz):
+            a_idx = A.indices[kk]
+            if (B.indptr[a_idx+1]-B.indptr[a_idx]) != 0:
+                inner += A.data[kk]*B.data[B.indptr[a_idx]]
 
-          """for kk in range(a_ind.shape[0]):
-              a_idx = a_ind[kk]
-              for jj in range(B.nrows):
-                  if (b_ptr[jj+1]-b_ptr[jj]) != 0:
-                      if jj == a_idx:
-                          inner += a_data[kk]*b_data[b_ptr[jj]]
-                          break"""
+            """for kk in range(a_ind.shape[0]):
+                a_idx = a_ind[kk]
+                for jj in range(B.nrows):
+                    if (b_ptr[jj+1]-b_ptr[jj]) != 0:
+                        if jj == a_idx:
+                            inner += a_data[kk]*b_data[b_ptr[jj]]
+                            break"""
     else:
+        # A is ket
         for kk in range(B.nrows):
             a_idx = A.indptr[kk]
             b_idx = B.indptr[kk]

@@ -366,7 +366,7 @@ cdef class CQobjEvoTd(CQobjEvo):
 
     def call(self, double t, int data=0):
         cdef cy_csr_matrix out = cy_csr_matrix()
-        out.init_CSR(self.total_elem, self.shape0, self.shape1, self.shape0)
+        out.init(self.total_elem, self.shape0, self.shape1, self.shape0)
         self._factor(t)
         self._call_core(out, self.coeff_ptr)
         scipy_obj = out.to_qdata()
@@ -378,7 +378,7 @@ cdef class CQobjEvoTd(CQobjEvo):
 
     def call_with_coeff(self, complex[::1] coeff, int data=0):
         cdef cy_csr_matrix out = cy_csr_matrix()
-        out.init_CSR(self.total_elem, self.shape0, self.shape1, self.shape0)
+        out.init(self.total_elem, self.shape0, self.shape1, self.shape0)
         self._call_core(out, &coeff[0])
         scipy_obj = out.to_qdata()
         # free_CSR(&out)? data is own by the scipy_obj?

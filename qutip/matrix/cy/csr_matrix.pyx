@@ -688,7 +688,6 @@ cdef class cy_csr_matrix(cy_cs_matrix):
     cpdef void matvecpy(self, complex[::1] vec, complex[::1] out, complex alpha):
         self.spmvpy(vec, out, alpha)
 
-
     cpdef cnp.ndarray[complex, ndim=2] matmat(self, cnp.ndarray[complex, ndim=2] mat):
         return self.spmm(mat)
 

@@ -1332,7 +1332,7 @@ class Qobj(object):
             Quantum object with small elements removed.
 
         """
-        self.data.tidyup()
+        self.data.tidyup(atol)
         return self
 
 

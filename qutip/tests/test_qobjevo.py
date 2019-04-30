@@ -317,12 +317,12 @@ def test_QobjEvo_unitary():
 
 def test_QobjEvo_tidyup():
     "QobjEvo tidyup"
-    tlist = np.linspace(0,1,300)
+    tlist = np.linspace(0,1,101)
     args={"w1":1}
     td_obj = QobjEvo(_random_QobjEvo((5,5), [1,0,0], tlist=tlist),
                      args=args, tlist=tlist)
-    td_obj *= 1e-10 * np.random.random()
-    td_obj.tidyup(atol=1e-8)
+    td_obj *= 1e-11 * np.random.random()
+    td_obj.tidyup(atol=1e-7)
     t = np.random.random()
     # check that the Qobj are cleaned
     assert_equal(np.max(td_obj(t, data=True)), 0.)

@@ -281,6 +281,15 @@ class csr_qmatrix(csr_matrix, _qdata):
         self._isdiag = self.cdata.isdiag()
         return self._isdiag
 
+    def __setstate__(self, state):
+        self.__dict__ = state
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if "_cdata" in state:
+            del state["_cdata"]
+        return state
+
 
 def csr_qmatrix_identity(N):
     """Generates a sparse identity matrix in
