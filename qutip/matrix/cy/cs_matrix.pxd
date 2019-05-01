@@ -14,11 +14,11 @@ cdef class cy_cs_matrix(Cdata):
         int * indices
         int * indptr
         int nnz
-        # int ncols
-        # int nrows
+        int max_length
+        int nrows
+        int ncols
         int nptrs
         int is_set
-        int max_length
         int numpy_lock
         int is_csr
 

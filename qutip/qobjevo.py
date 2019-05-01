@@ -1470,10 +1470,10 @@ class QobjEvo:
     def __getstate__(self):
         _dict_ = {key: self.__dict__[key]
                   for key in self.__dict__ if key is not "compiled_qobjevo"}
-        if self.compiled:
-            return (_dict_, self.compiled_qobjevo.__getstate__())
-        else:
-            return (_dict_,)
+
+        if self.compiled and self.compiled.split()[0] == "dense":
+            compiled_state = self.compiled_qobjevo.__getstate__()
+        return (_dict_, compiled_state)
 
     def __setstate__(self, state):
         self.__dict__ = state[0]
@@ -1481,46 +1481,30 @@ class QobjEvo:
         if self.compiled:
             mat_type, threading, td =  self.compiled.split()
             if mat_type == "csr":
-                if safePickle:
-                    # __getstate__ and __setstate__ of compiled_qobjevo pass pointers
-                    # In 'safe' mod, these pointers are not used.
-                    if td == "cte":
-                        if threading == "single":
-                            self.compiled_qobjevo = CQobjCte()
-                            self.compiled_qobjevo.set_data(self.cte)
-                        elif threading == "omp":
-                            self.compiled_qobjevo = CQobjCteOmp()
-                            self.compiled_qobjevo.set_data(self.cte)
-                            self.compiled_qobjevo.set_threads(self.omp)
-                    else:
-                        # time dependence is pyfunc or cyfactor
-                        if threading == "single":
-                            self.compiled_qobjevo = CQobjEvoTd()
-                            self.compiled_qobjevo.set_data(self.cte, self.ops)
-                        elif threading == "omp":
-                            self.compiled_qobjevo = CQobjEvoTdOmp()
-                            self.compiled_qobjevo.set_data(self.cte, self.ops)
-                            self.compiled_qobjevo.set_threads(self.omp)
-
-                        if td == "pyfunc":
-                            self.compiled_qobjevo.set_factor(obj=self.coeff_get)
-                        elif td == "cyfactor":
-                            self.compiled_qobjevo.set_factor(func=self.coeff_get)
+                # __getstate__ and __setstate__ of compiled_qobjevo pass pointers
+                # In 'safe' mod, these pointers are not used.
+                if td == "cte":
+                    if threading == "single":
+                        self.compiled_qobjevo = CQobjCte()
+                        self.compiled_qobjevo.set_data(self.cte)
+                    elif threading == "omp":
+                        self.compiled_qobjevo = CQobjCteOmp()
+                        self.compiled_qobjevo.set_data(self.cte)
+                        self.compiled_qobjevo.set_threads(self.omp)
                 else:
-                    if td == "cte":
-                        if threading == "single":
-                            self.compiled_qobjevo = CQobjCte.__new__(CQobjCte)
-                        elif threading == "omp":
-                            self.compiled_qobjevo = CQobjCteOmp.__new__(CQobjCteOmp)
-                            self.compiled_qobjevo.set_threads(self.omp)
-                    else:
-                        # time dependence is pyfunc or cyfactor
-                        if threading == "single":
-                            self.compiled_qobjevo = CQobjEvoTd.__new__(CQobjEvoTd)
-                        elif threading == "omp":
-                            self.compiled_qobjevo = CQobjEvoTdOmp.__new__(CQobjEvoTdOmp)
-                            self.compiled_qobjevo.set_threads(self.omp)
-                    self.compiled_qobjevo.__setstate__(state[1])
+                    # time dependence is pyfunc or cyfactor
+                    if threading == "single":
+                        self.compiled_qobjevo = CQobjEvoTd()
+                        self.compiled_qobjevo.set_data(self.cte, self.ops)
+                    elif threading == "omp":
+                        self.compiled_qobjevo = CQobjEvoTdOmp()
+                        self.compiled_qobjevo.set_data(self.cte, self.ops)
+                        self.compiled_qobjevo.set_threads(self.omp)
+
+                    if td == "pyfunc":
+                        self.compiled_qobjevo.set_factor(obj=self.coeff_get)
+                    elif td == "cyfactor":
+                        self.compiled_qobjevo.set_factor(func=self.coeff_get)
 
             elif mat_type == "dense":
                 if td == "cte":

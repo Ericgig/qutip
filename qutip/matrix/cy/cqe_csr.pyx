@@ -102,17 +102,7 @@ cdef _csr_mat* set_csr_mat(cy_csr_matrix mat):
     out.indptr = mat.indptr
     return out
 
-cdef _csr_mat_get_state(_csr_mat* mat):
-    return (PyLong_FromVoidPtr(mat.data),
-            PyLong_FromVoidPtr(mat.indices),
-            PyLong_FromVoidPtr(mat.indptr))
-
 cdef _csr_mat* _csr_mat_set_state(state):
-    cdef _csr_mat* out = <_csr_mat*> PyDataMem_NEW(sizeof(_csr_mat))
-    out.data = <complex*>PyLong_AsVoidPtr(state[0])
-    out.indices = <int*>PyLong_AsVoidPtr(state[1])
-    out.indptr = <int*>PyLong_AsVoidPtr(state[2])
-    return out
 
 cdef class CQobjCte(CQobjEvo):
     def set_data(self, cte):
@@ -271,7 +261,7 @@ cdef class CQobjEvoTd(CQobjEvo):
         ops_info = ()
         sum_elem = ()
         for i in range(self.num_ops):
-            ops_info += (_csr_mat_get_state(self.ops[i]),)
+            ops_info += (self.ops[i].__getstate__(),)
             sum_elem += (self.sum_elem[i],)
 
         return (self.shape0, self.shape1, self.dims, self.total_elem, self.super,
@@ -294,7 +284,7 @@ cdef class CQobjEvoTd(CQobjEvo):
         self.ops = <_csr_mat**> PyDataMem_NEW(self.num_ops * sizeof(_csr_mat*))
         for i in range(self.num_ops):
             self.sum_elem[i] = state[9][i]
-            self.ops[i] = _csr_mat_set_state(state[11][i])
+            self.ops[i].__setstate__(state[11][i])
         self.coeff = np.empty((self.num_ops,), dtype=complex)
         self.coeff_ptr = &self.coeff[0]
 

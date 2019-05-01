@@ -753,3 +753,60 @@ cdef class cy_cs_matrix(Cdata):
             out.indptr[ii] = out.indptr[ii-1]
 
         out.indptr[0] = 0
+
+    def __getstate__(self):
+        cdef int i
+        data = np.zeros(self.max_length, dtype=complex)
+        indices = np.zeros(self.max_length, dtype=np.int32)
+        indptr = np.zeros(self.nptrs+1, dtype=np.int32)
+        for i in range(self.max_length):
+            data[i] = self.data[i]
+            indices[i] = self.indices[i]
+        for i in range(self.nptrs+1):
+            indptr[i] = self.indptr[i]
+        return (self.nnz, self.max_length,
+                self.is_set, self.is_csr,
+                self.nrows, self.ncols, self.nptrs,
+                data, indices, indptr)
+
+    def __setstate__(self, state):
+        cdef int[::1] ind, ptr
+        cdef complex[::1] data
+        self.nnz = state[0]
+        self.max_length = state[1]
+        self.is_set = state[2]
+        self.is_csr = state[3]
+        self.numpy_lock = 1
+        self.ncols = state[4]
+        self.nrows = state[5]
+        self.nptrs = state[6]
+        data = state[7]
+        ind = state[8]
+        ptr = state[9]
+        self.data = &data[0]
+        self.indices = &ind[0]
+        self.indptr = &ptr[0]
+
+    def __shallow_getstate__(self):
+        return (self.nnz, self.max_length,
+                self.is_set, self.is_csr,
+                self.nrows, self.ncols, self.nptrs,
+                PyLong_FromVoidPtr(self.data),
+                PyLong_FromVoidPtr(self.indices),
+                PyLong_FromVoidPtr(self.indptr))
+
+    def __shallow_setstate__(self, state):
+        self.nnz = state[0]
+        self.max_length = state[1]
+        self.is_set = state[2]
+        self.is_csr = state[3]
+        self.numpy_lock = 1
+        self.ncols = state[4]
+        self.nrows = state[5]
+        self.nptrs = state[6]
+        self.data = <complex*>PyLong_AsVoidPtr(state[7])
+        self.indices = <int*>PyLong_AsVoidPtr(state[8])
+        self.indptr = <int*>PyLong_AsVoidPtr(state[9])
+
+    def __reduce__(self):
+        return self.__setstate__, self.__getstate__()
