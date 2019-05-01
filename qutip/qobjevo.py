@@ -1470,7 +1470,7 @@ class QobjEvo:
     def __getstate__(self):
         _dict_ = {key: self.__dict__[key]
                   for key in self.__dict__ if key is not "compiled_qobjevo"}
-
+        compiled_state = None
         if self.compiled and self.compiled.split()[0] == "dense":
             compiled_state = self.compiled_qobjevo.__getstate__()
         return (_dict_, compiled_state)
@@ -1486,6 +1486,7 @@ class QobjEvo:
                 if td == "cte":
                     if threading == "single":
                         self.compiled_qobjevo = CQobjCte()
+                        print(type(self.cte.data))
                         self.compiled_qobjevo.set_data(self.cte)
                     elif threading == "omp":
                         self.compiled_qobjevo = CQobjCteOmp()
@@ -1502,9 +1503,9 @@ class QobjEvo:
                         self.compiled_qobjevo.set_threads(self.omp)
 
                     if td == "pyfunc":
-                        self.compiled_qobjevo.set_factor(obj=self.coeff_get)
-                    elif td == "cyfactor":
                         self.compiled_qobjevo.set_factor(func=self.coeff_get)
+                    elif td == "cyfactor":
+                        self.compiled_qobjevo.set_factor(obj=self.coeff_get)
 
             elif mat_type == "dense":
                 if td == "cte":

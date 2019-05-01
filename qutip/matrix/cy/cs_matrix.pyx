@@ -231,39 +231,6 @@ cdef class cy_cs_matrix(Cdata):
         else:
             raise_error_cs(-3)
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef _shallow_get_state(self):
-        """
-        Converts a cs sparse matrix to a tuples for pickling.
-        A pointer to data is passed instead of the data itself.
-        """
-        longp_data = PyLong_FromVoidPtr(<void *>self.data)
-        longp_indices = PyLong_FromVoidPtr(<void *>self.indices)
-        longp_indptr = PyLong_FromVoidPtr(<void *>self.indptr)
-        return (longp_data,  longp_indices,  longp_indptr,
-                self.nrows, self.ncols, self.nnz, self.max_length,
-                self.is_set, self.numpy_lock, self.nptrs, self.is_csr)
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef _shallow_set_state(self, state):
-        """
-        Converts back a cs sparse matrix from a tuples for pickling.
-        No copy of the data, pointer are passed.
-        """
-        self.data = <complex*>PyLong_AsVoidPtr(state[0])
-        self.indices = <int*>PyLong_AsVoidPtr(state[1])
-        self.indptr = <int*>PyLong_AsVoidPtr(state[2])
-        self.nrows = state[3]
-        self.ncols = state[4]
-        self.nnz = state[5]
-        self.max_length = state[6]
-        self.is_set = state[7]
-        self.numpy_lock = state[8]
-        self.nptrs = state[9]
-        self.is_csr = state[10]
-
     ###################################################################
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -808,5 +775,40 @@ cdef class cy_cs_matrix(Cdata):
         self.indices = <int*>PyLong_AsVoidPtr(state[8])
         self.indptr = <int*>PyLong_AsVoidPtr(state[9])
 
+    def _shallow_get_state(self):
+        """
+        Converts a cs sparse matrix to a tuples for pickling.
+        A pointer to data is passed instead of the data itself.
+        """
+        longp_data = PyLong_FromVoidPtr(<void *>self.data)
+        longp_indices = PyLong_FromVoidPtr(<void *>self.indices)
+        longp_indptr = PyLong_FromVoidPtr(<void *>self.indptr)
+        return (longp_data,  longp_indices,  longp_indptr,
+                self.nrows, self.ncols, self.nnz, self.max_length,
+                self.is_set, self.numpy_lock, self.nptrs, self.is_csr)
+
+    def _shallow_set_state(self, state):
+        """
+        Converts back a cs sparse matrix from a tuples for pickling.
+        No copy of the data, pointer are passed.
+        """
+        self.data = <complex*>PyLong_AsVoidPtr(state[0])
+        self.indices = <int*>PyLong_AsVoidPtr(state[1])
+        self.indptr = <int*>PyLong_AsVoidPtr(state[2])
+        self.nrows = state[3]
+        self.ncols = state[4]
+        self.nnz = state[5]
+        self.max_length = state[6]
+        self.is_set = state[7]
+        self.numpy_lock = 1
+        self.nptrs = state[9]
+        self.is_csr = state[10]
+
+    @classmethod
+    def __build__(cls, *state):
+        out = cls.__new__(cls)
+        out.__setstate__(state)
+        return out
+
     def __reduce__(self):
-        return self.__setstate__, self.__getstate__()
+        return self.__build__, self.__getstate__()

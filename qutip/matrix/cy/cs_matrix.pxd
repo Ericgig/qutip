@@ -15,8 +15,8 @@ cdef class cy_cs_matrix(Cdata):
         int * indptr
         int nnz
         int max_length
-        int nrows
-        int ncols
+        # int nrows  # Defined in Cdata
+        # int ncols  # Defined in Cdata
         int nptrs
         int is_set
         int numpy_lock
@@ -30,10 +30,6 @@ cdef class cy_cs_matrix(Cdata):
     cdef void copy_cs(self, cy_cs_matrix mat)
 
     #def as_vecs(self)
-
-    cpdef _shallow_get_state(self)
-
-    cpdef _shallow_set_state(self, state)
 
     # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     # method returning info about the matrix

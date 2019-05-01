@@ -283,6 +283,7 @@ class csr_qmatrix(csr_matrix, _qdata):
 
     def __setstate__(self, state):
         self.__dict__ = state
+        self._cdata = None
 
     def __getstate__(self):
         state = self.__dict__.copy()
