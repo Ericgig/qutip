@@ -31,16 +31,17 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 __all__ = ['Lattice1d','Lattice2d','create_cell_Hamiltonian']
-from matplotlib.pyplot import *
+from matplotlib.pyplot import * # remove
+import matplotlib.pyplot as plt # keep this
 
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
-import sympy 
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import # remove
 
-import warnings
-import types
+from matplotlib import cm  # remove
+from matplotlib.ticker import LinearLocator, FormatStrFormatter # remove
+import sympy
+
+import warnings # remove
+import types    # remove
 
 try:
     import builtins
@@ -51,22 +52,23 @@ except:
 from numpy import (arccos, arccosh, arcsin, arcsinh, arctan, arctan2, arctanh,
                    ceil, copysign, cos, cosh, degrees, e, exp, expm1, fabs,
                    floor, fmod, frexp, hypot, isinf, isnan, ldexp, log, log10,
-                   log1p, modf, pi, radians, sin, sinh, sqrt, tan, tanh, trunc)
+                   log1p, modf, pi, radians, sin, sinh, sqrt, tan, tanh, trunc)# remove
 from scipy.sparse import (_sparsetools, isspmatrix, isspmatrix_csr,
                           csr_matrix, coo_matrix, csc_matrix, dia_matrix)
-from qutip.fastsparse import fast_csr_matrix, fast_identity
+from qutip.fastsparse import fast_csr_matrix, fast_identity # remove
 from qutip.qobj import Qobj
-from qutip.qobj import isherm
-from qutip import *
+from qutip.qobj import isherm # remove
+from qutip import * # remove
 import numpy as np
 from scipy.sparse.linalg import eigs
 
 
-def Hamiltonian_2d(base_h, inter_hop_x, inter_hop_y, space_dims, nx_units = 1, PBCx = 0, ny_units = 1, PBCy = 0):            
+def Hamiltonian_2d(base_h, inter_hop_x, inter_hop_y, space_dims,
+                   nx_units=1, PBCx=0, ny_units=1, PBCy=0):
     """
     Returns the Hamiltonian as a csr_matrix from the specified parameters for a
     2d space of sites in the x-major format.
-    
+
     Parameters
     ==========
     base_h : numpy matrix
@@ -86,45 +88,43 @@ def Hamiltonian_2d(base_h, inter_hop_x, inter_hop_y, space_dims, nx_units = 1, P
     PBCy : numpy matrix
         The matrix to be diagonalized
 
-            
     Returns
     -------
     Hamt : csr_matrix
-        The 2d Hamiltonian matrix for the specified parameters.                      
-    """    
-    xi_len = len(inter_hop_x)
-    (x0,y0) = np.shape(inter_hop_x[0])
+        The 2d Hamiltonian matrix for the specified parameters.
+    """
+    # Why not use tensor?
+    xi_len = len(inter_hop_x) # inter_hop_x is a list but not inter_hop_y
+    (x0,y0) = np.shape(inter_hop_x[0]) # Why use np.shape? inter_hop_x is not a Qobj?
 
-    (x1,y1) = np.shape(inter_hop_y)
-    (xx,yy) = np.shape(base_h)
+    (x1,y1) = np.shape(inter_hop_y) # Same here?
+    (xx,yy) = np.shape(base_h) # Same here?
 
     row_ind = np.array([]); col_ind = np.array([]);  data = np.array([]);
+    # here using list instead of array would be better
 
     NS = space_dims[0][0]*space_dims[1][0]
 
     for i in range(nx_units):
         for j in range(ny_units):
-            lin_RI = i + j* nx_units                
+            lin_RI = i + j* nx_units
             for k in range(xx):
-                for l in range(yy):                        
+                for l in range(yy):
                     row_ind = np.append(row_ind,[lin_RI*NS+k])
                     col_ind = np.append(col_ind,[lin_RI*NS+l])
                     data = np.append(data,[base_h[k,l] ])
 
-    for i in range(0,nx_units):
-        for j in range(0,ny_units):
+    for i in range(nx_units):
+        for j in range(ny_units):
             lin_RI = i + j* nx_units;
-
-
             for m in range(xi_len):
-
                 for k in range(x0):
-                    for l in range(y0):
+                    for l in range(y0): # 5 loops ... not great in python
                         if (i>0):
-                            row_ind = np.append(row_ind,[lin_RI*NS+k])                        
-                            col_ind = np.append(col_ind,[(lin_RI-1)*NS+l])
-                            data = np.append(data,[np.conj(inter_hop_x[m][l,k]) ]);
-  
+                            row_ind = np.append(row_ind, [lin_RI*NS+k])
+                            col_ind = np.append(col_ind, [(lin_RI-1)*NS+l])
+                            data = np.append(data, [np.conj(inter_hop_x[m][l,k])])
+
                 for k in range(x0):
                     for l in range(y0):
                         if (i < (nx_units-1)):
@@ -132,63 +132,62 @@ def Hamiltonian_2d(base_h, inter_hop_x, inter_hop_y, space_dims, nx_units = 1, P
                             col_ind = np.append(col_ind,[(lin_RI+1)*NS+l])
                             data = np.append(data,[inter_hop_x[m][k,l] ])
 
-
-
             for k in range(x1):
                 for l in range(y1):
                     if (j>0):
                         row_ind = np.append(row_ind,[lin_RI*NS+k])
                         col_ind = np.append(col_ind,[(lin_RI-nx_units)*NS+l])
                         data = np.append(data,[np.conj(inter_hop_y[l,k]) ])
-  
+
             for k in range(x1):
                 for l in range(y1):
                     if (j<(ny_units-1)):
                         row_ind = np.append(row_ind,[lin_RI*NS+k])
                         col_ind = np.append(col_ind,[(lin_RI+nx_units)*NS+l])
                         data = np.append(data,[inter_hop_y[k,l] ])
-           
-    M = nx_units*ny_units*NS     
-    N = nx_units*ny_units*NS             
 
-    for i in range(0,nx_units):
-        lin_RI = i;                                               
+    M = nx_units*ny_units*NS # rename with more descriptive name
+    N = nx_units*ny_units*NS # M==N no need for 2 variable
+
+    for i in range(nx_units):
+        lin_RI = i;
         if (PBCy == 1 and ny_units*space_dims[1][0] > 2):
             for k in range(x1):
                 for l in range(y1):
-                    (Aw,)=np.where(row_ind == (lin_RI*NS+k)  )
-                    (Bw,)=np.where(col_ind == ( (lin_RI+(ny_units-1)*nx_units)*NS+l )  )                    
+                    (Aw,) = np.where(row_ind == (lin_RI*NS+k))
+                    (Bw,) = np.where(col_ind == ((lin_RI+(ny_units-1)*nx_units)*NS+l))
                     if ( len(np.intersect1d(Aw,Bw)  ) == 0 ):
-                        row_ind = np.append(row_ind,[lin_RI*NS+k,   (lin_RI+(ny_units-1)*nx_units)*NS+l]);
-                        col_ind = np.append(col_ind,[(lin_RI+(ny_units-1)*nx_units)*NS+l,  lin_RI*NS+k]);
-                        data = np.append(data,[np.conj(inter_hop_y[l,k]),  inter_hop_y[l,k] ]);
+                        row_ind = np.append(row_ind, [lin_RI*NS+k, (lin_RI+(ny_units-1)*nx_units)*NS+l])
+                        col_ind = np.append(col_ind, [(lin_RI+(ny_units-1)*nx_units)*NS+l, lin_RI*NS+k])
+                        data = np.append(data,[np.conj(inter_hop_y[l,k]), inter_hop_y[l,k] ])
 
-    for j in range(0,ny_units):
+    for j in range(ny_units):
         lin_RI = j;
         if (PBCx == 1 and nx_units*space_dims[0][0] > 2):
             for k in range(x0):
                 for l in range(y0):
-                    (Aw,)=np.where(row_ind == (lin_RI*nx_units*NS+k)  )
-                    (Bw,)=np.where(col_ind == (((lin_RI+1)*nx_units-1)*NS+l)   )                    
-                    if ( len(np.intersect1d(Aw,Bw)  ) == 0 ):                    
+                    (Aw,) = np.where(row_ind == (lin_RI*nx_units*NS+k))
+                    (Bw,) = np.where(col_ind == (((lin_RI+1)*nx_units-1)*NS+l))
+                    if ( len(np.intersect1d(Aw,Bw)) == 0 ):
                         for m in range(xi_len):
-                            row_ind = np.append(row_ind,[lin_RI*nx_units*NS+k,  ((lin_RI+1)*nx_units-1)*NS+l ]);
-                            col_ind = np.append(col_ind,[((lin_RI+1)*nx_units-1)*NS+l,  lin_RI*nx_units*NS+k]);
-                            data = np.append(data,[np.conj(inter_hop_x[m][l,k]), inter_hop_x[m][l,k] ]);
-            
-    Hamt = csr_matrix((data, (row_ind, col_ind)), [M, N], dtype=np.complex )            
-    return Hamt
-        
+                            row_ind = np.append(row_ind, [lin_RI*nx_units*NS+k, ((lin_RI+1)*nx_units-1)*NS+l])
+                            col_ind = np.append(col_ind, [((lin_RI+1)*nx_units-1)*NS+l, lin_RI*nx_units*NS+k])
+                            data = np.append(data, [np.conj(inter_hop_x[m][l,k]), inter_hop_x[m][l,k]])
+
+    Hamt = csr_matrix((data, (row_ind, col_ind)), [M, N], dtype=np.complex )
+    return Hamt # please return a Qobj, not a scipy matrix
+
 def matrix_sparcity_pattern(Hamt):
+    # move to visualisation.py
     """
     Plots the non-zero elements of a matrix on a 2d plane.
-    
+
     Parameters
     ==========
     Hamt : numpy matrix
-        The matrix to be plotted on the 2d plane.            
-    """       
-    Hamt = csr_matrix(Hamt)         
+        The matrix to be plotted on the 2d plane.
+    """
+    Hamt = csr_matrix(Hamt)
 
     fig, axs = plt.subplots(1, 1)
     axs.spy(Hamt, markersize=5)
@@ -197,48 +196,49 @@ def matrix_sparcity_pattern(Hamt):
 def diag_a_matrix( H_k, calc_evecs = False):
     """
     Returns eigen-values and/or eigen-vectors of an input matrix.
-    
+
     Parameters
     ==========
     H_k : numpy matrix
         The matrix to be diagonalized
-            
+
     Returns
     -------
     vecs : numpy ndarray
         vecs[:,:] = [band index,:] = eigen-vector of band_index
     vals : numpy ndarray
-        The diagonalized matrix                        
-    """                 
-    if np.max(H_k-H_k.T.conj())>1.0E-20:
-        raise Exception("\n\nThe Hamiltonian matrix is not hermitian?!")
+        The diagonalized matrix
+    """
+    if np.max(H_k-H_k.T.conj())>1.0E-20: #may be too stric 1e-16
+        raise Exception("\n\nThe Hamiltonian matrix is not hermitian?!") # "The Hamiltonian need to be hermitian."
 
     if calc_evecs == False: # calculate only the eigenvalues
         vals=np.linalg.eigvalsh(H_k.todense())
         return np.array(vals,dtype=float)
     else: # find eigenvalues and eigenvectors
         (vals, vecs)=np.linalg.eigh(H_k.todense())
-        vecs=vecs.T    
-        # now vecs[i,:] is eigenvector for vals[i,i]-th eigenvalue        
+        vecs=vecs.T
+        # now vecs[i,:] is eigenvector for vals[i,i]-th eigenvalue
         return (vals,vecs)
 
 
 def create_cell_Hamiltonian( val_s, val_q):
     """
     Returns eigen-values and/or eigen-vectors of an input matrix.
-    
+
     Parameters
     ==========
     H_k : numpy matrix
         The matrix to be diagonalized
-            
+
     Returns
     -------
     vecs : numpy ndarray
         vecs[:,:] = [band index,:] = eigen-vector of band_index
     vals : numpy ndarray
-        The diagonalized matrix                        
-    """                 
+        The diagonalized matrix
+    """
+    # be carefull about trailing whitespace
 
     QN = len(val_q)
     SN = len(val_s)
@@ -248,145 +248,157 @@ def create_cell_Hamiltonian( val_s, val_q):
         for jr in range(QN):
             for ic in range(SN):
                 for jc in range(QN):
+                    # sympy is used at not much more than string here, not needed.
                     k_Hamiltonian[ir*QN+jr][ic*QN+jc] = sympy.Symbol("<"+val_s[ir]+val_q[jr]+" H "+val_s[ic]+val_q[jc] + ">" )
 
     return k_Hamiltonian
-    
-    
-    
-    
-
+# One empty line in function and class, 2 in between
 
 
 class Lattice1d():
+    """A class for representing ...
 
-    def __init__(self, num_cell=10, boundary = "periodic", cell_num_site = 1, cell_site_dof = 1, cell_Hamiltonian = Qobj([[0]]) , inter_hop = Qobj([[-1]]), inter_vec_list = [[]] ):
-     
+    Parameters
+    ----------
+
+    Attributes
+    ----------
+
+    Methods
+    -------
+
+    """
+    def __init__(self, num_cell=10, boundary = "periodic", cell_num_site = 1,
+                 cell_site_dof = 1, cell_Hamiltonian = Qobj([[0]]) ,
+                 inter_hop = Qobj([[-1]]), inter_vec_list = [[]] ):
+
         self.cell_num_site = cell_num_site
         self.cell_site_dof = cell_site_dof
-        
-        self.cell_tensor_config = np.append(cell_num_site,cell_site_dof)  
+
+        self.cell_tensor_config = np.append(cell_num_site,cell_site_dof)
         self._num_cell = num_cell
         l_u = 1
         for i in range(len(self.cell_tensor_config)):
-            l_u = l_u*self.cell_tensor_config[i]                
+            l_u = l_u*self.cell_tensor_config[i]
         self._length_of_unit_cell = l_u
 
         if ( type(cell_num_site) != int or cell_num_site < 0 ):
-            raise Exception("\n\n cell_num_site is required to be a positive integer.")
+            raise Exception("\n\n cell_num_site is required to be a positive integer.") # Why start with two \n?
 
         if ( type(cell_site_dof) == list  ):
             for i in range(len(cell_site_dof)):
-                if ( type(cell_site_dof[i]) != int or cell_site_dof[i] < 0 ):
+                if ( type(cell_site_dof[i]) != int or cell_site_dof[i] < 0 ): # isinstance(cell_site_dof[i], int) instead of type() == int
                     print('\n Unacceptable cell_site_dof list element at index: ',i)
-                    raise Exception("\n\n Elements of cell_site_dof is required to be positive integers.")
+                    raise Exception("\n\n Elements of cell_site_dof is required to be positive integers.") # Why start with two \n?
         elif ( type(cell_site_dof) == int  ):
             if ( cell_site_dof < 0 ):
-                raise Exception("\n\n cell_site_dof is required to be a positive integer.")
+                raise Exception("\n\n cell_site_dof is required to be a positive integer.") # Why start with two \n?
         else:
-            raise Exception("\n\n cell_site_dof is required to be a positive integer or a list of positive integers.")
+            raise Exception("\n\n cell_site_dof is required to be a positive integer or a list of positive integers.") # Why start with two \n?
 
-        
         self._H_intra = cell_Hamiltonian
         if (type(inter_hop) == list):
             for i in range(len(inter_hop) ):
                 if (type(inter_hop[i]) != qutip.qobj.Qobj ):
-                    raise Exception("\n\nAll inter_hop list elements need to be Qobj's.")
+                    raise Exception("\n\nAll inter_hop list elements need to be Qobj's.") # Why start with two \n?
             self._H_inter_list = inter_hop
         else:
             if (type(inter_hop) != qutip.qobj.Qobj ):
-                raise Exception("\n\n inter_hop need to be a Qobj.")
+                raise Exception("\n\n inter_hop need to be a Qobj.") # Why start with two \n?
             self._H_inter_list = [inter_hop]
-            
+
         if ( len(inter_vec_list) == 0 ):
-            self._H_inter_vector_list = [[1] for i in range(len(self._H_inter_list)) ]
+            self._H_inter_vector_list = [[1] for i in range(len(self._H_inter_list)) ] # Why list of list?
             # The default _H_inter_vector_list is only [1]s.
         else:
             self._H_inter_vector_list = inter_vec_list
             # The _H_inter_vector_list is set to user defined values.
-        
+
         self._is_consistent = self._checks(check_if_consistent = True)
         self._lattice_vectors_list = [[1]]     #unit vectors
-        
-        
+
         if boundary == "periodic":
             self.PBCx = 1;
         elif (boundary == "aperiodic" or boundary == "hardwall" ):
             self.PBCx = 0;
         else:
             print("Error in boundary")
-            raise Exception(" Only recognized bounday options are:\"periodic\",\"aperiodic\" and \"hardwall\" ");
-    
+            raise Exception("Only recognized bounday options are:\"periodic\","
+                            " \"aperiodic\" and \"hardwall\" ");
+
     def _checks(self,check_if_consistent = False):
         """
-        A checking code that confirms all the entries in the Qbasis is 
-        consistent (code to be written).  The codenames indicate the last 
+        A checking code that confirms all the entries in the Qbasis is
+        consistent (code to be written).  The codenames indicate the last
         action, that we would verify the correctness of. If it is called with
-        check_if_complete == True, it returns if the Qbasis instance is 
+        check_if_complete == True, it returns if the Qbasis instance is
         complete or not.
-        """                 
-        A = True
-        return A        
-    
+        """
+        raise NotImplementedError
+
     def basis(self, cell = 0, ind = np.array([[0],[0]]) ):
         """
-        A checking code that confirms all the entries in the Qbasis is 
-        """          
-        vec_i = tensor(basis(self._num_cell,cell),basis(self.unit_tensor_dimensions[0][0],ind[0][0] ),basis(self.unit_tensor_dimensions[1][0],ind[1][0]) )        
-        return vec_i       
+        A checking code that confirms all the entries in the Qbasis is
+        """
+        vec_i = tensor(basis(self._num_cell,cell),
+                       basis(self.unit_tensor_dimensions[0][0], ind[0][0]),
+                       basis(self.unit_tensor_dimensions[1][0], ind[1][0]))
+        # broken? self.cell_num_site, self.cell_site_dof
+        return vec_i
 
-    
     def distribute_operator(self, op  ):
         """
-        A checking code that confirms all the entries in the Qbasis is 
-        """                 
+        A checking code that confirms all the entries in the Qbasis is
+        """
         (xx,yy) = np.shape(op)
 
         row_ind = np.array([])
         col_ind = np.array([])
         data = np.array([])
 
-        
         NS = self._length_of_unit_cell
         nx_units = self._num_cell
-        ny_units = 1
+        # ny_units = 1 # We don't need ny_units in 1D.
         for i in range(nx_units):
-            for j in range(ny_units):
-                lin_RI = i + j* nx_units;                
+            #for j in range(ny_units):
+                lin_RI = i #+ j* nx_units;
                 for k in range(xx):
-                    for l in range(yy):                        
+                    for l in range(yy):
                         row_ind = np.append(row_ind,[lin_RI*NS+k]);
                         col_ind = np.append(col_ind,[lin_RI*NS+l]);
-                        data = np.append(data,[op[k,l] ]);        
-                        
-        M = nx_units*ny_units*NS     
-        N = nx_units*ny_units*NS             
+                        data = np.append(data,[op[k,l] ]);
 
-        op_H = csr_matrix((data, (row_ind, col_ind)), [M, N], dtype=np.complex )                    
-        return Qobj(op_H)       
+        op_H = csr_matrix((data, (row_ind, col_ind)),
+                          [nx_units*NS, nx_units*NS], dtype=np.complex )
+        return Qobj(op_H)
 
     def x(self):
         """
-        The position operator. 
-        """     
-        Xar = num(self._num_cell)
-        
+        The position operator.
+        """
+        Xar = num(self._num_cell) # not used, remove
+
         nx = self.unit_tensor_dimensions[0][0]
         ne = self.unit_tensor_dimensions[1][0]
+        # broken? self.cell_num_site, self.cell_site_dof
 
-        positions = [ i for i in range(nx) for j in range(ne) ]
-        R = np.kron( range(0,self._num_cell), [1 for i in range(nx*ne) ] )
-        S = np.kron( [1 for i in range(self._num_cell) ], positions )
+        positions = [ i for i in range(nx) for _ in range(ne) ] # in python _ is used for dummy iterator
+        R = np.kron(range(0, self._num_cell), [1 for i in range(nx*ne)])
+        # range(0, self._num_cell) => range(self._num_cell)
+        # [1 for _ in range(nx*ne) ] => np.ones(nx*ne)
+        S = np.kron([1 for i in range(self._num_cell) ], positions)
+        # [1 for _ in range(self._num_cell) ] => np.ones(self._num_cell)
 
-#        print(R)
-#        print(S)
+        # print(R)
+        # print(S)
+        # S is the positions inside a cell, so no values should be over 1?
         xs = np.diagflat(R+S)
-        return Qobj(xs)    
-        
-        
+        return Qobj(xs)
+
+
     def operator(self, op, cell ):
-        """        
-        """                 
+        """
+        """
         (xx,yy) = np.shape(op)
         row_ind = np.array([])
         col_ind = np.array([])
@@ -394,136 +406,137 @@ class Lattice1d():
 
         NS = self._length_of_unit_cell
         nx_units = self._num_cell
-        ny_units = 1
-                
-        
+        # ny_units = 1 # not needed, remove
+
         for i in range(nx_units):
-            for j in range(ny_units):
-                lin_RI = i + j* nx_units;                
-                
-                if (i==cell and j==0):
+            #for j in range(ny_units):
+                lin_RI = i # + j* nx_units;
+
+                if i == cell:
                     for k in range(xx):
                         for l in range(yy):
                             row_ind = np.append(row_ind,[lin_RI*NS+k])
                             col_ind = np.append(col_ind,[lin_RI*NS+l])
-                            data = np.append(data,[op[k,l] ])        
+                            data = np.append(data,[op[k,l] ])
 
                 else:
                     for k in range(xx):
                         row_ind = np.append(row_ind,[lin_RI*NS+k]);
                         col_ind = np.append(col_ind,[lin_RI*NS+k]);
-                        data = np.append(data,[1]);         
-        
-        M = nx_units*ny_units*NS     
-        N = nx_units*ny_units*NS             
+                        data = np.append(data,[1]);
 
-        op_H = csr_matrix((data, (row_ind, col_ind)), [M, N], dtype=np.complex )                    
-        return Qobj(op_H) 
+        M = nx_units*NS # I letter capital name are not good variable name, lat_size?
+
+        op_H = csr_matrix((data, (row_ind, col_ind)), [M, M], dtype=np.complex)
+        return Qobj(op_H)
 
 
     def operator_set_cells(self, op ):
         """
-        A checking code that confirms all the entries in the Qbasis is 
-        """                 
+        A checking code that confirms all the entries in the Qbasis is
+        """ # This is not the right docstring
         op_set = []
         for i in range(self._num_cell):
             op_set.append(self.operator(op,i) )
-        
-        return op_set    
 
+        return op_set
 
     def operator_cross_site(self, op, site):
         """
         site = [m,n]
-        """                 
-        A = True
-        return A    
+        """
+        raise NotImplementedError
 
-    def Hamiltonian(self):        
+    def Hamiltonian(self):
         """
         Hamiltonian.
-        """        
-#        self.dims = [[number_of_atoms],[1]]
-#        Hamil = Hamiltonian_2d(self._H_intra, self._inter_hop_x, self._inter_hop_y, dims = self._space_dims, nx_units = self._x_num_cell, PBCx = self.PBCx, ny_units = self._y_num_cell, PBCy = self.PBCy)        
-        Hamil = Hamiltonian_2d(self._H_intra, self._H_inter_list, self._H_inter_list[0], space_dims = self._space_dims, nx_units = self._num_cell, PBCx = self.PBCx, ny_units = 1, PBCy = 0)
+        """
+        # self.dims = [[number_of_atoms],[1]]
+        # Hamil = Hamiltonian_2d(self._H_intra, self._inter_hop_x,
+        #                        self._inter_hop_y, dims=self._space_dims,
+        #                        nx_units=self._x_num_cell, PBCx=self.PBCx,
+        #                        ny_units=self._y_num_cell, PBCy=self.PBCy)
+        Hamil = Hamiltonian_2d(self._H_intra, self._H_inter_list,
+                               self._H_inter_list[0], space_dims=self._space_dims,
+                               nx_units=self._num_cell, PBCx=self.PBCx)
         return Qobj(Hamil)
-    
-    
-    
-    def dispersion(self, to_display = 0, klist = [-np.pi,np.pi,101]):
+        # Hamil's dims=[[nx, num_site, dof], [nx, num_site, dof]]
+
+    def dispersion(self, to_display=0, klist=[-np.pi, np.pi, 101]):
         """
         Calculates the dispersion for a 1-dimensional crystal
-        """   
-#        if (not self.lattice_vectors.is_complete):
-#            raise Exception("\n\n Lattice vector is not defined.")        
+        """
+        # if (not self.lattice_vectors.is_complete):
+        #     raise Exception("\n\n Lattice vector is not defined.")
 
-#        if (not self.hop_vectors.is_complete):
-#            raise Exception("\n\n H_inter_vec_dict/list defintions to be accompanied with vectors associate with them.")        
-            
+        # if (not self.hop_vectors.is_complete):
+        #     raise Exception("\n\n H_inter_vec_dict/list defintions to be "
+        #                     "accompanied with vectors associate with them.")
+
+        # klist default should depend on the lattice number of sites, not a arbitrary 101
         if ( type(klist) != list or  np.shape(klist) != (3,) ):
             print(' The second argument of dispersion() needs to be a list in the')
-            print('format [float,float,int]. For example [-numpy.pi,numpy.pi,101]')            
+            print('format [float,float,int]. For example [-numpy.pi,numpy.pi,101]')
             if (type(klist[2]) != int):
                 print('klist[2] needs to be an int')
-            raise Exception("\n\nUnacceptable arguments for Lattice1d.dispersion()")        
-        
-        k_start = klist[0]; k_end = klist[1]; kpoints = klist[2]   
-        NS = self._length_of_unit_cell        
-        val_ks=np.zeros((NS,kpoints),dtype=float)
-        kxA = np.zeros((kpoints,1),dtype=float)
+            raise Exception("\n\nUnacceptable arguments for Lattice1d.dispersion()")
+
+        k_start = klist[0]
+        k_end = klist[1]
+        kpoints = klist[2]
+        NS = self._length_of_unit_cell
+        val_ks = np.zeros((NS, kpoints), dtype=float)
+        kxA = np.zeros((kpoints, 1), dtype=float)
         G0_H = self._H_intra
-        
-        k_1 = (kpoints-1)
+
+        k_1 = kpoints - 1
         for ks in range(kpoints):
-            kx = k_start + (ks*(k_end-k_start)/k_1)
+            kx = k_start + (ks * (k_end - k_start) / k_1)
             kxA[ks,0] = kx
 
             H_ka = G0_H
             k_cos = [[kx]]
             for m in range(len(self._H_inter_vector_list)):
                 r_cos = self._H_inter_vector_list[m]
-            
                 kr_dotted = np.dot(k_cos, r_cos)
-                H_int = self._H_inter_list[m]*exp(complex(0,kr_dotted))
-                H_ka = H_ka + H_int + H_int.dag();
-            
+                H_int = self._H_inter_list[m] * exp(complex(0, kr_dotted))
+                H_ka = H_ka + H_int + H_int.dag()
+
             H_k = csr_matrix(H_ka)
-            vals = diag_a_matrix(H_k, calc_evecs = False)                
-                
+            vals = diag_a_matrix(H_k, calc_evecs=False)
             val_ks[:,ks] = vals[:]
 
-        if (to_display == 1) :
+        if to_display == 1:
+            # To move to another method.
             fig, ax = subplots()
             for g in range(NS):
-                ax.plot(kxA/pi, val_ks[g,:]);
-            ax.set_ylabel('Energy');
-            ax.set_xlabel('$k_x(\pi)$');
+                ax.plot(kxA/pi, val_ks[g,:])
+            ax.set_ylabel('Energy')
+            ax.set_xlabel('$k_x(\pi)$')
             show(fig)
             fig.savefig('./Dispersion.pdf')
 
-        return (kxA,val_ks)
-    
-        
-    
-    
-class Lattice2d():
-    def __init__(self, x_num_cell=1, y_num_cell=1 , boundary = ("periodic","periodic"), basis_Hamiltonian = Qobj([[0]]), dims = [[1],[1]] , inter_hop_x= Qobj([[-1]]), inter_hop_y = Qobj([[-1]])  ):    
+        return (kxA, val_ks)
 
-        self.dims = dims        
+
+class Lattice2d():
+    def __init__(self, x_num_cell=1, y_num_cell=1 , boundary = ("periodic","periodic"), basis_Hamiltonian = Qobj([[0]]), dims = [[1],[1]] , inter_hop_x= Qobj([[-1]]), inter_hop_y = Qobj([[-1]])  ):
+
+        self.dims = dims
         self._inter_hop_x = inter_hop_x
         self._inter_hop_y = inter_hop_y
 
         self._H_intra = basis_Hamiltonian
         self._x_num_cell = x_num_cell
         self._y_num_cell = y_num_cell
-        self._lattice_vectors_list = [[1,0],[0,1]]   #default basis vector 
-        
+        self._lattice_vectors_list = [[1,0],[0,1]]   #default basis vector
+
         self._is_complete = self._checks(check_if_consistent = True)
 
         if ( not isinstance(boundary,tuple)  ):
             print("The specified format for bounday needs to be a tuple of two str's.")
             raise Exception("For example:  boundary = (\"periodic\",\"periodic\") ");
-            
+
         if boundary[0] == "periodic":
             self.PBCx = 1
         elif (boundary[0] == "aperiodic" or boundary[0] == "hardwall" ):
@@ -531,7 +544,7 @@ class Lattice2d():
         else:
             print("Error in boundary[0]")
             raise Exception(" Only recognized bounday options are:\"periodic\",\"aperiodic\" and \"hardwall\" ");
-        
+
         if boundary[1] == "periodic":
             self.PBCy = 1
         elif (boundary[1] == "aperiodic" or boundary[1] == "hardwall" ):
@@ -543,20 +556,20 @@ class Lattice2d():
 
     def _checks(self,check_if_consistent = False):
         """
-        A checking code that confirms all the entries in the Qbasis is 
-        consistent (code to be written).  The codenames indicate the last 
+        A checking code that confirms all the entries in the Qbasis is
+        consistent (code to be written).  The codenames indicate the last
         action, that we would verify the correctness of. If it is called with
-        check_if_complete == True, it returns if the Qbasis instance is 
+        check_if_complete == True, it returns if the Qbasis instance is
         complete or not.
-        """                 
+        """
         A = True
-        return A        
+        return A
 
-    def Hamiltonian(self):        
+    def Hamiltonian(self):
         """
         Hamiltonian.
-        """        
-#        Hamiltonian_2d(base_h, inter_hop_x, inter_hop_y, dims, nx_units = 1, PBCx = 0, ny_units = 1, PBCy = 0)        
+        """
+        # Hamiltonian_2d(base_h, inter_hop_x, inter_hop_y, dims, nx_units = 1, PBCx = 0, ny_units = 1, PBCy = 0)
         Hamil = Hamiltonian_2d(self._H_intra, self._inter_hop_x, self._inter_hop_y, dims = self.dims, nx_units = self._x_num_cell, PBCx = self.PBCx, ny_units = self._y_num_cell, PBCy = self.PBCy)
         return Qobj(Hamil)
 
@@ -570,7 +583,7 @@ class Lattice2d():
             self._lattice_vectors_list = [ [1,0],[1/2,-np.sqrt(3)/2] ]
         elif (word_key == 'user'):
             if (not isinstance(user_input_vectors) ):
-                raise Exception("user_input_vectors need to be a list of lists.") 
+                raise Exception("user_input_vectors need to be a list of lists.")
             if ((not isinstance(user_input_vectors[0]) ) or (not isinstance(user_input_vectors[1]) ) ):
                 raise Exception("user_input_vectors[0] and user_input_vectors[1] need to be lists of two numbers")
             x1 = user_input_vectors[0][0]
@@ -582,11 +595,11 @@ class Lattice2d():
 
             if (np.abs(x2*x2+y2*y2-1) > 1E-10):
                 raise Exception("The second input basis vector is not a unit vector. ")
-                
+
             self._lattice_vectors_list = user_input_vectors
         else:
-            raise Exception("Unrecognized lattice: Current options are: graphene, kagome, and user.") 
-        
+            raise Exception("Unrecognized lattice: Current options are: graphene, kagome, and user.")
+
 
 
     def dispersion(self, to_display = 0, klist = [-np.pi,np.pi,101]):
@@ -594,12 +607,7 @@ class Lattice2d():
         Calculates the dispersion for a 2-dimensional crystal
         """
         if (not self.lattice_vectors.is_complete):
-            raise Exception("\n\n Lattice vector is not defined.")        
+            raise Exception("\n\n Lattice vector is not defined.")
 
         if (not self.hop_vectors.is_complete):
-            raise Exception("\n\n H_inter_vec_dict/list defintions to be accompanied with vectors associate with them.")        
-           
-            
-
-
-        
+            raise Exception("\n\n H_inter_vec_dict/list defintions to be accompanied with vectors associate with them.")
