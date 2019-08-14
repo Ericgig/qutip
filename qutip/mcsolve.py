@@ -428,7 +428,7 @@ class _MC():
 
         # set arguments for input to monte carlo
         map_kwargs_ = {'progress_bar': progress_bar,
-                      'num_cpus': options.num_cpus}
+                       'num_cpus': options.num_cpus}
         map_kwargs_.update(map_kwargs)
         map_kwargs = map_kwargs_
 

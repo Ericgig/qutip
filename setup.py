@@ -278,8 +278,8 @@ setup(name = NAME,
       package_data = PACKAGE_DATA,
       zip_safe = False,
       install_requires=INSTALL_REQUIRES,
-      **EXTRA_KWARGS
-)
+      **EXTRA_KWARGS)
+
 _cite = """\
 ==============================================================================
 Installation complete
