@@ -40,6 +40,7 @@ import numpy as np
 from qutip.cy.inter import _prep_cubic_spline
 import time
 import sys
+import qutip.settings as qset
 
 
 def _try_remove(filename):
@@ -49,20 +50,25 @@ def _try_remove(filename):
         pass
 
 
+file_num = [0]
+
+
 def _import_str(code, basefilename, obj_name, cythonfile=False):
     """
     Import 'obj_name' defined in 'code'.
     Using a temporary file starting by 'basefilename'.
     """
+    root = qset.tmproot
+
     filename = (basefilename + str(hash(code))[1:4] +
-                str(os.getpid()) + time.strftime("%M%S"))
+                str(os.getpid()) + str(file_num[0])) + "_"
+    file_num[0] += 1
     tries = 0
     import_list = []
     ext = ".pyx" if cythonfile else ".py"
-    if os.getcwd() not in sys.path:
-        sys.path.insert(0, os.getcwd())
     while not import_list and tries < 3:
         try_file = filename + str(tries)
+        file_name = os.path.join(root, try_file + ext)
         file_ = open(try_file+ext, "w")
         file_.writelines(code)
         file_.close()
@@ -77,13 +83,13 @@ def _import_str(code, basefilename, obj_name, cythonfile=False):
         except (ModuleNotFoundError, ImportError) as e:
             time.sleep(0.05)
             tries += 1
-            _try_remove(try_file+ext)
+            _try_remove(file_name)
             err = e
     if not import_list:
         raise Exception("Could not convert string to importable function, "
-                        "tmpfile:" + try_file + ext) from err
+                        "tmpfile:" + file_name) from err
     coeff_obj = import_list[0]
-    return coeff_obj, try_file + ext
+    return coeff_obj, file_name
 
 
 def _compile_str_single(string, args):

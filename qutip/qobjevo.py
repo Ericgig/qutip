@@ -47,11 +47,12 @@ from qutip.qobjevo_codegen import (_compile_str_single, _compiled_coeffs,
 from qutip.cy.spmatfuncs import (cy_expect_rho_vec, cy_expect_psi,
                                  spmv, cy_spmm_tr)
 from qutip.cy.cqobjevo import (CQobjCte, CQobjCteDense, CQobjEvoTd,
-                                 CQobjEvoTdMatched, CQobjEvoTdDense)
+                               CQobjEvoTdMatched, CQobjEvoTdDense)
 from qutip.cy.cqobjevo_factor import (InterCoeffT, InterCoeffCte,
                                       InterpolateCoeff, StrCoeff,
                                       StepCoeffCte, StepCoeffT)
 import pickle
+import atexit
 import sys
 import scipy
 import os
@@ -60,16 +61,6 @@ from re import sub
 if qset.has_openmp:
     from qutip.cy.openmp.cqobjevo_omp import (CQobjCteOmp, CQobjEvoTdOmp,
                                               CQobjEvoTdMatchedOmp)
-
-safePickle = [False]
-if sys.platform == 'win32':
-    safePickle[0] = True
-
-try:
-    import cython
-    use_cython = [True]
-except:
-    use_cython = [False]
 
 
 def proj(x):
@@ -116,27 +107,52 @@ class _file_list:
     """
     def __init__(self):
         self.files = []
+        self.clean_old()
 
     def add(self, file_):
         self.files += [file_ + ".pyx"]
+
+    def try_delete(self, file):
+        erased = True
+        try:
+            os.remove(file)
+        except Exception:
+            if os.path.isfile(file):
+                erased = False
+        return erased
 
     def clean(self):
         to_del = []
         for i, file_ in enumerate(self.files):
             try:
-                os.remove(file_)
-                to_del.append(i)
-            except Exception:
-                if not os.path.isfile(file_):
+                if self.try_delete(file_):
                     to_del.append(i)
+            except Exception:
+                pass
 
         for i in to_del[::-1]:
             del self.files[i]
 
+    def clean_old(self, max_age=qset.max_age):
+        # On importing Qutip, remove temp files left-over for more than 1 week.
+        import glob
+        import time
+        root = qset.tmproot
+        bases = ["td_Qobj_single_str",
+                 "qobjevo_compiled_coeff_",
+                 "cqobjevo_compiled_coeff_"]
+        for base in bases:
+            for file in glob.glob(os.path.join(root, base + "*")):
+                age = (time.time() - os.path.getctime(file)) / 3600
+                if age > max_age:
+                    self.try_delete(file)
+
     def __del__(self):
         self.clean()
 
+
 coeff_files = _file_list()
+atexit.register(coeff_files.clean)
 
 
 class _StrWrapper:
@@ -148,6 +164,7 @@ class _StrWrapper:
         env.update(args)
         exec(self.code, str_env, env)
         return env["_out"]
+
 
 class _CubicSplineWrapper:
     # Using scipy's CubicSpline since Qutip's one
@@ -169,6 +186,7 @@ class _CubicSplineWrapper:
     def __call__(self, t, args={}):
         return self.func([t])[0]
 
+
 class _StateAsArgs:
     # old with state (f(t, psi, args)) to new (args["state"] = psi)
     def __init__(self, coeff_func):
@@ -188,6 +206,7 @@ class StateArgs:
 
     def __call__(self):
         return self.dyn_args
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # object for each time dependent element of the QobjEvo
@@ -474,8 +493,8 @@ class QobjEvo:
         self.type = "none"
         self.omp = 0
         self.coeff_files = []
-        self.use_cython = use_cython[0]
-        self.safePickle = safePickle[0]
+        self.use_cython = qset.use_cython
+        self.safePickle = qset.safePickle
 
         if isinstance(Q_object, list) and len(Q_object) == 2:
             if isinstance(Q_object[0], Qobj) and not isinstance(Q_object[1],
