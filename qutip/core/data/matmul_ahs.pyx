@@ -12,18 +12,18 @@ cimport cython
 import numpy as np
 cimport numpy as cnp
 
-from qutip.core.data.base cimport idxint, Data
+from qutip.core.data.base cimport idxint
 from qutip.core.data.dense cimport Dense
 from qutip.core.data.csr cimport CSR
-from qutip.core.data cimport csr
+from qutip.core.data.csc cimport CSC
 
 cnp.import_array()
 
 
-cdef mv_ahs_csr(CSR matrix,
-                complex[:] vec,
-                complex[:] out,
-                idxint[:] rows) nogil:
+cpdef void mv_ahs_csr(CSR matrix,
+                 double complex[:] vec,
+                 double complex[:] out,
+                 idxint[:] rows):
     """
     Perform the operation
         ``out := a * (matrix @ vector) + out``
@@ -32,23 +32,22 @@ cdef mv_ahs_csr(CSR matrix,
     array of double complex, adding to and storing the result in `out`.
     Only sums on the rows listed in the rows array
     """
-    cdef complex[:] data = csr.data
     cdef idxint row, jj, ii, row_start, row_end
     cdef complex dot
     for ii in range(len(rows)):
         row = rows[ii]
         dot = 0
-        row_start = csr.row_index[row]
-        row_end = csr.row_index[row+1]
+        row_start = matrix.row_index[row]
+        row_end = matrix.row_index[row+1]
         for jj in range(row_start, row_end):
-            dot += data[jj]*vec[csr.col_index[jj]]
+            dot += matrix.data[jj]*vec[matrix.col_index[jj]]
         out[row] += dot
 
 
-cdef mv_ahs_csr_dm(CSR matrix,
-                   complex[:] vec,
-                   complex[:] out,
-                   idxint[:] rows) nogil:
+cpdef void mv_ahs_csr_dm(CSR matrix,
+                   double complex[:] vec,
+                   double complex[:] out,
+                   idxint[:] rows):
     """
     Perform the operation
         ``out := a * (matrix @ vector) + out``
@@ -58,7 +57,6 @@ cdef mv_ahs_csr_dm(CSR matrix,
     Both out and vector are 1D representation of hermitian matrix.
     Only sums on the rows listed in the rows array.
     """
-    cdef complex[:] data = csr.data
     cdef idxint row, row_t, ii, jj, kk, row_start, row_end,
     cdef idxint N = int(sqrt(len(vec)))
     cdef complex dot
@@ -66,19 +64,19 @@ cdef mv_ahs_csr_dm(CSR matrix,
         row = rows[ii]
         row_t = (row // N) + (row % N) * N
         dot = 0
-        row_start = csr.row_index[row]
-        row_end = csr.row_index[row+1]
+        row_start = matrix.row_index[row]
+        row_end = matrix.row_index[row+1]
         for jj in range(row_start, row_end):
-            dot += data[jj] * vec[csr.col_index[jj]]
+            dot += matrix.data[jj] * vec[matrix.col_index[jj]]
         out[row] += dot
         if row != row_t:
             out[row_t] += conj(dot)
 
 
-cdef mv_ahs_csc(CSC matrix,
-                complex[:] vec,
-                complex[:] out,
-                idxint[:] cols) nogil:
+cpdef void mv_ahs_csc(CSC matrix,
+                 double complex[:] vec,
+                 double complex[:] out,
+                 idxint[:] cols):
     """
     Perform the operation
         ``out := a * (matrix @ vector) + out``
@@ -87,22 +85,20 @@ cdef mv_ahs_csc(CSC matrix,
     array of double complex, adding to and storing the result in `out`.
     Only sums on the cols listed in the cols array
     """
-    cdef complex[:] data = csc.data
     cdef idxint col, ii, jj, col_start, col_end
     for ii in range(len(cols)):
         col = cols[ii]
-        col_start = csc.col_index[col]
-        col_end = csc.col_index[col+1]
+        col_start = matrix.col_index[col]
+        col_end = matrix.col_index[col+1]
         for jj in range(col_start, col_end):
-            out[csc.row_index[jj]] += a*data[jj]*vec[col]
+            out[matrix.row_index[jj]] += matrix.data[jj]*vec[col]
 
 
-cdef void mv_pseudo_ahs_csc(CSC matrix,
-                            double complex *vector,
-                            double complex *out,
-                            double atol,
-                            double rtol) nogil:
-    cdef complex[:] data = csr.data
+cpdef void mv_pseudo_ahs_csc(CSC matrix,
+                             double complex[:] vec,
+                             double complex[:] out,
+                             double atol,
+                             double rtol):
     cdef idxint ii, jj, col, col_start, col_end
     cdef idxint N = int(sqrt(len(vec)))
     cdef complex dot
@@ -116,18 +112,17 @@ cdef void mv_pseudo_ahs_csc(CSC matrix,
 
     for col in range(len(vec)):
         if dvec[col*2] > tol or dvec[col*2+1] > tol:
-            col_start = csc.col_index[col]
-            col_end = csc.col_index[col+1]
+            col_start = matrix.col_index[col]
+            col_end = matrix.col_index[col+1]
             for jj in range(col_start, col_end):
-                out[csc.row_index[jj]] += a * data[jj] * vec[col]
+                out[matrix.row_index[jj]] += matrix.data[jj] * vec[col]
 
 
-cdef void mv_pseudo_ahs_csc_dm(CSC matrix,
-                               double complex *vector,
-                               double complex *out,
-                               double atol,
-                               double rtol) nogil:
-    cdef complex[:] data = csr.data
+cpdef void mv_pseudo_ahs_csc_dm(CSC matrix,
+                                double complex[:] vec,
+                                double complex[:] out,
+                                double atol,
+                                double rtol):
     cdef idxint ii, jj, col, col_start, col_end
     cdef idxint N = int(sqrt(len(vec)))
     cdef complex dot
@@ -141,7 +136,7 @@ cdef void mv_pseudo_ahs_csc_dm(CSC matrix,
 
     for col in range(len(vec)):
         if dvec[col*2] > tol or dvec[col*2+1] > tol:
-            col_start = csc.col_index[col]
-            col_end = csc.col_index[col+1]
+            col_start = matrix.col_index[col]
+            col_end = matrix.col_index[col+1]
             for jj in range(col_start, col_end):
-                out[csc.row_index[jj]] += a * data[jj] * vec[col]
+                out[matrix.row_index[jj]] += matrix.data[jj] * vec[col]

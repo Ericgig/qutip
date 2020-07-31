@@ -15,6 +15,8 @@ from scipy.sparse import csc_matrix as scipy_csc_matrix
 from scipy.sparse.data import _data_matrix as scipy_data_matrix
 
 from . cimport base
+from .csr cimport CSR
+from .csr cimport nnz as csrnnz
 
 cnp.import_array()
 
@@ -131,7 +133,7 @@ cdef class CSC(base.Data):
         memcpy(&out.data[0], &self.data[0], nnz_*sizeof(out.data[0]))
         memcpy(&out.row_index[0], &self.row_index[0], nnz_*sizeof(out.row_index[0]))
         memcpy(&out.col_index[0], &self.col_index[0],
-               (self.shape[0] + 1)*sizeof(out.col_index[0]))
+               (self.shape[1] + 1)*sizeof(out.col_index[0]))
         return out
 
     cpdef object to_array(self):
@@ -144,7 +146,7 @@ cdef class CSC(base.Data):
         cdef object out = cnp.PyArray_ZEROS(2, dims, cnp.NPY_COMPLEX128, 0)
         cdef double complex [:, ::1] buffer = out
         cdef size_t col, ptr
-        for col in range(self.shape[0]):
+        for col in range(self.shape[1]):
             for ptr in range(self.col_index[col], self.col_index[col + 1]):
                 buffer[self.row_index[ptr], col] = self.data[ptr]
         return out
@@ -233,7 +235,7 @@ cpdef CSC copy_structure(CSC matrix):
 
 cpdef inline base.idxint nnz(CSC matrix) nogil:
     """Get the number of non-zero elements of a CSC matrix."""
-    return matrix.col_index[matrix.shape[0]]
+    return matrix.col_index[matrix.shape[1]]
 
 
 # Internal structure for sorting pairs of elements.
@@ -247,8 +249,8 @@ cdef int _sort_indices_compare(_data_row x, _data_row y) nogil:
 cpdef void sort_indices(CSC matrix) nogil:
     """Sort the column indices and data of the matrix inplace."""
     cdef base.idxint col, ptr, ptr_start, ptr_end, length
-    cdef vector[_data_col] pairs
-    for col in range(matrix.shape[0]):
+    cdef vector[_data_row] pairs
+    for col in range(matrix.shape[1]):
         ptr_start = matrix.col_index[col]
         ptr_end = matrix.col_index[col + 1]
         length = ptr_end - ptr_start
@@ -276,16 +278,16 @@ cpdef CSC empty(base.idxint rows, base.idxint cols, base.idxint size):
     if size == 0:
         size += 1
     cdef CSC out = CSC.__new__(CSC)
-    cdef base.idxint row_size = rows + 1
+    cdef base.idxint col_size = cols + 1
     out.shape = (rows, cols)
     out.data =\
         <double complex [:size]> PyDataMem_NEW(size * sizeof(double complex))
     out.row_index =\
         <base.idxint [:size]> PyDataMem_NEW(size * sizeof(base.idxint))
     out.col_index =\
-        <base.idxint [:row_size]> PyDataMem_NEW(row_size * sizeof(base.idxint))
+        <base.idxint [:col_size]> PyDataMem_NEW(col_size * sizeof(base.idxint))
     # Set the number of non-zero elements to 0.
-    out.col_index[rows] = 0
+    out.col_index[cols] = 0
     return out
 
 
@@ -317,14 +319,15 @@ cpdef CSC identity(base.idxint dimension, double complex scale=1):
     out.col_index[dimension] = dimension
     return out
 
+
 cpdef CSC CSC_from_CSR(CSR matrix):
-    """Transpose the CSR matrix, and return a new object."""
-    cdef idxint nnz_ = nnz(matrix)
+    """Transform a CSR to CSC."""
+    cdef base.idxint nnz_ = csrnnz(matrix)
     cdef CSC out = empty(matrix.shape[0], matrix.shape[1], nnz_)
-    cdef idxint row, col, ptr, ptr_out
-    cdef idxint rows_in=matrix.shape[0], cols_out=matrix.shape[1]
+    cdef base.idxint row, col, ptr, ptr_out
+    cdef base.idxint rows_in=matrix.shape[0], cols_out=matrix.shape[1]
     with nogil:
-        memset(&out.col_index[0], 0, (cols_out + 1) * sizeof(idxint))
+        memset(&out.col_index[0], 0, (cols_out + 1) * sizeof(base.idxint))
         for row in range(rows_in):
             for ptr in range(matrix.row_index[row], matrix.row_index[row + 1]):
                 col = matrix.col_index[ptr] + 1
@@ -336,7 +339,7 @@ cpdef CSC CSC_from_CSR(CSR matrix):
                 col = matrix.col_index[ptr]
                 ptr_out = out.col_index[col]
                 out.data[ptr_out] = matrix.data[ptr]
-                # out.row_index[ptr_out] = row
+                out.row_index[ptr_out] = row
                 out.col_index[col] = ptr_out + 1
         for row in range(cols_out, 0, -1):
             out.col_index[row] = out.col_index[row - 1]

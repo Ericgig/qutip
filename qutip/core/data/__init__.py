@@ -1,5 +1,6 @@
 from .dense import Dense
 from .csr import CSR
+from .csc import CSC
 from .base import Data
 
 from .add import *

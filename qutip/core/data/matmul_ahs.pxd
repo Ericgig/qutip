@@ -4,29 +4,29 @@ from qutip.core.data.csr cimport CSR
 from qutip.core.data.csc cimport CSC
 from qutip.core.data.base cimport idxint
 
-cdef void mv_ahs_csr(CSR matrix,
-                     double complex *vector,
-                     double complex *out,
-                     idxint[:] rows) nogil
+cpdef void mv_ahs_csr(CSR matrix,
+                     double complex[:] vec,
+                     double complex[:] out,
+                     idxint[:] rows)
 
-cdef void mv_ahs_csr_dm(CSR matrix,
-                        double complex *vector,
-                        double complex *out,
-                        idxint[:] rows) nogil
+cpdef void mv_ahs_csr_dm(CSR matrix,
+                        double complex[:] vec,
+                        double complex[:] out,
+                        idxint[:] rows)
 
-cdef void mv_ahs_csc(CSC matrix,
-                     double complex *vector,
-                     double complex *out,
-                     idxint[:] cols) nogil
+cpdef void mv_ahs_csc(CSC matrix,
+                      double complex[:] vec,
+                      double complex[:] out,
+                      idxint[:] cols)
 
-cdef void mv_pseudo_ahs_csc(CSC matrix,
-                            double complex *vector,
-                            double complex *out,
+cpdef void mv_pseudo_ahs_csc(CSC matrix,
+                            double complex[:] vec,
+                            double complex[:] out,
                             double atol,
-                            double rtol) nogil
+                            double rtol)
 
-cdef void mv_pseudo_ahs_csc_dm(CSC matrix,
-                               double complex *vector,
-                               double complex *out,
+cpdef void mv_pseudo_ahs_csc_dm(CSC matrix,
+                               double complex[:] vec,
+                               double complex[:] out,
                                double atol,
-                               double rtol) nogil
+                               double rtol)

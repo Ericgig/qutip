@@ -4,6 +4,7 @@ import numpy as np
 cimport numpy as cnp
 
 from . cimport base
+from .csr cimport CSR
 
 cdef class CSC(base.Data):
     cdef double complex [::1] data
