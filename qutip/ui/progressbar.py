@@ -32,7 +32,8 @@
 ###############################################################################
 from __future__ import print_function
 
-__all__ = ['BaseProgressBar', 'TextProgressBar', 'EnhancedTextProgressBar']
+__all__ = ['BaseProgressBar', 'TextProgressBar',
+           'EnhancedTextProgressBar', 'TqdmProgressBar']
 
 import time
 import datetime
@@ -57,13 +58,14 @@ class BaseProgressBar(object):
     def __init__(self, iterations=0, chunk_size=10):
         pass
 
-    def start(self, iterations, chunk_size=10):
+    def start(self, iterations, chunk_size=10, **kwargs):
         self.N = float(iterations)
+        self.n = 0
         self.p_chunk_size = chunk_size
         self.p_chunk = chunk_size
         self.t_start = time.time()
 
-    def update(self, n):
+    def update(self, n=None):
         pass
 
     def time_elapsed(self):
@@ -93,10 +95,12 @@ class TextProgressBar(BaseProgressBar):
     def __init__(self, iterations=0, chunk_size=10):
         super(TextProgressBar, self).start(iterations, chunk_size)
 
-    def start(self, iterations, chunk_size=10):
+    def start(self, iterations, chunk_size=10, **kwargs):
         super(TextProgressBar, self).start(iterations, chunk_size)
 
-    def update(self, n):
+    def update(self, n=None):
+        self.n += 1
+        n = self.n
         p = (n / self.N) * 100.0
         if p >= self.p_chunk:
             print("%4.1f%%." % p +
@@ -118,12 +122,14 @@ class EnhancedTextProgressBar(BaseProgressBar):
     def __init__(self, iterations=0, chunk_size=10):
         super(EnhancedTextProgressBar, self).start(iterations, chunk_size)
 
-    def start(self, iterations, chunk_size=10):
+    def start(self, iterations, chunk_size=10, **kwargs):
         super(EnhancedTextProgressBar, self).start(iterations, chunk_size)
         self.fill_char = '*'
         self.width = 25
 
-    def update(self, n):
+    def update(self, n=None):
+        self.n += 1
+        n = self.n
         percent_done = int(round(n / self.N * 100.0))
         all_full = self.width - 2
         num_hashes = int(round((percent_done / 100.0) * all_full))
@@ -142,3 +148,22 @@ class EnhancedTextProgressBar(BaseProgressBar):
     def finished(self):
         self.t_done = time.time()
         print("\r", "Total run time: %s" % self.time_elapsed())
+
+
+class TqdmProgressBar(BaseProgressBar):
+    """
+    An enhanced text-based progress bar.
+    """
+
+    def __init__(self, iterations=0, chunk_size=10):
+        from tqdm import tqdm
+        self.tqdm = tqdm
+
+    def start(self, iterations, **kwargs):
+        self.pbar = self.tqdm(total=iterations, **kwargs)
+
+    def update(self, n=None):
+        self.pbar.update()
+
+    def finished(self):
+        self.pbar.close()

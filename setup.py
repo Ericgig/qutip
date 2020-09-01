@@ -64,8 +64,10 @@ PACKAGES = ['qutip', 'qutip/ui', 'qutip/qip', 'qutip/qip/device',
             'qutip/qip/operations', 'qutip/qip/compiler',
             'qutip/qip/algorithms', 'qutip/control',
             'qutip/solve', 'qutip/solve/nonmarkov',
+            'qutip/solver', 'qutip/solver/nonmarkov',
             'qutip/_mkl', 'qutip/tests', 'qutip/tests/core',
-            'qutip/tests/core/data', 'qutip/tests/solve',
+            'qutip/tests/core/data',
+            'qutip/tests/solver', 'qutip/tests/solve',
             'qutip/core', 'qutip/core/cy',
             'qutip/core/data/', 'qutip/core/cy/openmp']
 PACKAGE_DATA = {
@@ -78,6 +80,8 @@ PACKAGE_DATA = {
     'qutip/core/cy/openmp/src': ['*.hpp', '*.cpp'],
     'qutip/solve': ['*.pxd', '*.pyx'],
     'qutip/solve/nonmarkov': ['*.pxd', '*.pyx'],
+    'qutip/solver': ['*.pxd', '*.pyx'],
+    'qutip/solver/nonmarkov': ['*.pxd', '*.pyx'],
     'qutip/tests/qasm_files': ['*.qasm'],
     'qutip/control': ['*.pyx'],
 }
@@ -193,6 +197,19 @@ cy_exts = {
         '_piqs',
         '_steadystate',
         '_stochastic',
+    ],
+    'solver': [
+        '_brtensor',
+        '_brtools',
+        '_brtools_checks',
+        '_mcsolve',
+        '_piqs',
+        '_steadystate',
+        '_stochastic',
+        '_solverqevo',
+    ],
+    'solver.nonmarkov': [
+        '_heom',
     ],
     'solve.nonmarkov': [
         '_heom',

@@ -154,6 +154,7 @@ else:
 
 from .core import *
 from .solve import *
+import qutip.solver as solver
 
 # graphics
 from .bloch import *
