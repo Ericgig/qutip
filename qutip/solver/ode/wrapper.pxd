@@ -1,17 +1,23 @@
+#cython: language_level=3
 
-
-
-
-
+cimport numpy as cnp
+from ...core cimport data as _data
 
 cdef class QtOdeData:
-    cdef void inplace_add(self, QtOdeData outer, double factor)
-    cdef void zero(self)
-    cdef double norm(self):
-    cdef void copy(self, other)
-    cdef void empty_like(self)
-    cdef object raw(self)
+    cdef double[::1] base
+    cdef object _raw
+    cpdef void inplace_add(self, QtOdeData other, double factor)
+    cpdef void zero(self)
+    cpdef double norm(self)
+    cpdef void copy(self, QtOdeData other)
+    cpdef QtOdeData empty_like(self)
+    cpdef object raw(self)
+    cpdef _data.Data data(self)
 
 
 cdef class QtOdeFuncWrapper:
-    cdef void call(self, QtOdeData out, double t QtOdeData y)
+    cdef object f
+    cpdef void call(self, QtOdeData out, double t, QtOdeData y)
+
+cdef class QtOdeFuncWrapperInplace(QtOdeFuncWrapper):
+    pass

@@ -49,6 +49,7 @@ cdef class vern7:
             nsteps += 1
             dt = self.get_timestep(t)
             err = self.compute_step(dt, self._y_new)
+            # print(t, self.t, dt, err, self.dt_safe)
             if err < 1:
                 self.t_int = self.t
                 self.dt_int = dt
@@ -57,6 +58,7 @@ cdef class vern7:
                 self._y.copy(self._y_new)
                 self.norm = self.new_norm
             self.recompute_safe_step(err, dt)
+            print(self.t, dt, err, self.dt_safe)
         if self.t < t - 1e-15 :
             self.failed = True
         elif self.t > t + 1e-15:
@@ -98,9 +100,6 @@ cdef class vern7:
         cdef int i, j
         cdef double t = self.t
 
-        for i in range(10):
-            (<QtOdeData> self.k[i]).zero()
-
         self.f.call(self.k[0], t, self._y)
 
         for i in range(1, 8):
@@ -141,12 +140,10 @@ cdef class vern7:
             double dt = self.dt_int
 
         for i in range(10, 16):
-            (<QtOdeData> self.k[i]).zero()
             self.yp.copy(self._y_old)
             for j in range(i):
                 if self.a[i][j]:
-                    self.yp.inplace_add((<QtOdeData> self.k[j]),
-                                        dt * self.a[i][j])
+                    self.yp.inplace_add((<QtOdeData> self.k[j]), dt * self.a[i][j])
             self.f.call(self.k[i], t + self.c[i], self.yp)
 
     cdef void interpolate_step(self, double t, QtOdeData out):
@@ -174,28 +171,20 @@ cdef class vern7:
     cdef double estimate_first_step(self, double t, QtOdeData y0):
         cdef double tol = self.atol + y0.norm() * self.rtol
         cdef double dt1, dt2, dt
-        cdef double norm = y0.norm(), tmp_norm
+        cdef double norm = y0.norm()
         (<QtOdeData> self.k[0]).zero()
         self.f.call((<QtOdeData> self.k[0]), t, y0)
         # Good approximation for linear system. But not in a general case.
-        if norm == 0:
-            norm = 1
-        tmp_norm = (<QtOdeData> self.k[0]).norm()
-        if tmp_norm != 0:
-            dt1 = (tol * 5040 * norm**7)**(1/8) / tmp_norm
-        else:
-            dt1 = (tol * 5040 * norm**7)**(1/8)
+        dt1 = (tol * 5040 * norm**7)**(1/8) / (<QtOdeData> self.k[0]).norm()
+        # print(dt1, (<QtOdeData> self.k[0]).norm())
         self.yp.copy(y0)
         self.yp.inplace_add((<QtOdeData> self.k[0]), dt1 / 100)
         (<QtOdeData> self.k[1]).zero()
         self.f.call((<QtOdeData> self.k[1]), t + dt1 / 100, self.yp)
         (<QtOdeData> self.k[1]).inplace_add(self.k[0], -1)
-        tmp_norm = (<QtOdeData> self.k[1]).norm()
-        if tmp_norm != 0:
-            dt2 = ((tol * 5040* norm**3)**(1/8) /
-                   (tmp_norm / dt1 * 100)**0.5)
-        else:
-            dt2 = 0.1
+        dt2 = ((tol * 5040* norm**3)**(1/8) /
+               ((<QtOdeData> self.k[1]).norm() / dt1 * 100)**0.5)
+        # print(dt2, (<QtOdeData> self.k[1]).norm())
         dt = min(dt1, dt2)
         if self.max_step:
             dt = min(self.max_step, dt)

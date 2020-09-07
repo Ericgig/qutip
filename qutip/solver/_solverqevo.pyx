@@ -7,17 +7,10 @@ cimport qutip.core.data as _data
 import qutip.core.data as data
 from qutip import Qobj, spre
 cimport cython
-from . cimport *
+from ._feedback cimport *
 
 
 cdef class SolverQEvo:
-    cdef CQobjEvo base
-    cdef idxint ncols
-    cdef bint has_dynamic_args
-    cdef list dynamic_arguments
-    cdef dict args
-    cdef list collapse
-
     def __init__(self, base, options, dict args, dict feedback):
         self.base = base.compiled_qobjevo
         self.set_feedback(feedback, args, base.cte.issuper)

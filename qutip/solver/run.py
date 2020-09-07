@@ -23,7 +23,7 @@ def _driver_step(evolver, tlist, state0, options, e_ops=[], super=False):
     res = Run(e_ops, options.results, state0, super)
     res.add(tlist[0], state0)
 
-    print(progress_bar, progress_bar.start, len(tlist)-1)
+    #print(progress_bar, progress_bar.start, len(tlist)-1)
     progress_bar.start(len(tlist)-1, **options['progress_kwargs'])
     for t, state in evolver.step(tlist):
         progress_bar.update()

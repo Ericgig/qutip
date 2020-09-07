@@ -175,6 +175,12 @@ cpdef CSR add_csr(CSR left, CSR right, double complex scale=1):
     return out
 
 
+cdef void add_dense_eq_order_inplace(Dense left, Dense right, double complex scale):
+    cdef int size = left.shape[0] * left.shape[1]
+    with nogil:
+        blas.zaxpy(&size, &scale, right.data, &_ONE, left.data, &_ONE)
+
+
 cdef Dense _add_dense_eq_order(Dense left, Dense right, double complex scale):
     cdef Dense out = left.copy()
     cdef int size = left.shape[0] * left.shape[1]

@@ -1,8 +1,9 @@
 #cython: language_level=3
+from qutip import Qobj, spre
+from qutip.core import data
+from qutip.core cimport data as _data
 
 cdef class Feedback:
-    cdef str key
-
     def __init__(self, key, state):
         self.key = key
 
@@ -11,14 +12,6 @@ cdef class Feedback:
 
 
 cdef class QobjFeedback(Feedback):
-    cdef:
-        object dims
-        object type
-        object superrep
-        object isherm
-        object isunitary
-        object shape
-
     def __init__(self, key, state):
         self.key = key
         self.dims = state.dims
@@ -38,9 +31,6 @@ cdef class QobjFeedback(Feedback):
 
 
 cdef class ExpectFeedback(Feedback):
-    cdef _data.Data op
-    cdef bint issuper
-
     def __init__(self, key, op, issuper):
         self.key = key
         if issuper:
@@ -56,8 +46,6 @@ cdef class ExpectFeedback(Feedback):
 
 
 cdef class CollapseFeedback(Feedback):
-    cdef list collapse
-
     def __init__(self, key, collapse):
         self.key = key
         self.collapse = collapse
