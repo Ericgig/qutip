@@ -35,17 +35,10 @@ import os
 import sys
 import warnings
 
-from . import settings, version
+from .settings import settings
+from . import version
 from .version import version as __version__
 from .utilities import _version2int
-
-# -----------------------------------------------------------------------------
-# Check if we're in IPython.
-try:
-    __IPYTHON__
-    settings.ipython = True
-except:
-    settings.ipython = False
 
 # -----------------------------------------------------------------------------
 # Check for minimum requirements of dependencies, give the user a warning
@@ -89,39 +82,6 @@ else:
 del top_path
 
 
-# -----------------------------------------------------------------------------
-# Look to see if we are running with OPENMP
-#
-# Set environ variable to determin if running in parallel mode
-# (i.e. in parfor or parallel_map)
-os.environ['QUTIP_IN_PARALLEL'] = 'FALSE'
-
-try:
-    # Test to see whether a generated OpenMP library exists.  The actual
-    # library we test for is arbitrary, but we must use this importlib approach
-    # to import the module as a module, not as part of the core package.  If it
-    # is part of the core package, then core.__init__.py will be run first,
-    # which will import Qobj and other components which assume that we have
-    # already set has_openmp in here, and so will falsely believe that OpenMP
-    # is unavailable.
-    import importlib
-    import pathlib
-    # Create an import spec as if 'parfuncs' is a stand-alone module ...
-    _path = str(pathlib.Path(__file__).parent / 'core' / 'cy' / 'openmp')
-    _spec = importlib.machinery.PathFinder.find_spec('parfuncs',
-                                                     path=[_path])
-    if _spec is None:
-        raise ImportError
-    # ... and then try to import it.
-    _spec.loader.exec_module(importlib.util.module_from_spec(_spec))
-    settings.has_openmp = True
-    # See Pull #652 for why this is here.
-    os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-except ImportError:
-    settings.has_openmp = False
-finally:
-    del importlib, pathlib
-
 
 # -----------------------------------------------------------------------------
 # setup the cython environment
@@ -134,10 +94,10 @@ try:
               ("(%s), requiring %s." %
                (Cython.__version__, _cython_requirement)))
     # Setup pyximport
-    from .cy import pyxbuilder as pbldr
+    from . import _pyxbuilder as pbldr
     pbldr.install(setup_args={'include_dirs': [numpy.get_include()]})
     del pbldr
-except Exception as e:
+except Exception:
     pass
 else:
     del Cython
@@ -148,6 +108,7 @@ else:
 #
 import multiprocessing
 
+"""
 # Check if environ flag for qutip processes is set
 if 'QUTIP_NUM_PROCESSES' in os.environ:
     settings.num_cpus = int(os.environ['QUTIP_NUM_PROCESSES'])
@@ -165,9 +126,11 @@ if settings.num_cpus == 0:
             settings.num_cpus = multiprocessing.cpu_count()
         except:
             settings.num_cpus = 1
+"""
 
 
 # Find MKL library if it exists
+from .installsettings import *
 from . import _mkl
 
 
@@ -184,11 +147,13 @@ else:
     del matplotlib
 
 
+
 # -----------------------------------------------------------------------------
 # Load modules
 #
 
 from .core import *
+from .solve import *
 
 # graphics
 from .bloch import *
@@ -208,29 +173,6 @@ from .continuous_variables import *
 from .distributions import *
 from .three_level_atom import *
 
-# evolution
-from .solver import *
-from .rhs_generate import *
-from .mesolve import *
-from .sesolve import *
-from .mcsolve import *
-from .stochastic import *
-from .essolve import *
-from .propagator import *
-from .floquet import *
-from .bloch_redfield import *
-from .cy.br_tensor import bloch_redfield_tensor
-from .steadystate import *
-from .correlation import *
-from .countstat import *
-from .rcsolve import *
-from .nonmarkov import *
-from .scattering import *
-
-# lattice models
-from .lattice import *
-from .topology import *
-
 ########################################################################
 # This section exists only for the deprecation warning of qip importation.
 # It can be deleted for a major release.
@@ -247,6 +189,7 @@ from .about import *
 from .cite import *
 
 # Remove -Wstrict-prototypes from cflags
+import setuptools
 import distutils.sysconfig
 cfg_vars = distutils.sysconfig.get_config_vars()
 if "CFLAGS" in cfg_vars:
@@ -256,32 +199,10 @@ if "CFLAGS" in cfg_vars:
 # Load user configuration if present: override defaults.
 #
 from . import configrc
-has_rc, rc_file = configrc.has_qutip_rc()
-
-# Make qutiprc and benchmark OPENMP if has_rc = False
-if settings.has_openmp and (not has_rc):
-    configrc.generate_qutiprc()
-    has_rc, rc_file = configrc.has_qutip_rc()
-    if has_rc and settings.num_cpus > 1:
-        from .core.cy.openmp.bench_openmp import calculate_openmp_thresh
-        #bench OPENMP
-        print('Calibrating OPENMP threshold...')
-        thrsh = calculate_openmp_thresh()
-        configrc.write_rc_key(rc_file, 'openmp_thresh', thrsh)
-# Make OPENMP if has_rc but 'openmp_thresh' not in keys
-elif settings.has_openmp and has_rc:
-    has_omp_key = configrc.has_rc_key(rc_file, 'openmp_thresh')
-    if not has_omp_key and settings.num_cpus > 1:
-        from .core.cy.openmp.bench_openmp import calculate_openmp_thresh
-        print('Calibrating OPENMP threshold...')
-        thrsh = calculate_openmp_thresh()
-        configrc.write_rc_key(rc_file, 'openmp_thresh', thrsh)
-
-# Load the config file
-if has_rc:
-    configrc.load_rc_config(rc_file)
+if configrc.has_qutip_rc():
+    settings.load()
 
 # -----------------------------------------------------------------------------
 # Clean name space
 #
-del os, sys, numpy, scipy, multiprocessing, distutils
+del os, sys, numpy, scipy, multiprocessing, distutils, configrc, warnings

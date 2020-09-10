@@ -33,209 +33,446 @@
 import pytest
 from qutip import *
 import numpy as np
-from numpy.testing import (assert_equal, assert_, assert_almost_equal,
-                           run_module_suite, assert_allclose)
+from numpy.testing import assert_allclose
 from functools import partial
 from types import FunctionType, BuiltinFunctionType
 from qutip import Cubic_Spline
-from qutip.core.cy.spmatfuncs import (cy_expect_rho_vec, cy_expect_psi, spmv)
+from qutip.core.cy.cqobjevo import CQobjEvo
 
-def _f1(t,args):
+from qutip.core import data as _data
+
+
+class Base_coeff:
+    def __init__(self, func, string):
+        self.func = func
+        self.string = string
+
+    def array(self, tlist, args):
+        return self.func(tlist, args)
+
+    def spline(self, tlist, args):
+        return Cubic_Spline(tlist[0], tlist[-1], self.func(tlist, args))
+
+    def __call__(self, t, args):
+        return self.func(t, args)
+
+
+def _real(t, args):
     return np.sin(t*args['w1'])
 
-def _f2(t,args):
-    return np.cos(t*args['w2'])
 
-def _f3(t,args):
-    return np.exp(1j*t*args['w3'])
+def _cplx(t, args):
+    return np.exp(1j*t*args['w2'])
 
 
-def _rand_cqobjevo(N=5):
-    tlist=np.linspace(0,10,10001)
-    tlistlog=np.logspace(-3,1,10001)
-    O0, O1, O2 = rand_herm(N), rand_herm(N), rand_herm(N)
-    cte = [QobjEvo([O0])]
-    wargs = [QobjEvo([O0,[O1,_f1],[O2,_f2]], args={"w1":1,"w2":2}),
-             QobjEvo([O0,[O1,"sin(w1*t)"],[O2,"cos(w2*t)"]],
-                     args={"w1":1,"w2":2})]
-    nargs = [QobjEvo([O0,[O1,np.sin(tlist)],[O2,np.cos(2*tlist)]],tlist=tlist),
-             QobjEvo([O0,[O1,np.sin(tlistlog)],[O2,np.cos(2*tlistlog)]],
-                     tlist=tlistlog),
-             QobjEvo([O0,[O1, Cubic_Spline(0,10,np.sin(tlist))  ],
-                         [O2, Cubic_Spline(0,10,np.cos(2*tlist))]])]
-    cqobjevos = cte + wargs + nargs
-    base_qobjs = [O0, O1, O2]
-    return cqobjevos, base_qobjs
+@pytest.fixture(params=[
+    pytest.param("cte", id="cte"),
+    pytest.param("func", id="func"),
+    pytest.param("string", id="string"),
+    pytest.param("spline", id="spline"),
+    pytest.param("array", id="array"),
+    pytest.param("array_log", id="array_log"),
+    pytest.param("with_args", id="with_args"),
+    pytest.param("no_args", id="no_args"),
+    pytest.param("mixed_tlist", id="mixed_tlist"),
+])
+def form(request):
+    return request.param
 
 
-def _sp_eq(sp1, sp2):
-    return not np.any(np.abs( (sp1 -sp2).data)> 1e-4)
+@pytest.fixture(params=[
+    pytest.param("func", id="func"),
+    pytest.param("string", id="string"),
+    pytest.param("with_args", id="with_args"),
+])
+def args_form(request):
+    return request.param
 
 
-def _random_QobjEvo(shape=(1,1), ops=[0,0,0], cte=True, tlist=None):
-    """Create a list to make a QobjEvo with up to 3 coefficients"""
-    if tlist is None:
-        tlist = np.linspace(0,1,301)
-    Qobj_list = []
-    if cte:
-        Qobj_list.append(Qobj(np.random.random(shape) + \
-                              1j*np.random.random(shape)))
-    coeff =  [[_f1, "sin(w1*t)",    np.sin(tlist),
-                    Cubic_Spline(0,1,np.sin(tlist))],
-              [_f2, "cos(w2*t)",    np.cos(tlist),
-                    Cubic_Spline(0,1,np.cos(tlist))],
-              [_f3, "exp(w3*t*1j)", np.exp(tlist*1j),
-                    Cubic_Spline(0,1,np.exp(tlist*1j))]]
-    for i,form in enumerate(ops):
-        if form:
-            Qobj_list.append([Qobj(np.random.random(shape)),coeff[i][form-1]])
-    return Qobj_list
+@pytest.fixture(params=[
+    pytest.param("cte", id="cte"),
+    pytest.param("func", id="func"),
+    pytest.param("string", id="string"),
+    pytest.param("spline", id="spline"),
+    pytest.param("array", id="array"),
+    pytest.param("array_log", id="array_log"),
+    pytest.param("with_args", id="with_args"),
+    pytest.param("no_args", id="no_args"),
+    pytest.param("mixed_tlist", id="mixed_tlist"),
+])
+def extra_form(request):
+    return request.param
+
+
+def _assert_qobjevo_equivalent(obj1, obj2, tol=1e-8):
+    for _ in range(10):
+        t = np.random.rand() * .9 + 0.05
+        _assert_qobj_almost_eq(obj1(t), obj2(t), tol)
 
 
 def _assert_qobj_almost_eq(obj1, obj2, tol=1e-10):
-    diff_data = (obj1 - obj2).tidyup(tol).data
-    assert_equal(len(diff_data.data),0)
+    assert _data.iszero((obj1 - obj2).data, tol)
 
 
-def test_QobjEvo_call():
-    "QobjEvo call"
-    N = 5
-    t = np.random.rand()+1
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-    O0, O1, O2 = base_qobjs
-    O_target1 = O0+np.sin(t)*O1+np.cos(2*t)*O2
-
-    # Check the constant flag
-    assert_equal(cqobjevos[0].const, True)
-    # Check that the call return the Qobj
-    assert_equal(cqobjevos[0](t) == O0, True)
-    # Check that the call for the data return the data
-    assert_equal(_sp_eq(cqobjevos[0](t, data=True), O0.data), True)
-
-    for op in cqobjevos[1:]:
-        assert_equal(_sp_eq(op(t, data=1) , O_target1.data), True)
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
-
-        op.compile()
-        assert_equal(_sp_eq(op(t, data=1) , O_target1.data), True)
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
+def _assert_qobjevo_different(obj1, obj2):
+    assert any(obj1(t) != obj2(t) for t in np.random.rand(10) * .9 + 0.05)
 
 
-@pytest.mark.slow
-def test_QobjEvo_call_full():
-    "QobjEvo call"
-    N = 5
-    t = np.random.rand()+1
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-    O0, O1, O2 = base_qobjs
-    O_target1 = O0+np.sin(t)*O1+np.cos(2*t)*O2
+def _add(a, b):
+    return a + b
 
-    # Check the constant flag
-    assert_equal(cqobjevos[0].const, True)
-    # Check that the call return the Qobj
-    assert_equal(cqobjevos[0](t) == O0, True)
-    # Check that the call for the data return the data
-    assert_equal(_sp_eq(cqobjevos[0](t, data=True), O0.data), True)
+def _sub(a, b):
+    return a - b
 
-    for op in cqobjevos[1:]:
-        op.compile(dense=1)
-        assert_equal(_sp_eq(op(t, data=1) , O_target1.data), True)
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
-        op.compiled = ""
+def _mul(a, b):
+    return a * b
 
-        op.compile(matched=1)
-        assert_equal(_sp_eq(op(t, data=1) , O_target1.data), True)
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
-        op.compiled = ""
+def _div(a, b):
+    return a / b
 
-        op.compile(omp=2)
-        assert_equal(_sp_eq(op(t, data=1) , O_target1.data), True)
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
-        op.compiled = ""
+def _matmul(a, b):
+    return a @ b
 
-        op.compile(matched=1, omp=2)
-        assert_equal(_sp_eq(op(t, data=1) , O_target1.data), True)
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
-        op.compiled = ""
+def _tensor(a, b):
+    return a & b
 
-        op.use_cython = False
-        op.compile()
-        assert_equal(_sp_eq(op(t, data=1) , O_target1.data), True)
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
-        op.compiled = ""
+def _conj(a):
+    return a.conj()
+
+def _dag(a):
+    return a.dag()
+
+def _trans(a):
+    return a.trans()
+
+def _neg(a):
+    return -a
+
+def _cdc(a):
+    if isinstance(a, Qobj):
+        return a.dag() * a
+    return a._cdc()
 
 
-def test_QobjEvo_call_args():
-    "QobjEvo with_args"
-    N = 5
-    t = np.random.rand()+1
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-    O0, O1, O2 = base_qobjs
-    O_target1 = O0+np.sin(t)*O1+np.cos(2*t)*O2
-    O_target2 = O0+np.sin(t)*O1+np.cos(4*t)*O2
+class TestQobjevo:
+    N = 4
+    tlist = np.linspace(0, 10, 10001)
+    tlistlog = np.logspace(-3, 1, 10001)
+    args = {'w1': 1, "w2": 2}
+    cte_qobj = rand_herm(N)
+    real_qobj = Qobj(np.random.rand(N, N))
+    cplx_qobj = rand_herm(N)
+    real_coeff = Base_coeff(_real, "sin(t*w1)")
+    cplx_coeff = Base_coeff(_cplx, "exp(1j*t*w2)")
+    qobjevos = {"qobj": rand_herm(N), "scalar":np.random.rand()}
+    cplx_forms = ['func', 'string', 'spline', 'array', 'array_log']
+    mixed_forms = ['with_args', 'no_args', 'mixed_tlist']
 
-    for op in cqobjevos[1:3]:
-        assert_equal(len((op(t, args={"w2":4})
-                          - O_target2).tidyup(1e-10).data.data), 0)
-        op.arguments({"w2":4})
-        assert_equal(len((op(t) - O_target2).tidyup(1e-10).data.data), 0)
-        op.arguments({"w2":2})
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data), 0)
+    def _rand_t(self):
+        return np.random.rand() * 0.9 + 0.05
 
-        op.compile()
-        assert_equal(len((op(t, args={"w2":4})
-                          - O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":4})
-        assert_equal(len((op(t) - O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":2})
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
+    @pytest.mark.parametrize('tlist', [tlist], ids=['test1'])
+    def test_param(self, tlist):
+        assert tlist is self.tlist
 
+    @pytest.mark.parametrize(['form', 'base', 'kwargs'],
+        [pytest.param('cte', cte_qobj, {}, id='cte'),
+         pytest.param('func', [cte_qobj,
+                               [cplx_qobj, cplx_coeff.func]],
+                      {'args':args}, id='func'),
+         pytest.param('string', [cte_qobj,
+                                 [cplx_qobj, cplx_coeff.string]],
+                      {'args':args}, id='string'),
+         pytest.param('spline', [[cplx_qobj, cplx_coeff.spline(tlist, args)],
+                                 cte_qobj],
+                      {}, id='spline'),
+         pytest.param('array', [cte_qobj,
+                                [cplx_qobj, cplx_coeff.array(tlist, args)]],
+                      {'tlist':tlist}, id='array'),
+         pytest.param('array_log', [cte_qobj,
+                                [cplx_qobj, cplx_coeff.array(tlistlog, args)]],
+                      {'tlist':tlistlog}, id='array_log'),
+         pytest.param('with_args', [cte_qobj,
+                                    [cplx_qobj, cplx_coeff.func],
+                                    [real_qobj, real_coeff.string]],
+                      {'args':args}, id='with_args'),
+         pytest.param('no_args', [cte_qobj,
+                                  [cplx_qobj, cplx_coeff.spline(tlist, args)],
+                                  [real_qobj, real_coeff.array(tlist, args)]],
+                      {'tlist':tlist}, id='no_args'),
+         pytest.param('mixed_tlist', [cte_qobj,
+                        [cplx_qobj, coefficient(
+                                        cplx_coeff.array(tlist, args),
+                                        tlist=tlist
+                                    )],
+                        [real_qobj, coefficient(
+                                        real_coeff.array(tlistlog, args),
+                                        tlist=tlistlog
+                                    )]],
+                      {}, id='mixed_tlist'),
+    ])
+    def test_creation(self, form, base, kwargs):
+        obj = QobjEvo(base, **kwargs)
+        self.qobjevos[form] = obj
+        assert isinstance(obj.compiled_qobjevo, CQobjEvo)
 
-@pytest.mark.slow
-def test_QobjEvo_call_args_full():
-    "QobjEvo with_args"
-    N = 5
-    t = np.random.rand()+1
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-    O0, O1, O2 = base_qobjs
-    O_target1 = O0+np.sin(t)*O1+np.cos(2*t)*O2
-    O_target2 = O0+np.sin(t)*O1+np.cos(4*t)*O2
+    def test_call(self, form):
+        t = self._rand_t()
+        assert isinstance(self.qobjevos[form](t), Qobj)
 
-    for op in cqobjevos[1:3]:
-        op.compile(dense=1)
-        assert_equal(len((op(t, args={"w2":4})
-                          - O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":4})
-        assert_equal(len((op(t) - O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":2})
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
+        for _ in range(10):
+            t = self._rand_t()
+            if form == "cte":
+                _assert_qobj_almost_eq(self.qobjevos[form](t), self.cte_qobj)
+            elif form in self.cplx_forms:
+                expected = (self.cte_qobj +
+                            self.cplx_coeff(t, self.args) * self.cplx_qobj)
+                _assert_qobj_almost_eq(self.qobjevos[form](t), expected)
+            elif form in self.mixed_forms:
+                expected = (self.cte_qobj +
+                            self.cplx_coeff(t, self.args) * self.cplx_qobj +
+                            self.real_coeff(t, self.args) * self.real_qobj)
+                _assert_qobj_almost_eq(self.qobjevos[form](t), expected)
 
-        op.compiled = ""
-        op.compile(matched=1)
-        assert_equal(len((op(t, args={"w2":4})
-                          - O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":4})
-        assert_equal(len((op(t) - O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":2})
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
+    def test_product_coeff(self):
+        coeff_1 = coefficient("1")
+        coeff_t = coefficient("t")
+        created = self.cte_qobj * coeff_1
+        _assert_qobjevo_equivalent(self.qobjevos['cte'], created)
 
-        op.compiled = ""
-        op.compile(omp=2)
-        assert_equal(len((op(t, args={"w2":4})
-                          -O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":4})
-        assert_equal(len((op(t) - O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":2})
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
+        created = created * coeff_t
+        for _ in range(10):
+            t = self._rand_t()
+            expected = (self.cte_qobj * t)
+            _assert_qobj_almost_eq(created(t), expected)
 
-        op.compiled = ""
-        op.compile(matched=1, omp=2)
-        assert_equal(len((op(t, args={"w2":4})
-                          -O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":4})
-        assert_equal(len((op(t) - O_target2).tidyup(1e-10).data.data),0)
-        op.arguments({"w2":2})
-        assert_equal(len((op(t) - O_target1).tidyup(1e-10).data.data),0)
+    def test_copy(self, form):
+        copy = self.qobjevos[form].copy()
+        _assert_qobjevo_equivalent(copy, self.qobjevos[form])
+
+        assert copy is not self.qobjevos[form]
+        t = self._rand_t()
+        before = self.qobjevos[form](t)
+        copy.cte *= 2
+        for op in copy.ops:
+            op.coeff = coefficient("0")
+        after = self.qobjevos[form](t)
+        _assert_qobj_almost_eq(before, after)
+
+    def test_args(self, args_form):
+        copy = self.qobjevos[args_form].copy()
+        args = {'w1': 3, "w2": 3}
+
+        for _ in range(10):
+            t = self._rand_t()
+            if args_form in self.cplx_forms:
+                expected = (self.cte_qobj +
+                            self.cplx_coeff(t, args) * self.cplx_qobj)
+                _assert_qobj_almost_eq(copy(t, args=args), expected)
+            elif args_form in self.mixed_forms:
+                expected = (self.cte_qobj +
+                            self.cplx_coeff(t, args) * self.cplx_qobj +
+                            self.real_coeff(t, args) * self.real_qobj)
+                _assert_qobj_almost_eq(copy(t, args=args), expected)
+
+        _assert_qobjevo_equivalent(copy, self.qobjevos[args_form])
+
+        copy.arguments(args)
+        _assert_qobjevo_different(copy, self.qobjevos[args_form])
+        for _ in range(10):
+            t = self._rand_t()
+            if args_form in self.cplx_forms:
+                expected = (self.cte_qobj +
+                            self.cplx_coeff(t, args) * self.cplx_qobj)
+                _assert_qobj_almost_eq(copy(t), expected)
+            elif args_form in self.mixed_forms:
+                expected = (self.cte_qobj +
+                            self.cplx_coeff(t, args) * self.cplx_qobj +
+                            self.real_coeff(t, args) * self.real_qobj)
+                _assert_qobj_almost_eq(copy(t), expected)
+
+    @pytest.mark.parametrize('bin_op', [_add, _sub, _mul, _matmul, _tensor],
+                             ids=['add', 'sub', 'mul', 'matmul', 'tensor'])
+    def test_binopt(self, form, extra_form, bin_op):
+        "QobjEvo arithmetic"
+        t = self._rand_t()
+        obj1 = self.qobjevos[form]
+        obj1_t = self.qobjevos[form](t)
+        obj2 = self.qobjevos[extra_form]
+        obj2_t = self.qobjevos[extra_form](t)
+
+        as_qevo = bin_op(obj1, obj2)(t)
+        as_qobj = bin_op(obj1_t, obj2_t)
+        _assert_qobj_almost_eq(as_qevo, as_qobj)
+
+    @pytest.mark.parametrize('bin_op', [_add, _sub, _mul, _matmul, _tensor],
+                             ids=['add', 'sub', 'mul', 'matmul', 'tensor'])
+    def test_binopt_qobj(self, form, bin_op):
+        "QobjEvo arithmetic"
+        t = self._rand_t()
+        obj = self.qobjevos[form]
+        obj_t = self.qobjevos[form](t)
+        qobj = rand_herm(self.N)
+
+        as_qevo = bin_op(obj, qobj)(t)
+        as_qobj = bin_op(obj_t, qobj)
+        _assert_qobj_almost_eq(as_qevo, as_qobj)
+
+        as_qevo = bin_op(qobj, obj)(t)
+        as_qobj = bin_op(qobj, obj_t)
+        _assert_qobj_almost_eq(as_qevo, as_qobj)
+
+    @pytest.mark.parametrize('bin_op', [_add, _sub, _mul, _div],
+                             ids=['add', 'sub', 'mul', 'div'])
+    def test_binopt_scalar(self, form, bin_op):
+        "QobjEvo arithmetic"
+        t = self._rand_t()
+        obj = self.qobjevos[form]
+        obj_t = self.qobjevos[form](t)
+        scalar = np.random.rand() + 1j
+
+        as_qevo = bin_op(obj, scalar)(t)
+        as_qobj = bin_op(obj_t, scalar)
+        _assert_qobj_almost_eq(as_qevo, as_qobj)
+
+        if bin_op is not _div:
+            as_qevo = bin_op(scalar, obj)(t)
+            as_qobj = bin_op(scalar, obj_t)
+            _assert_qobj_almost_eq(as_qevo, as_qobj)
+
+    @pytest.mark.parametrize('unary_op', [_neg, _dag, _conj, _trans, _cdc],
+                             ids=['neg', 'dag', 'conj', 'trans', '_cdc'])
+    def test_unary(self, form, extra_form, unary_op):
+        "QobjEvo arithmetic"
+        t = self._rand_t()
+        obj = self.qobjevos[form]
+        obj_t = self.qobjevos[form](t)
+
+        as_qevo = unary_op(obj)(t)
+        as_qobj = unary_op(obj_t)
+        _assert_qobj_almost_eq(as_qevo, as_qobj)
+
+    def test_tidyup(self):
+        "QobjEvo tidyup"
+        obj = self.qobjevos["no_args"]
+        obj *= 1e-10 * np.random.random()
+        obj.tidyup(atol=1e-8)
+        t = self._rand_t()
+        # check that the Qobj are cleaned
+        assert_allclose(obj(t).full(), 0, atol=1e-14)
+
+    def test_QobjEvo_pickle(self, form):
+        "QobjEvo pickle"
+        # used in parallel_map
+        import pickle
+        pickled = pickle.dumps(self.qobjevos[form], -1)
+        recreated = pickle.loads(pickled)
+        _assert_qobjevo_equivalent(recreated, self.qobjevos[form])
+
+    @pytest.mark.parametrize('superop', [
+        pytest.param(lindblad_dissipator, id='lindblad'),
+        pytest.param(partial(lindblad_dissipator, chi=0.5), id='lindblad_chi'),
+        pytest.param(sprepost, id='sprepost'),
+        pytest.param(lambda O1, O2: liouvillian(O1, [O2]), id='liouvillian')
+    ])
+    def test_superoperator_qobj(self, form, superop):
+        t = self._rand_t()
+        obj1 = self.qobjevos[form]
+        obj1_t = self.qobjevos[form](t)
+        qobj = rand_herm(self.N)
+
+        as_qevo = superop(obj1, qobj)(t)
+        as_qobj = superop(obj1_t, qobj)
+        _assert_qobj_almost_eq(as_qevo, as_qobj)
+
+        as_qevo = superop(qobj, obj1)(t)
+        as_qobj = superop(qobj, obj1_t)
+        _assert_qobj_almost_eq(as_qevo, as_qobj)
+
+    @pytest.mark.parametrize('superop', [
+        pytest.param(lindblad_dissipator, id='lindblad'),
+        pytest.param(partial(lindblad_dissipator, chi=0.5), id='lindblad_chi'),
+        pytest.param(sprepost, id='sprepost'),
+        pytest.param(lambda O1, O2: liouvillian(O1, [O2]), id='liouvillian')
+    ])
+    def test_superoperator(self, form, extra_form, superop):
+        t = self._rand_t()
+        obj1 = self.qobjevos[form]
+        obj1_t = self.qobjevos[form](t)
+        obj2 = self.qobjevos[extra_form]
+        obj2_t = self.qobjevos[extra_form](t)
+
+        as_qevo = superop(obj1, obj2)(t)
+        as_qobj = superop(obj1_t, obj2_t)
+        _assert_qobj_almost_eq(as_qevo, as_qobj)
+
+    def test_shift(self, form):
+        t = self._rand_t() / 2
+        dt = self._rand_t() / 2
+        obj = self.qobjevos[form]
+        shifted = obj._shift()
+        _assert_qobj_almost_eq(obj(t + dt), shifted(t, args={"_t0": dt}))
+
+    def test_QobjEvo_apply(self):
+        "QobjEvo apply"
+        obj = self.qobjevos["no_args"]
+        transposed = obj.apply(_trans)
+        _assert_qobjevo_equivalent(transposed, obj.trans())
+
+    def test_mul_vec(self, form):
+        "QobjEvo mul_numpy"
+        t = self._rand_t()
+        N = self.N
+        vec = np.arange(N)*.5+.5j
+        op = self.qobjevos[form]
+        assert_allclose(op(t).full() @ vec, op.mul(t, vec), atol=1e-14)
+
+    def test_mul_mat(self, form):
+        "QobjEvo mul_mat"
+        t = self._rand_t()
+        N = self.N
+        mat = np.random.rand(N, N) + 1 + 1j * np.random.rand(N, N)
+        matF = np.asfortranarray(mat)
+        op = self.qobjevos[form]
+        Qo1 = op(t)
+        assert_allclose(Qo1.full() @ mat, op.mul(t, mat), atol=1e-14)
+        assert_allclose(Qo1.full() @ matF, op.mul(t, matF), atol=1e-14)
+
+    def test_expect_psi(self, form):
+        "QobjEvo expect psi"
+        t = self._rand_t()
+        N = self.N
+        vec = _data.dense.fast_from_numpy(np.arange(N)*.5 + .5j)
+        op = self.qobjevos[form]
+        Qo1 = op(t)
+        assert_allclose(_data.expect(Qo1.data, vec), op.expect(t, vec),
+                        atol=1e-14)
+
+    def test_expect_rho(self, form):
+        "QobjEvo expect rho"
+        t = self._rand_t()
+        N = self.N
+        vec = _data.dense.fast_from_numpy(np.random.rand(N*N) + 1
+                                          + 1j * np.random.rand(N*N))
+        mat = _data.column_unstack_dense(vec, N)
+        qobj = Qobj(mat.to_array())
+        op = liouvillian(self.qobjevos[form])
+        Qo1 = op(t)
+        assert abs(_data.expect_super(Qo1.data, vec)
+                   - op.expect(t, vec, 0)) < 1e-14
+        assert abs(_data.expect_super(Qo1.data, vec)
+                   - op.expect(t, mat, 0)) < 1e-14
+        assert abs(_data.expect_super(Qo1.data, vec)
+                   - op.expect(t, qobj, 0)) < 1e-14
+
+    def test_compress(self):
+        "QobjEvo compress"
+        obj = self.qobjevos["no_args"]
+        obj2 = (obj + obj) / 2
+        before = obj2.num_obj
+        obj2.compress()
+        assert before >= obj2.num_obj
+        _assert_qobjevo_equivalent(obj, obj2)
 
 
 def test_QobjEvo_step_coeff():
@@ -245,64 +482,35 @@ def test_QobjEvo_step_coeff():
     # uniform t
     tlist = np.array([2, 3, 4, 5, 6, 7], dtype=float)
     qobjevo = QobjEvo([[sigmaz(), coeff1], [sigmax(), coeff2]],
-                    tlist=tlist, args={"_step_func_coeff":True})
-    assert_equal(qobjevo.ops[0].get_coeff(2.0), coeff1[0])
-    assert_equal(qobjevo.ops[0].get_coeff(7.0), coeff1[5])
-    assert_equal(qobjevo.ops[0].get_coeff(5.0001), coeff1[3])
-    assert_equal(qobjevo.ops[0].get_coeff(3.9999), coeff1[1])
+                      tlist=tlist, args={"_step_func_coeff": True})
+    assert qobjevo.ops[0].coeff(2.0) == coeff1[0]
+    assert qobjevo.ops[0].coeff(7.0) == coeff1[5]
+    assert qobjevo.ops[0].coeff(5.0001) == coeff1[3]
+    assert qobjevo.ops[0].coeff(3.9999) == coeff1[1]
 
-    assert_equal(qobjevo.ops[1].get_coeff(2.0), coeff2[0])
-    assert_equal(qobjevo.ops[1].get_coeff(7.0), coeff2[5])
-    assert_equal(qobjevo.ops[1].get_coeff(5.0001), coeff2[3])
-    assert_equal(qobjevo.ops[1].get_coeff(3.9999), coeff2[1])
-
-    qobjevo.compile()
-    assert_equal(qobjevo.coeff_get(2.0), [coeff1[0], coeff2[0]])
-    assert_equal(qobjevo.coeff_get(7.0), [coeff1[5], coeff2[5]])
-    assert_equal(qobjevo.coeff_get(4.0001), [coeff1[2], coeff2[2]])
-    assert_equal(qobjevo.coeff_get(3.9999), [coeff1[1], coeff2[1]])
+    assert qobjevo.ops[1].coeff(2.0) == coeff2[0]
+    assert qobjevo.ops[1].coeff(7.0) == coeff2[5]
+    assert qobjevo.ops[1].coeff(5.0001) == coeff2[3]
+    assert qobjevo.ops[1].coeff(3.9999) == coeff2[1]
 
     # non-uniform t
     tlist = np.array([1, 2, 4, 5, 6, 8], dtype=float)
     qobjevo = QobjEvo([[sigmaz(), coeff1], [sigmax(), coeff2]],
         tlist=tlist, args={"_step_func_coeff":True})
-    assert_equal(qobjevo.ops[0].get_coeff(1.0), coeff1[0])
-    assert_equal(qobjevo.ops[0].get_coeff(8.0), coeff1[5])
-    assert_equal(qobjevo.ops[0].get_coeff(3.9999), coeff1[1])
-    assert_equal(qobjevo.ops[0].get_coeff(4.23), coeff1[2])
-    assert_equal(qobjevo.ops[0].get_coeff(1.23), coeff1[0])
+    assert qobjevo.ops[0].coeff(1.0) == coeff1[0]
+    assert qobjevo.ops[0].coeff(8.0) == coeff1[5]
+    assert qobjevo.ops[0].coeff(3.9999) == coeff1[1]
+    assert qobjevo.ops[0].coeff(4.23) == coeff1[2]
+    assert qobjevo.ops[0].coeff(1.23) == coeff1[0]
 
-    assert_equal(qobjevo.ops[1].get_coeff(1.0), coeff2[0])
-    assert_equal(qobjevo.ops[1].get_coeff(8.0), coeff2[5])
-    assert_equal(qobjevo.ops[1].get_coeff(6.7), coeff2[4])
-    assert_equal(qobjevo.ops[1].get_coeff(7.9999), coeff2[4])
-    assert_equal(qobjevo.ops[1].get_coeff(3.9999), coeff2[1])
-
-    qobjevo.compile()
-    assert_equal(qobjevo.coeff_get(1.0), [coeff1[0], coeff2[0]])
-    assert_equal(qobjevo.coeff_get(3.999), [coeff1[1], coeff2[1]])
-    assert_equal(qobjevo.coeff_get(6.3), [coeff1[4], coeff2[4]])
-    assert_equal(qobjevo.coeff_get(1.0001), [coeff1[0], coeff2[0]])
+    assert qobjevo.ops[1].coeff(1.0) == coeff2[0]
+    assert qobjevo.ops[1].coeff(8.0) == coeff2[5]
+    assert qobjevo.ops[1].coeff(6.7) == coeff2[4]
+    assert qobjevo.ops[1].coeff(7.9999) == coeff2[4]
+    assert qobjevo.ops[1].coeff(3.9999) == coeff2[1]
 
 
-def test_QobjEvo_copy():
-    "QobjEvo copy"
-    tlist = np.linspace(0,1,300)
-    td_obj_1 = QobjEvo(_random_QobjEvo((5,5), [1,2,3], tlist=tlist),
-                       args={"w1":1, "w2":2}, tlist=tlist)
-    t = np.random.random()
-    td_obj_copy = td_obj_1.copy()
-    #Check that the copy is independent
-    assert_equal(td_obj_1 is td_obj_copy, False)
-    #Check that the copy has the same data
-    assert_equal(td_obj_1(t) == td_obj_copy(t), True)
-    td_obj_copy = QobjEvo(td_obj_1)
-    #Check that the copy is independent
-    assert_equal(td_obj_1 is td_obj_copy, False)
-    #Check that the copy has the same data
-    assert_equal(td_obj_1(t) == td_obj_copy(t), True)
-
-
+@pytest.mark.skipif(True, reason="Now returning Coefficient, to adapt/remove")
 def test_QobjEvo_to_list():
     "QobjEvo to_list"
     td_as_list_1 = _random_QobjEvo((5,5), [0,2,3], tlist=np.linspace(0,1,100))
@@ -312,470 +520,23 @@ def test_QobjEvo_to_list():
     td_obj_2 = QobjEvo(td_as_list_2, args=args, tlist=np.linspace(0,1,100))
     td_as_list_back = (td_obj_1 + td_obj_2).to_list()
 
-    all_match = True
     for part in td_as_list_back:
         if isinstance(part, Qobj):
-            all_match = all_match and td_as_list_1[0] + td_as_list_2[0] == part
+            assert td_as_list_1[0] + td_as_list_2[0] == part
         elif isinstance(part[1], (FunctionType, BuiltinFunctionType, partial)):
-            all_match = all_match and td_as_list_2[1][1] == part[1]
-            all_match = all_match and td_as_list_2[1][0] == part[0]
+            assert td_as_list_2[1][1] == part[1]
+            assert td_as_list_2[1][0] == part[0]
         elif isinstance(part[1], str):
-            all_match = all_match and td_as_list_1[1][1] == part[1]
-            all_match = all_match and td_as_list_1[1][0] == part[0]
+            assert td_as_list_1[1][1] == part[1]
+            assert td_as_list_1[1][0] == part[0]
         elif isinstance(part[1], np.ndarray):
-            all_match = all_match and (td_as_list_1[2][1] == part[1]).all()
-            all_match = all_match and td_as_list_1[2][0] == part[0]
+            assert (td_as_list_1[2][1] == part[1]).all()
+            assert td_as_list_1[2][0] == part[0]
         else:
-            all_match = False
-    # Check that the list get the object back
-    assert_equal(all_match, True)
+            assert False
 
 
-def test_QobjEvo_math_arithmetic():
-    "QobjEvo arithmetic"
-    N = 5
-    t = np.random.rand()+1
-    cqobjevos1, base_qobjs1 = _rand_cqobjevo(N)
-    cqobjevos2, base_qobjs2 = _rand_cqobjevo(N)
-    cte = cqobjevos2[0]
-    O1 = base_qobjs2[0]
-
-    for op, op_2 in zip(cqobjevos1, cqobjevos2):
-        _assert_qobj_almost_eq(op(t)*-1, (-op)(t) )
-
-        _assert_qobj_almost_eq(op(t) +O1, (op +O1)(t))
-        _assert_qobj_almost_eq(op(t) +cte(t), (op +cte)(t))
-        _assert_qobj_almost_eq(op(t) +op_2(t), (op +op_2)(t))
-        opp = op.copy()
-        opp += O1
-        _assert_qobj_almost_eq(op(t) +O1, opp(t))
-        opp = op.copy()
-        opp += op_2
-        _assert_qobj_almost_eq(op(t) +op_2(t), opp(t))
-
-        _assert_qobj_almost_eq(op(t) -O1, (op -O1)(t))
-        _assert_qobj_almost_eq(op(t) -cte(t), (op -cte)(t))
-        _assert_qobj_almost_eq(O1 -op(t), (O1 -op)(t))
-        _assert_qobj_almost_eq(cte(t) -op(t), (cte -op)(t))
-        _assert_qobj_almost_eq(op(t) -op_2(t), (op -op_2)(t))
-        opp = op.copy()
-        opp -= O1
-        _assert_qobj_almost_eq(op(t) -O1, opp(t))
-        opp = op.copy()
-        opp -= op_2
-        _assert_qobj_almost_eq(op(t) -op_2(t), opp(t))
-
-        _assert_qobj_almost_eq(op(t) * O1, (op * O1)(t))
-        _assert_qobj_almost_eq(O1 * op(t), (O1 * op)(t))
-        _assert_qobj_almost_eq(2 * op(t), (2 * op)(t))
-        _assert_qobj_almost_eq(op(t) * cte(t), (op * cte)(t))
-        _assert_qobj_almost_eq(cte(t) * op(t), (cte * op)(t))
-        _assert_qobj_almost_eq(op(t) * op_2(t), (op * op_2)(t))
-        _assert_qobj_almost_eq(op_2(t) * op(t), (op_2 * op)(t))
-        opp = op.copy()
-        opp *= 2
-        _assert_qobj_almost_eq(2 * op(t), opp(t))
-        opp = op.copy()
-        opp *= O1
-        _assert_qobj_almost_eq(op(t) * O1, opp(t))
-        opp = op.copy()
-        opp *= op_2
-        _assert_qobj_almost_eq(op(t) * op_2(t), opp(t))
-
-        _assert_qobj_almost_eq(op(t)/2, (op/2)(t))
-        opp = op.copy()
-        opp /= 2
-        _assert_qobj_almost_eq(op(t)/2, opp(t))
-
-
-def test_QobjEvo_unitary():
-    "QobjEvo trans, dag, conj, _cdc"
-    N = 5
-    t = np.random.rand()+1
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-
-    for op in cqobjevos:
-        _assert_qobj_almost_eq((op.trans())(t), op(t).trans())
-        _assert_qobj_almost_eq((op.dag())(t), op(t).dag())
-        _assert_qobj_almost_eq((op.conj())(t), op(t).conj())
-        _assert_qobj_almost_eq((op._cdc())(t), op(t).dag()*op(t))
-
-
-def test_QobjEvo_tidyup():
-    "QobjEvo tidyup"
-    tlist = np.linspace(0,1,300)
-    args={"w1":1}
-    td_obj = QobjEvo(_random_QobjEvo((5,5), [1,0,0], tlist=tlist),
-                     args=args, tlist=tlist)
-    td_obj *= 1e-10 * np.random.random()
-    td_obj.tidyup(atol=1e-8)
-    t = np.random.random()
-    # check that the Qobj are cleaned
-    assert_equal(np.max(td_obj(t, data=True)), 0.)
-
-
-def test_QobjEvo_compress():
-    "QobjEvo compress"
-    tlist = np.linspace(0, 1, 300)
-    td_obj_1 = QobjEvo(_random_QobjEvo((5,5), [1,2,3], tlist=tlist),
-                       args={"w1":1, "w2":2}, tlist=tlist)
-    td_obj_2 = (td_obj_1 + td_obj_1)/2.
-    t = np.random.random()
-    td_obj_2.compress()
-    # check that the number of part is decreased
-    assert_equal(len(td_obj_2.to_list()), 4)
-    # check that data is still valid
-    _assert_qobj_almost_eq(td_obj_2(t), td_obj_1(t))
-
-
-def test_QobjEvo_shift():
-    """QobjEvo _shift time"""
-    tlist = np.linspace(0, 1, 300)
-    td_obj_1 = QobjEvo(_random_QobjEvo((1,1), [0,0], tlist=tlist),
-                       args={"w1":1, "w2":2}, tlist=tlist)
-    td_obj_1s = td_obj_1.copy()
-    td_obj_1s._shift()
-    td_obj_2 = QobjEvo(_random_QobjEvo((1,1), [1,1], tlist=tlist),
-                       args={"w1":1, "w2":2}, tlist=tlist)
-    td_obj_2s = td_obj_2.copy()
-    td_obj_2s._shift()
-
-    _assert_qobj_almost_eq(td_obj_1(0),td_obj_1s(1, args={"_t0":-1}))
-    _assert_qobj_almost_eq(td_obj_2(0),td_obj_2s(1, args={"_t0":-1}))
-    td_obj_1s.arguments({"_t0":-1})
-    td_obj_2s.arguments({"_t0":-1})
-    _assert_qobj_almost_eq(td_obj_1(0),td_obj_1s(1))
-    _assert_qobj_almost_eq(td_obj_2(0),td_obj_2s(1))
-    td_obj_1s.compile()
-    td_obj_2s.compile()
-    _assert_qobj_almost_eq(td_obj_1(0),td_obj_1s(1))
-    _assert_qobj_almost_eq(td_obj_2(0),td_obj_2s(1))
-    _assert_qobj_almost_eq(td_obj_1(0),td_obj_1s(2, args={"_t0":-2}))
-    _assert_qobj_almost_eq(td_obj_2(0),td_obj_2s(2, args={"_t0":-2}))
-    td_obj_1s.arguments({"_t0":-2})
-    td_obj_2s.arguments({"_t0":-2})
-    _assert_qobj_almost_eq(td_obj_1(0),td_obj_1s(2))
-    _assert_qobj_almost_eq(td_obj_2(0),td_obj_2s(2))
-
-
-def test_QobjEvo_apply():
-    "QobjEvo apply"
-    def multiply(qobj,b,factor = 3.):
-        return qobj*b*factor
-    tlist = np.linspace(0, 1, 300)
-    td_obj = QobjEvo(_random_QobjEvo((5,5), [1,2,3], tlist=tlist),
-                     args={"w1":1, "w2":2}, tlist=tlist)
-    t = np.random.random()
-    # check that the number of part is decreased
-    assert_equal(td_obj.apply(multiply,2)(t) == td_obj(t)*6, True)
-    # check that data is still valid
-    assert_equal(td_obj.apply(multiply,2,factor=2)(t) == td_obj(t)*4, True)
-
-
-def test_QobjEvo_apply_decorator():
-    "QobjEvo apply_decorator"
-    def rescale_time_and_scale(f_original, time_scale, factor=1.):
-        def f(t, *args, **kwargs):
-            return f_original(time_scale*t, *args, **kwargs)*factor
-        return f
-
-    tlist = np.linspace(0, 1, 501)
-    td_obj = QobjEvo(_random_QobjEvo((5,5), [1,2,3], tlist=tlist, cte=False),
-                     args={"w1":1, "w2":2}, tlist=tlist)
-    t = 0.10 + np.random.random() * 0.80
-    # cubicspline interpolation can be less precise
-    # at the limit of the time range.
-    td_obj_scaled = td_obj.apply_decorator(rescale_time_and_scale,2)
-    # check that the decorated took effect mixed
-    assert_equal(td_obj_scaled(t) == td_obj(2*t), True)
-    for op in td_obj_scaled.ops:
-        assert_equal(op[3], "func")
-
-    def square_f(f_original):
-        def f(t, *args, **kwargs):
-            return f_original(t, *args, **kwargs)**2
-        return f
-    td_list = _random_QobjEvo((5,5), [2,0,0], tlist=tlist, cte=False)
-    td_obj_str = QobjEvo(td_list, args={"w1":1, "w2":2}, tlist=tlist)
-    td_obj_str_2 = td_obj_str.apply_decorator(square_f, str_mod=["(",")**2"])
-    _assert_qobj_almost_eq(td_obj_str_2(t), td_list[0][0] * np.sin(t)**2)
-    assert_equal(td_obj_str_2.ops[0][3], "string")
-
-    td_list = _random_QobjEvo((5,5), [3,0,0], tlist=tlist, cte=False)
-    td_obj_array = QobjEvo(td_list, tlist=tlist)
-    td_obj_array_2 = td_obj_array.apply_decorator(square_f, inplace_np=True)
-    _assert_qobj_almost_eq(td_obj_array_2(t),
-                           td_list[0][0] * np.sin(t)**2, tol=3e-7)
-    assert_equal(td_obj_array_2.ops[0][3], "array")
-
-
-def test_QobjEvo_mul_vec():
-    "QobjEvo mul_vec"
-    N = 5
-    t = np.random.rand()+1
-    vec = np.arange(N)*.5+.5j
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-
-    for op in cqobjevos:
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
-        op.compile()
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
-
-
-@pytest.mark.slow
-def test_QobjEvo_mul_vec_full():
-    "QobjEvo mul_vec"
-    N = 5
-    t = np.random.rand()+1
-    vec = np.arange(N)*.5+.5j
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-
-    for op in cqobjevos:
-        op.compile(dense=1)
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
-        op.compiled = ""
-        op.compile(matched=1)
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
-        op.compiled = ""
-        op.compile(omp=2)
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
-        op.compiled = ""
-        op.compile(matched=1,omp=2)
-        assert_allclose(spmv(op(t,data=1), vec), op.mul_vec(t, vec))
-
-
-def test_QobjEvo_mul_mat():
-    "QobjEvo mul_mat"
-    N = 5
-    t = np.random.rand()+1
-    mat = np.random.rand(N,N)+1 + 1j*np.random.rand(N,N)
-    matF = np.asfortranarray(mat)
-    matV = mat2vec(mat).flatten()
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-
-    for op in cqobjevos:
-        Qo1 = op(t)
-        assert_allclose(Qo1.data * mat, op.mul_mat(t,mat))
-        assert_allclose(Qo1.data * matF, op.mul_mat(t,matF))
-        op.compile()
-        assert_allclose(Qo1.data * mat, op.mul_mat(t,mat))
-        assert_allclose(Qo1.data * matF, op.mul_mat(t,matF))
-        assert_allclose(mat2vec(Qo1.data * mat).flatten(),
-                        op.compiled_qobjevo.ode_mul_mat_f_vec(t,matV))
-
-
-@pytest.mark.slow
-def test_QobjEvo_mul_mat_full():
-    "QobjEvo mul_mat"
-    N = 5
-    t = np.random.rand()+1
-    mat = np.random.rand(N,N)+1 + 1j*np.random.rand(N,N)
-    matF = np.asfortranarray(mat)
-    matV = mat2vec(mat).flatten()
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-
-    for op in cqobjevos:
-        Qo1 = op(t)
-        op.compile(dense=1)
-        assert_allclose(Qo1.data * mat, op.mul_mat(t,mat))
-        assert_allclose(Qo1.data * matF, op.mul_mat(t,matF))
-        assert_allclose(mat2vec(Qo1.data * mat).flatten(),
-                        op.compiled_qobjevo.ode_mul_mat_f_vec(t,matV))
-        op.compiled = ""
-        op.compile(matched=1)
-        assert_allclose(Qo1.data * mat, op.mul_mat(t,mat))
-        assert_allclose(Qo1.data * matF, op.mul_mat(t,matF))
-        assert_allclose(mat2vec(Qo1.data * mat).flatten(),
-                        op.compiled_qobjevo.ode_mul_mat_f_vec(t,matV))
-        op.compiled = ""
-        op.compile(omp=2)
-        assert_allclose(Qo1.data * mat, op.mul_mat(t,mat))
-        assert_allclose(Qo1.data * matF, op.mul_mat(t,matF))
-        assert_allclose(mat2vec(Qo1.data * mat).flatten(),
-                        op.compiled_qobjevo.ode_mul_mat_f_vec(t,matV))
-        op.compiled = ""
-        op.compile(matched=1,omp=2)
-        assert_allclose(Qo1.data * mat, op.mul_mat(t,mat))
-        assert_allclose(Qo1.data * matF, op.mul_mat(t,matF))
-        assert_allclose(mat2vec(Qo1.data * mat).flatten(),
-                        op.compiled_qobjevo.ode_mul_mat_f_vec(t,matV))
-
-
-def test_QobjEvo_expect_psi():
-    "QobjEvo expect psi"
-    N = 5
-    t = np.random.rand()+1
-    vec = np.arange(N)*.5+.5j
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-
-    for op in cqobjevos:
-        Qo1 = op(t)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
-        op.compile()
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
-
-
-@pytest.mark.slow
-def test_QobjEvo_expect_psi_full():
-    "QobjEvo expect psi"
-    N = 5
-    t = np.random.rand()+1
-    vec = np.arange(N)*.5+.5j
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-
-    for op in cqobjevos:
-        Qo1 = op(t)
-        op.compile(dense=1)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
-        op.compiled = ""
-        op.compile(matched=1)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
-        op.compiled = ""
-        op.compile(omp=2)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
-        op.compiled = ""
-        op.compile(matched=1,omp=2)
-        assert_allclose(cy_expect_psi(Qo1.data, vec, 0), op.expect(t,vec,0))
-
-
-def test_QobjEvo_expect_rho():
-    "QobjEvo expect rho"
-    N = 5
-    t = np.random.rand()+1
-    vec = np.random.rand(N*N)+1 + 1j*np.random.rand(N*N)
-    mat = vec2mat(vec)
-    qobj = Qobj(mat)
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-
-    for op_ in cqobjevos:
-        op = liouvillian(op_)
-        Qo1 = op(t)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,vec,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,mat,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,qobj,0), atol=1e-14)
-
-        op.compile()
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,vec,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,mat,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,qobj,0), atol=1e-14)
-
-    tlist = np.linspace(0,1,300)
-    args={"w1":1, "w2":2, "w3":3}
-    data1 = np.random.random((3,3))
-    data2 = np.random.random((3,3))
-    td_obj_sa = QobjEvo(_random_QobjEvo((3,3), [0,3,2], tlist=tlist),
-                       args=args, tlist=tlist)
-    td_obj_m = QobjEvo(_random_QobjEvo((3,3), [1,2,3], tlist=tlist),
-                       args=args, tlist=tlist)
-    t = np.random.random()
-    td_obj_sa = td_obj_sa.apply(spre)
-    td_obj_m = td_obj_m.apply(spre)
-    rho = np.arange(3*3)*0.25+.25j
-    td_obj_sac = td_obj_sa.copy()
-    td_obj_sac.compile()
-    v1 = td_obj_sa.expect(t, rho, 0)
-    v2 = td_obj_sac.expect(t, rho, 0)
-    v3 = cy_expect_rho_vec(td_obj_sa(t, data=True), rho, 0)
-    # check not compiled rhs const
-    assert_allclose(v1, v3, rtol=1e-6)
-    # check compiled rhs
-    assert_allclose(v3, v2, rtol=1e-6)
-
-    td_obj_mc = td_obj_m.copy()
-    td_obj_mc.compile()
-    v1 = td_obj_m.expect(t, rho, 1)
-    v2 = td_obj_mc.expect(t, rho, 1)
-    v3 = cy_expect_rho_vec(td_obj_m(t, data=True), rho, 1)
-    # check not compiled rhs func
-    assert_allclose(v1, v3, rtol=1e-6)
-    # check compiled rhs func
-    assert_allclose(v3, v2, rtol=1e-6)
-
-
-@pytest.mark.slow
-def test_QobjEvo_expect_rho_full():
-    "QobjEvo expect rho"
-    N = 5
-    t = np.random.rand()+1
-    vec = np.random.rand(N*N)+1 + 1j*np.random.rand(N*N)
-    mat = vec2mat(vec)
-    qobj = Qobj(mat)
-    cqobjevos, base_qobjs = _rand_cqobjevo(N)
-
-    for op_ in cqobjevos:
-        op = liouvillian(op_)
-        Qo1 = op(t)
-        op.compile(dense=1)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,vec,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,mat,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,qobj,0), atol=1e-14)
-        op.compiled = ""
-        op.compile(matched=1)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,vec,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,mat,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,qobj,0), atol=1e-14)
-        op.compiled = ""
-        op.compile(omp=2)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,vec,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,mat,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,qobj,0), atol=1e-14)
-        op.compiled = ""
-        op.compile(matched=1,omp=2)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,vec,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,mat,0), atol=1e-14)
-        assert_allclose(cy_expect_rho_vec(Qo1.data, vec, 0),
-                        op.expect(t,qobj,0), atol=1e-14)
-
-    tlist = np.linspace(0,1,300)
-    args={"w1":1, "w2":2, "w3":3}
-    data1 = np.random.random((3,3))
-    data2 = np.random.random((3,3))
-    td_obj_sa = QobjEvo(_random_QobjEvo((3,3), [0,3,2], tlist=tlist),
-                       args=args, tlist=tlist)
-    td_obj_m = QobjEvo(_random_QobjEvo((3,3), [1,2,3], tlist=tlist),
-                       args=args, tlist=tlist)
-    t = np.random.random()
-    td_obj_sa = td_obj_sa.apply(spre)
-    td_obj_m = td_obj_m.apply(spre)
-    rho = np.arange(3*3)*0.25+.25j
-    td_obj_sac = td_obj_sa.copy()
-    td_obj_sac.compile()
-    v1 = td_obj_sa.expect(t, rho, 0)
-    v2 = td_obj_sac.expect(t, rho, 0)
-    v3 = cy_expect_rho_vec(td_obj_sa(t, data=True), rho, 0)
-    # check not compiled rhs const
-    assert_allclose(v1, v3, rtol=1e-6)
-    # check compiled rhs
-    assert_allclose(v3, v2, rtol=1e-6)
-
-    td_obj_mc = td_obj_m.copy()
-    td_obj_mc.compile()
-    v1 = td_obj_m.expect(t, rho, 1)
-    v2 = td_obj_mc.expect(t, rho, 1)
-    v3 = cy_expect_rho_vec(td_obj_m(t, data=True), rho, 1)
-    # check not compiled rhs func
-    assert_allclose(v1, v3, rtol=1e-6)
-    # check compiled rhs func
-    assert_allclose(v3, v2, rtol=1e-6)
-
-
+# TODO remove when with state moved to solvers
 def test_QobjEvo_with_state():
     "QobjEvo dynamics_args"
     def coeff_state(t, args):
@@ -787,141 +548,43 @@ def test_QobjEvo_with_state():
     data2 = np.random.random((N, N))
     q1 = Qobj(data1)
     q2 = Qobj(data2)
-    args={"w":5, "state_vec":None, "expect_op_0":2*qeye(N)}
+    args = {"w": 5, "state_vec": None, "expect_op_0": 2*qeye(N)}
 
     td_data = QobjEvo([q1, [q2, coeff_state]], args=args, e_ops=[2*qeye(N)])
     q_at_t = q1 + np.mean(vec) * args["w"] * expect(2*qeye(N), Qobj(vec.T)) * q2
     # Check that the with_state call
-    assert_allclose(td_data.mul_vec(t, vec), q_at_t * vec)
-    td_data.compile()
+    assert_allclose(td_data.mul(t, vec), (q_at_t * vec).full()[:, 0],
+                    atol=1e-14)
     # Check that the with_state call compiled
-    assert_allclose(td_data.mul_vec(t, vec), q_at_t * vec)
+    assert_allclose(td_data.mul(t, vec), (q_at_t * vec).full()[:, 0],
+                    atol=1e-14)
 
     td_data = QobjEvo([q1, [q2, "state_vec[0] * cos(w*expect_op_0*t)"]],
                       args=args, e_ops=[2*qeye(N)])
-    data_at_t = q1 + q2 * vec[0] * np.cos(10 * t * expect(qeye(N), Qobj(vec.T)))
+    data_at_t = q1 + q2*vec[0]*np.cos(10 * t * expect(qeye(N), Qobj(vec.T)))
     # Check that the with_state call for str format
-    assert_allclose(td_data.mul_vec(t, vec), data_at_t * vec)
-    td_data.compile()
+    assert_allclose(td_data.mul(t, vec), (data_at_t * vec).full()[:, 0],
+                    atol=1e-14)
     # Check that the with_state call for str format and compiled
-    assert_allclose(td_data.mul_vec(t, vec), data_at_t * vec)
+    assert_allclose(td_data.mul(t, vec), (data_at_t * vec).full()[:, 0],
+                    atol=1e-14)
 
-    args={"state_mat":None, "state_vec":None, "state_qobj":None}
-    mat = np.arange(N*N).reshape((N,N))
+    args = {"state_mat": None, "state_vec": None, "state_qobj": None}
+    mat = np.arange(N*N).reshape((N, N))
+
     def check_dyn_args(t, args):
-        if not isinstance(args["state_qobj"], Qobj):
-            raise TypeError("args['state_qobj'], Qobj")
-        if not isinstance(args["state_vec"], np.ndarray):
-            raise TypeError("args['state_vec'], np.ndarray")
-        if not isinstance(args["state_mat"], np.ndarray):
-            raise TypeError("args['state_mat'], np.ndarray")
+        assert isinstance(args["state_qobj"], Qobj)
+        assert isinstance(args["state_vec"], np.ndarray)
+        assert isinstance(args["state_mat"], np.ndarray)
 
-        if len(args["state_vec"].shape) != 1:
-            raise TypeError
-        if len(args["state_mat"].shape) != 2:
-            raise TypeError
+        assert len(args["state_vec"].shape) == 1
+        assert len(args["state_mat"].shape) == 2
 
-        if not np.all(args["state_vec"] == args["state_qobj"].full().ravel("F")):
-            raise Exception
-        if not np.all(args["state_vec"] == args["state_mat"].ravel("F")):
-            raise Exception
-        if not np.all(args["state_mat"] == mat):
-            raise Exception
+        assert (np.all(args["state_vec"]
+                == args["state_qobj"].full().ravel("F")))
+        assert np.all(args["state_vec"] == args["state_mat"].ravel("F"))
+        assert np.all(args["state_mat"] == mat)
         return 1
+
     td_data = QobjEvo([q1, check_dyn_args], args=args)
-    td_data.mul_mat(0, mat)
-
-
-def test_QobjEvo_pickle():
-    "QobjEvo pickle"
-    #used in parallel_map
-    import pickle
-    tlist = np.linspace(0,1,300)
-    args={"w1":1, "w2":2}
-    t = np.random.random()
-
-    td_obj_c = QobjEvo(_random_QobjEvo((5,5), [0,0,0]))
-    td_obj_c.compile()
-    pickled = pickle.dumps(td_obj_c)
-    td_pick = pickle.loads(pickled)
-    # Check for const case
-    assert_equal(td_obj_c(t) == td_pick(t), True)
-
-    td_obj_sa = QobjEvo(_random_QobjEvo((5,5), [2,3,0], tlist=tlist),
-                       args=args, tlist=tlist)
-    td_obj_sa.compile()
-    td_obj_m = QobjEvo(_random_QobjEvo((5,5), [1,2,3], tlist=tlist),
-                       args=args, tlist=tlist)
-
-    pickled = pickle.dumps(td_obj_sa, -1)
-    td_pick = pickle.loads(pickled)
-    # Check for cython compiled coeff
-    assert_equal(td_obj_sa(t) == td_pick(t), True)
-
-    pickled = pickle.dumps(td_obj_m, -1)
-    td_pick = pickle.loads(pickled)
-    # Check for not compiled mix
-    assert_equal(td_obj_m(t) == td_pick(t), True)
-    td_obj_m.compile()
-    pickled = pickle.dumps(td_obj_m, -1)
-    td_pick = pickle.loads(pickled)
-    # Check for ct_cqobjevo
-    assert_equal(td_obj_m(t) == td_pick(t), True)
-
-
-def test_QobjEvo_safepickle():
-    "QobjEvo with safe pickle"
-    #used in parallel_map
-    import pickle
-    from qutip.core.qobjevo import safePickle
-    old_set = safePickle[0]
-    safePickle[0] = True
-    tlist = np.linspace(0,1,300)
-    args={"w1":1, "w2":2}
-    t = np.random.random()
-
-    td_obj_c = QobjEvo(_random_QobjEvo((5,5), [0,0,0]))
-    td_obj_c.compile()
-    pickled = pickle.dumps(td_obj_c)
-    td_pick = pickle.loads(pickled)
-    # Check for const case
-    assert_equal(td_obj_c(t) == td_pick(t), True)
-
-    td_obj_sa = QobjEvo(_random_QobjEvo((5,5), [2,3,0], tlist=tlist),
-                       args=args, tlist=tlist)
-    td_obj_sa.compile()
-    td_obj_m = QobjEvo(_random_QobjEvo((5,5), [1,2,3], tlist=tlist),
-                       args=args, tlist=tlist)
-
-    pickled = pickle.dumps(td_obj_sa, -1)
-    td_pick = pickle.loads(pickled)
-    # Check for cython compiled coeff
-    assert_equal(td_obj_sa(t) == td_pick(t), True)
-
-    pickled = pickle.dumps(td_obj_m, -1)
-    td_pick = pickle.loads(pickled)
-    # Check for not compiled mix
-    assert_equal(td_obj_m(t) == td_pick(t), True)
-    td_obj_m.compile()
-    pickled = pickle.dumps(td_obj_m, -1)
-    td_pick = pickle.loads(pickled)
-    # Check for ct_cqobjevo
-    assert_equal(td_obj_m(t) == td_pick(t), True)
-    safePickle[0] = old_set
-
-
-def test_QobjEvo_superoperator():
-    "QobjEvo superoperator"
-    cqobjevos1, _ = _rand_cqobjevo(3)
-    cqobjevos2, _ = _rand_cqobjevo(3)
-    cqobjevos3, _ = _rand_cqobjevo(3)
-    t = np.random.rand()+1
-    for op1, op2 in zip(cqobjevos1, cqobjevos2):
-        Q1 = op1(t)
-        Q2 = op2(t)
-        _assert_qobj_almost_eq(lindblad_dissipator(Q1, Q2, chi=0.5),
-                               lindblad_dissipator(op1, op2, chi=0.5)(t))
-        _assert_qobj_almost_eq(sprepost(Q1, Q2),
-                               sprepost(op1, op2)(t))
-        _assert_qobj_almost_eq(liouvillian(Q1, [Q2]),
-                               liouvillian(op1, [op2])(t))
+    td_data.mul(0, mat)

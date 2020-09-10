@@ -2,27 +2,45 @@
 #cython: boundscheck=False, wraparound=False, initializedcheck=False
 
 from libc.string cimport memset, memcpy
+
+from libcpp cimport bool
 from libcpp.algorithm cimport sort
-from libcpp.vector cimport vector
 
 cimport cython
 
+from cpython cimport mem
+
+import numbers
 import warnings
 
 import numpy as np
 cimport numpy as cnp
+import scipy.sparse
 from scipy.sparse import csr_matrix as scipy_csr_matrix
 from scipy.sparse.data import _data_matrix as scipy_data_matrix
+from scipy.linalg cimport cython_blas as blas
 
-from . cimport base
+from qutip.core.data cimport base, Dense
+from qutip.core.data.add cimport add_csr, sub_csr
+from qutip.core.data.adjoint cimport adjoint_csr, transpose_csr, conj_csr
+from qutip.core.data.mul cimport mul_csr, neg_csr
+from qutip.core.data.matmul cimport matmul_csr
+from qutip.core.data.trace cimport trace_csr
+from .base import idxint_dtype
 
 cnp.import_array()
 
 cdef extern from *:
+    void *PyMem_Calloc(size_t n, size_t elsize)
     void PyArray_ENABLEFLAGS(cnp.ndarray arr, int flags)
     void *PyDataMem_NEW(size_t size)
     void PyDataMem_FREE(void *ptr)
 
+# Very little should be exported on star-import, because most stuff will have
+# naming collisions with other type modules.
+__all__ = ['CSR']
+
+cdef int _ONE = 1
 
 cdef object _csr_matrix(data, indices, indptr, shape):
     """
@@ -68,7 +86,8 @@ cdef class CSR(base.Data):
         cdef size_t ptr
         cdef base.idxint col
         cdef object data, col_index, row_index
-        if isinstance(arg, scipy_csr_matrix):
+        if isinstance(arg, scipy.sparse.spmatrix):
+            arg = arg.tocsr()
             if shape is not None and shape != arg.shape:
                 raise ValueError("".join([
                     "shapes do not match: ", str(shape), " and ", str(arg.shape),
@@ -76,28 +95,31 @@ cdef class CSR(base.Data):
             shape = arg.shape
             arg = (arg.data, arg.indices, arg.indptr)
         if not isinstance(arg, tuple):
-            raise TypeError("arg must be a scipy csr_matrix or tuple")
+            raise TypeError("arg must be a scipy matrix or tuple")
         if len(arg) != 3:
             raise ValueError("arg must be a (data, col_index, row_index) tuple")
-        data = np.array(arg[0], dtype=np.complex128, copy=copy)
-        col_index = np.array(arg[1], dtype=base.idxint_dtype, copy=copy)
-        row_index = np.array(arg[2], dtype=base.idxint_dtype, copy=copy)
+        data = np.array(arg[0], dtype=np.complex128, copy=copy, order='C')
+        col_index = np.array(arg[1], dtype=idxint_dtype, copy=copy, order='C')
+        row_index = np.array(arg[2], dtype=idxint_dtype, copy=copy, order='C')
         # This flag must be set at the same time as data, col_index and
         # row_index are assigned.  These assignments cannot raise an exception
         # in user code due to the above three lines, but further code may.
         self._deallocate = False
-        self.data = data
-        self.col_index = col_index
-        self.row_index = row_index
+        self.data = <double complex *> cnp.PyArray_GETPTR1(data, 0)
+        self.col_index = <base.idxint *> cnp.PyArray_GETPTR1(col_index, 0)
+        self.row_index = <base.idxint *> cnp.PyArray_GETPTR1(row_index, 0)
+        self.size = (cnp.PyArray_SIZE(data)
+                     if cnp.PyArray_SIZE(data) < cnp.PyArray_SIZE(col_index)
+                     else cnp.PyArray_SIZE(col_index))
         if shape is None:
             warnings.warn("instantiating CSR matrix of unknown shape")
             # row_index contains an extra element which is nnz.  We assume the
             # smallest matrix which can hold all these values by iterating
             # through the columns.  This is slow and probably inaccurate, since
             # there could be columns containing zero (hence the warning).
-            self.shape[0] = self.row_index.shape[0] - 1
+            self.shape[0] = cnp.PyArray_DIMS(row_index)[0] - 1
             col = 1
-            for ptr in range(self.col_index.shape[0]):
+            for ptr in range(self.size):
                 col = self.col_index[ptr] if self.col_index[ptr] > col else col
             self.shape[1] = col
         else:
@@ -114,6 +136,9 @@ cdef class CSR(base.Data):
         # deallocated before us.
         self._scipy = _csr_matrix(data, col_index, row_index, self.shape)
 
+    def __reduce__(self):
+        return (fast_from_scipy, (self.as_scipy(),))
+
     cpdef CSR copy(self):
         """
         Return a complete (deep) copy of this object.
@@ -127,11 +152,11 @@ cdef class CSR(base.Data):
         low-level C code).
         """
         cdef base.idxint nnz_ = nnz(self)
-        cdef CSR out = empty(self.shape[0], self.shape[1], nnz_)
-        memcpy(&out.data[0], &self.data[0], nnz_*sizeof(out.data[0]))
-        memcpy(&out.col_index[0], &self.col_index[0], nnz_*sizeof(out.col_index[0]))
-        memcpy(&out.row_index[0], &self.row_index[0],
-               (self.shape[0] + 1)*sizeof(out.row_index[0]))
+        cdef CSR out = empty_like(self)
+        memcpy(out.data, self.data, nnz_*sizeof(double complex))
+        memcpy(out.col_index, self.col_index, nnz_*sizeof(base.idxint))
+        memcpy(out.row_index, self.row_index,
+               (self.shape[0] + 1)*sizeof(base.idxint))
         return out
 
     cpdef object to_array(self):
@@ -149,14 +174,19 @@ cdef class CSR(base.Data):
                 buffer[row, self.col_index[ptr]] = self.data[ptr]
         return out
 
-    cpdef object as_scipy(self):
+    cpdef object as_scipy(self, bint full=False):
         """
         Get a view onto this object as a `scipy.sparse.csr_matrix`.  The
         underlying data structures are exposed, such that modifications to the
         `data`, `indices` and `indptr` buffers in the resulting object will
         modify this object too.
 
-        The arrays may be uninitialised.
+        If `full` is False (the default), the output array is squeezed so that
+        the SciPy array sees only the filled elements.  If `full` is True,
+        SciPy will see the full underlying buffers, which may include
+        uninitialised elements.  Setting `full=True` is intended for
+        Python-space factory methods.  In all other use cases, `full=False` is
+        much less error prone.
         """
         # We store a reference to the scipy matrix not only for caching this
         # relatively expensive method, but also because we transferred
@@ -164,21 +194,103 @@ cdef class CSR(base.Data):
         # be collected while we're alive.
         if self._scipy is not None:
             return self._scipy
-        data = cnp.PyArray_SimpleNewFromData(1, [self.data.size],
+        cdef cnp.npy_intp length = self.size if full else nnz(self)
+        data = cnp.PyArray_SimpleNewFromData(1, [length],
                                              cnp.NPY_COMPLEX128,
-                                             &self.data[0])
-        indices = cnp.PyArray_SimpleNewFromData(1, [self.col_index.size],
+                                             self.data)
+        indices = cnp.PyArray_SimpleNewFromData(1, [length],
                                                 base.idxint_DTYPE,
-                                                &self.col_index[0])
-        indptr = cnp.PyArray_SimpleNewFromData(1, [self.row_index.size],
+                                                self.col_index)
+        indptr = cnp.PyArray_SimpleNewFromData(1, [self.shape[0] + 1],
                                                base.idxint_DTYPE,
-                                               &self.row_index[0])
+                                               self.row_index)
         PyArray_ENABLEFLAGS(data, cnp.NPY_ARRAY_OWNDATA)
         PyArray_ENABLEFLAGS(indices, cnp.NPY_ARRAY_OWNDATA)
         PyArray_ENABLEFLAGS(indptr, cnp.NPY_ARRAY_OWNDATA)
         self._deallocate = False
         self._scipy = _csr_matrix(data, indices, indptr, self.shape)
         return self._scipy
+
+    cpdef CSR sort_indices(self):
+        cdef Sorter sort
+        cdef base.idxint ptr
+        cdef size_t row, diff, size=0
+        for row in range(self.shape[0]):
+            diff = self.row_index[row + 1] - self.row_index[row]
+            size = diff if diff > size else size
+        sort = Sorter(size)
+        for row in range(self.shape[0]):
+            ptr = self.row_index[row]
+            diff = self.row_index[row + 1] - ptr
+            sort.inplace(self, ptr, diff)
+        return self
+
+    # Beware: before Cython 3, mathematical operator overrides follow the C
+    # API, _not_ the Python one.  This means the first argument is _not_
+    # guaranteed to be `self`, and methods like `__rmul__` don't exist.  This
+    # does not affect in place operations like `__imul__`, since we can always
+    # guarantee the one on the left is `self`.
+
+    def __add__(left, right):
+        if not isinstance(left, CSR) or not isinstance(right, CSR):
+            return NotImplemented
+        return add_csr(left, right)
+
+    def __matmul__(left, right):
+        if not isinstance(left, CSR) or not isinstance(right, CSR):
+            return NotImplemented
+        return matmul_csr(left, right)
+
+    def __mul__(left, right):
+        csr, number = (left, right) if isinstance(left, CSR) else (right, left)
+        if not isinstance(number, numbers.Number):
+            return NotImplemented
+        return mul_csr(csr, complex(number))
+
+    def __imul__(self, other):
+        if not isinstance(other, numbers.Number):
+            return NotImplemented
+        cdef int nnz_ = nnz(self)
+        cdef double complex mul = other
+        blas.zscal(&nnz_, &mul, self.data, &_ONE)
+        return self
+
+    def __truediv__(left, right):
+        csr, number = (left, right) if isinstance(left, CSR) else (right, left)
+        if not isinstance(number, numbers.Number):
+            return NotImplemented
+        # Technically `(1 / x) * y` doesn't necessarily equal `y / x` in
+        # floating point, but multiplication is faster than division, and we
+        # don't really care _that_ much anyway.
+        return mul_csr(csr, 1 / complex(number))
+
+    def __itruediv__(self, other):
+        if not isinstance(other, numbers.Number):
+            return NotImplemented
+        cdef int nnz_ = nnz(self)
+        cdef double complex mul = 1 / other
+        blas.zscal(&nnz_, &mul, self.data, &_ONE)
+        return self
+
+    def __neg__(self):
+        return neg_csr(self)
+
+    def __sub__(left, right):
+        if not isinstance(left, CSR) or not isinstance(right, CSR):
+            return NotImplemented
+        return sub_csr(left, right)
+
+    cpdef double complex trace(self):
+        return trace_csr(self)
+
+    cpdef CSR adjoint(self):
+        return adjoint_csr(self)
+
+    cpdef CSR conj(self):
+        return conj_csr(self)
+
+    cpdef CSR transpose(self):
+        return transpose_csr(self)
 
     def __repr__(self):
         return "".join([
@@ -188,29 +300,35 @@ cdef class CSR(base.Data):
     def __str__(self):
         return self.__repr__()
 
-    @cython.initializedcheck(True)
     def __dealloc__(self):
         # If we have a reference to a scipy type, then we've passed ownership
         # of the data to numpy, so we let it handle refcounting and we don't
         # need to deallocate anything ourselves.
         if not self._deallocate:
             return
-        # The only way a Cython memoryview can hold a NULL pointer is if the
-        # memoryview is uninitialised.  Since we have initializedcheck on,
-        # Cython will insert a throw if it is not initialized, and therefore
-        # accessing &self.data[0] is safe and non-NULL if no error occurs.
-        try:
-            PyDataMem_FREE(&self.data[0])
-        except AttributeError:
-            pass
-        try:
-            PyDataMem_FREE(&self.col_index[0])
-        except AttributeError:
-            pass
-        try:
-            PyDataMem_FREE(&self.row_index[0])
-        except AttributeError:
-            pass
+        if self.data != NULL:
+            PyDataMem_FREE(self.data)
+        if self.col_index != NULL:
+            PyDataMem_FREE(self.col_index)
+        if self.row_index != NULL:
+            PyDataMem_FREE(self.row_index)
+
+
+cpdef CSR fast_from_scipy(object sci):
+    """
+    Fast path construction from scipy.sparse.csr_matrix.  This does _no_ type
+    checking on any of the inputs, and should consequently be considered very
+    unsafe.  This is primarily for use in the unpickling operation.
+    """
+    cdef CSR out = CSR.__new__(CSR)
+    out.shape = sci.shape
+    out._deallocate = False
+    out._scipy = sci
+    out.data = <double complex *> cnp.PyArray_GETPTR1(sci.data, 0)
+    out.col_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indices, 0)
+    out.row_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indptr, 0)
+    out.size = cnp.PyArray_SIZE(sci.data)
+    return out
 
 
 cpdef CSR copy_structure(CSR matrix):
@@ -223,11 +341,9 @@ cpdef CSR copy_structure(CSR matrix):
     structure, but modify each non-zero data element without change their
     location.
     """
-    cdef base.idxint nnz_ = nnz(matrix)
-    cdef CSR out = empty(matrix.shape[0], matrix.shape[1], nnz_)
-    memcpy(&out.col_index[0], &matrix.col_index[0], nnz_*sizeof(out.col_index[0]))
-    memcpy(&out.row_index[0], &matrix.row_index[0],
-           (matrix.shape[0] + 1)*sizeof(out.row_index[0]))
+    cdef CSR out = empty_like(matrix)
+    memcpy(out.col_index, matrix.col_index, nnz(matrix) * sizeof(base.idxint))
+    memcpy(out.row_index, matrix.row_index, (matrix.shape[0] + 1)*sizeof(base.idxint))
     return out
 
 
@@ -236,30 +352,298 @@ cpdef inline base.idxint nnz(CSR matrix) nogil:
     return matrix.row_index[matrix.shape[0]]
 
 
-# Internal structure for sorting pairs of elements.
-cdef struct _data_col:
-    double complex data
-    base.idxint col
+cdef class Accumulator:
+    """
+    Provides the scatter/gather accumulator pattern for populating CSR/CSC
+    matrices row-by-row (or column-by-column for CSC) where entries may need to
+    be accumulated (summed) from several locations which may not be sorted.
 
-cdef int _sort_indices_compare(_data_col x, _data_col y) nogil:
+    See usage in `csr.from_coo_pointers` and `add_csr`; generally, add values
+    to the accumulator for this row by calling `scatter`, then fill the row in
+    the output by calling `gather`.  Prepare the accumulator to receive the
+    next row by calling `reset`.
+    """
+
+    def __cinit__(self, size_t size):
+        """
+        Initialise this accumulator.  `size` should be the number of columns in
+        the matrix (for CSR) or the number of rows (for CSC).
+        """
+        self.values = <double complex *> mem.PyMem_Malloc(size * sizeof(double complex))
+        self.modified = <size_t *> PyMem_Calloc(size, sizeof(size_t))
+        self.nonzero = <base.idxint *> mem.PyMem_Malloc(size * sizeof(base.idxint))
+        if self.values == NULL or self.modified == NULL or self.nonzero == NULL:
+            raise MemoryError
+        self.size = size
+        self.nnz = 0
+        # The value of _cur_row doesn't actually need to match the true row in
+        # the output, it just needs to be a unique number so that we can use it
+        # as a sentinel in `modified` to tell if there's a value in the current
+        # column.
+        self._cur_row = 1
+
+    cdef void scatter(self, double complex value, base.idxint position):
+        """
+        Add a value to the accumulator for this row, in column `position`.  The
+        value is added on to any value already scattered into this position.
+        """
+        # We have to branch on modified[position] anyway (to know whether to
+        # add an entry in nonzero), so we _actually_ reset `values` here.  This
+        # has the potential to save operations too, if the same column is never
+        # touched again.
+        if self.modified[position] == self._cur_row:
+            self.values[position] += value
+        else:
+            self.values[position] = value
+            self.modified[position] = self._cur_row
+            self.nonzero[self.nnz] = position
+            self.nnz += 1
+
+    cdef base.idxint gather(self, double complex *values, base.idxint *indices):
+        """
+        Copy all the accumulated values into this row into the output pointers.
+        This will always output its values in sorted order.  The pointers
+        should point to the first free space for data to be copied into.  This
+        method will copy in _at most_ `self.nnz` elements into the pointers,
+        but may copy in slightly fewer if some of them are now (explicit)
+        zeros.  `self.nnz` is updated after each `self.scatter()` operation,
+        and is reset by `self.reset()`.
+
+        Return the actual number of elements copied in.
+        """
+        cdef size_t i, nnz=0, position
+        cdef double complex value
+        sort(self.nonzero, self.nonzero + self.nnz)
+        for i in range(self.nnz):
+            position = self.nonzero[i]
+            value = self.values[position]
+            if value != 0:
+                values[nnz] = value
+                indices[nnz] = position
+                nnz += 1
+        return nnz
+
+    cdef void reset(self):
+        """
+        Prepare the accumulator to accept the next row of input.
+        """
+        # We actually don't need to do anything to reset other than to change
+        # our sentinel values; the sentinel `_cur_row` makes it easy to detect
+        # whether a value was set in this current row (and if not, `scatter`
+        # resets it when it's used), while `nnz`
+        self.nnz = 0
+        self._cur_row += 1
+
+    def __dealloc__(self):
+        mem.PyMem_Free(self.values)
+        mem.PyMem_Free(self.modified)
+        mem.PyMem_Free(self.nonzero)
+
+
+cdef bool _sorter_cmp_ptr(base.idxint *i, base.idxint *j) nogil:
+    return i[0] < j[0]
+
+cdef bool _sorter_cmp_struct(_data_col x, _data_col y) nogil:
     return x.col < y.col
 
-cpdef void sort_indices(CSR matrix) nogil:
-    """Sort the column indices and data of the matrix inplace."""
-    cdef base.idxint row, ptr, ptr_start, ptr_end, length
-    cdef vector[_data_col] pairs
+ctypedef fused _swap_data:
+    double complex
+    base.idxint
+
+cdef inline void _sorter_swap(_swap_data *a, _swap_data *b) nogil:
+    a[0], b[0] = b[0], a[0]
+
+cdef class Sorter:
+    # Look on my works, ye mighty, and despair!
+    #
+    # This class has hard-coded sorts for up to three elements, for both
+    # copying and in-place varieties.  Everything above that we delegate to a
+    # proper sorting algorithm.
+    def __init__(self, size_t size):
+        self.size = size
+
+    cdef void inplace(self, CSR matrix, base.idxint ptr, size_t size) nogil:
+        cdef size_t n
+        cdef base.idxint col0, col1, col2
+        # Fast paths for tridiagonal matrices.  These fast paths minimise the
+        # number of comparisons and swaps made.
+        if size < 2:
+            return
+        if size == 2:
+            if matrix.col_index[ptr] > matrix.col_index[ptr + 1]:
+                _sorter_swap(matrix.col_index + ptr, matrix.col_index + ptr+1)
+                _sorter_swap(matrix.data + ptr, matrix.data + ptr+1)
+            return
+        if size == 3:
+            # Faster to store rather than re-dereference, and if someone
+            # changes the data underneath us, we've got larger problems anyway.
+            col0 = matrix.col_index[ptr]
+            col1 = matrix.col_index[ptr + 1]
+            col2 = matrix.col_index[ptr + 2]
+            if col0 < col1:
+                if col1 > col2:
+                    _sorter_swap(matrix.col_index + ptr+1, matrix.col_index + ptr+2)
+                    _sorter_swap(matrix.data + ptr+1, matrix.data + ptr+2)
+                    if col0 > col2:
+                        _sorter_swap(matrix.col_index + ptr, matrix.col_index + ptr+1)
+                        _sorter_swap(matrix.data + ptr, matrix.data + ptr+1)
+            elif col1 < col2:
+                _sorter_swap(matrix.col_index + ptr, matrix.col_index + ptr+1)
+                _sorter_swap(matrix.data + ptr, matrix.data + ptr+1)
+                if col0 > col2:
+                    _sorter_swap(matrix.col_index + ptr+1, matrix.col_index + ptr+2)
+                    _sorter_swap(matrix.data + ptr+1, matrix.data + ptr+2)
+            else:
+                _sorter_swap(matrix.col_index + ptr, matrix.col_index + ptr+2)
+                _sorter_swap(matrix.data + ptr, matrix.data + ptr+2)
+            return
+        # Now we actually have to do the sort properly.  It's easiest just to
+        # copy the data into a temporary structure.
+        if size > self.size or self.sort == NULL:
+            # realloc(NULL, size) is equivalent to malloc(size), so there's no
+            # problem if cols and argsort weren't allocated before.
+            self.size = size if size > self.size else self.size
+            with gil:
+                self.sort = <_data_col *> mem.PyMem_Realloc(self.sort,
+                                                            self.size * sizeof(_data_col))
+        for n in range(size):
+            self.sort[n].data = matrix.data[ptr + n]
+            self.sort[n].col = matrix.col_index[ptr + n]
+        sort(self.sort, self.sort + size, &_sorter_cmp_struct)
+        for n in range(size):
+            matrix.data[ptr + n] = self.sort[n].data
+            matrix.col_index[ptr + n] = self.sort[n].col
+
+    cdef void copy(self,
+                   double complex *dest_data, base.idxint *dest_cols,
+                   double complex *src_data, base.idxint *src_cols,
+                   size_t size) nogil:
+        cdef size_t n, ptr
+        # Fast paths for small sizes.  Not pretty, but it speeds things up a
+        # lot for up to triadiaongal systems (which are pretty common).
+        if size == 0:
+            return
+        if size == 1:
+            dest_cols[0] = src_cols[0]
+            dest_data[0] = src_data[0]
+            return
+        if size == 2:
+            if src_cols[0] < src_cols[1]:
+                dest_cols[0] = src_cols[0]
+                dest_data[0] = src_data[0]
+                dest_cols[1] = src_cols[1]
+                dest_data[1] = src_data[1]
+            else:
+                dest_cols[1] = src_cols[0]
+                dest_data[1] = src_data[0]
+                dest_cols[0] = src_cols[1]
+                dest_data[0] = src_data[1]
+            return
+        if size == 3:
+            if src_cols[0] < src_cols[1]:
+                if src_cols[0] < src_cols[2]:
+                    dest_cols[0] = src_cols[0]
+                    dest_data[0] = src_data[0]
+                    if src_cols[1] < src_cols[2]:
+                        dest_cols[1] = src_cols[1]
+                        dest_data[1] = src_data[1]
+                        dest_cols[2] = src_cols[2]
+                        dest_data[2] = src_data[2]
+                    else:
+                        dest_cols[2] = src_cols[1]
+                        dest_data[2] = src_data[1]
+                        dest_cols[1] = src_cols[2]
+                        dest_data[1] = src_data[2]
+                else:
+                    dest_cols[1] = src_cols[0]
+                    dest_data[1] = src_data[0]
+                    dest_cols[2] = src_cols[1]
+                    dest_data[2] = src_data[1]
+                    dest_cols[0] = src_cols[2]
+                    dest_data[0] = src_data[2]
+            elif src_cols[0] < src_cols[2]:
+                dest_cols[1] = src_cols[0]
+                dest_data[1] = src_data[0]
+                dest_cols[0] = src_cols[1]
+                dest_data[0] = src_data[1]
+                dest_cols[2] = src_cols[2]
+                dest_data[2] = src_data[2]
+            else:
+                dest_cols[2] = src_cols[0]
+                dest_data[2] = src_data[0]
+                if src_cols[1] < src_cols[2]:
+                    dest_cols[0] = src_cols[1]
+                    dest_data[0] = src_data[1]
+                    dest_cols[1] = src_cols[2]
+                    dest_data[1] = src_data[2]
+                else:
+                    dest_cols[1] = src_cols[1]
+                    dest_data[1] = src_data[1]
+                    dest_cols[0] = src_cols[2]
+                    dest_data[0] = src_data[2]
+            return
+        # Now we're left with the full case, and we have to sort properly.
+        if size > self.size or self.argsort == NULL:
+            # realloc(NULL, size) is equivalent to malloc(size), so there's no
+            # problem if cols and argsort weren't allocated before.
+            self.size = size if size > self.size else self.size
+            with gil:
+                self.argsort = (
+                    <base.idxint **>
+                    mem.PyMem_Realloc(self.argsort, self.size * sizeof(base.idxint *))
+                )
+        # We do the argsort with two levels of indirection to minimise memory
+        # allocation and copying requirements when this function is being used
+        # to assemble a CSR matrix under an operation which may change the
+        # order of the columns (e.g. permute).  First the user makes the
+        # columns accessible in some contiguous memory (or if they're not
+        # changing them, they can just use the CSR buffers).  We put pointers
+        # to each of those columns in the array which actually gets sorted
+        # using a comparison function which dereferences the pointers and
+        # compares the result.  After the sort, `argsort` will be the pointers
+        # sorted according to the new column, and we know that the "lowest"
+        # pointer in there has the value `src_cols`, so we can do pointer
+        # arithmetic to know which element we should take.
+        #
+        # This is about 30-40% faster than allocating space for structs of
+        # (double complex, idxint), copying in the data and column, sorting and
+        # copying into the new arrays.  Allocating the structs actually
+        # allocates more space than the pointer method (double complex is
+        # very likely to be 2x the size of a pointer, _and_ the struct may need
+        # extra padding to be aligned), so it's probably actually worse for
+        # cache locality.  Despite the sort relying on pointer dereference in
+        # this case, it's actually got very good cache locality.
+        for n in range(size):
+            self.argsort[n] = src_cols + n
+        sort(self.argsort, self.argsort + size, &_sorter_cmp_ptr)
+        for n in range(size):
+            ptr = self.argsort[n] - src_cols
+            dest_cols[n] = src_cols[ptr]
+            dest_data[n] = src_data[ptr]
+
+    def __dealloc__(self):
+        if self.argsort != NULL:
+            mem.PyMem_Free(self.argsort)
+        if self.sort != NULL:
+            mem.PyMem_Free(self.sort)
+
+cpdef CSR sorted(CSR matrix):
+    cdef CSR out = empty_like(matrix)
+    cdef Sorter sort
+    cdef base.idxint ptr
+    cdef size_t row, diff, size=0
+    memcpy(out.row_index, matrix.row_index, (matrix.shape[0] + 1) * sizeof(base.idxint))
     for row in range(matrix.shape[0]):
-        ptr_start = matrix.row_index[row]
-        ptr_end = matrix.row_index[row + 1]
-        length = ptr_end - ptr_start
-        pairs.resize(length)
-        for ptr in range(length):
-            pairs[ptr].data = matrix.data[ptr_start + ptr]
-            pairs[ptr].col = matrix.col_index[ptr_start + ptr]
-        sort(pairs.begin(), pairs.end(), &_sort_indices_compare)
-        for ptr in range(length):
-            matrix.data[ptr_start + ptr] = pairs[ptr].data
-            matrix.col_index[ptr_start + ptr] = pairs[ptr].col
+        diff = matrix.row_index[row + 1] - matrix.row_index[row]
+        size = diff if diff > size else size
+    sort = Sorter(size)
+    for row in range(matrix.shape[0]):
+        ptr = matrix.row_index[row]
+        diff = matrix.row_index[row + 1] - ptr
+        sort.copy(out.data + ptr, out.col_index + ptr,
+                  matrix.data + ptr, matrix.col_index + ptr,
+                  diff)
+    return out
 
 
 cpdef CSR empty(base.idxint rows, base.idxint cols, base.idxint size):
@@ -278,15 +662,20 @@ cpdef CSR empty(base.idxint rows, base.idxint cols, base.idxint size):
     cdef CSR out = CSR.__new__(CSR)
     cdef base.idxint row_size = rows + 1
     out.shape = (rows, cols)
+    out.size = size
     out.data =\
-        <double complex [:size]> PyDataMem_NEW(size * sizeof(double complex))
+        <double complex *> PyDataMem_NEW(size * sizeof(double complex))
     out.col_index =\
-        <base.idxint [:size]> PyDataMem_NEW(size * sizeof(base.idxint))
+        <base.idxint *> PyDataMem_NEW(size * sizeof(base.idxint))
     out.row_index =\
-        <base.idxint [:row_size]> PyDataMem_NEW(row_size * sizeof(base.idxint))
+        <base.idxint *> PyDataMem_NEW(row_size * sizeof(base.idxint))
     # Set the number of non-zero elements to 0.
     out.row_index[rows] = 0
     return out
+
+
+cpdef CSR empty_like(CSR other):
+    return empty(other.shape[0], other.shape[1], nnz(other))
 
 
 cpdef CSR zeros(base.idxint rows, base.idxint cols):
@@ -298,7 +687,7 @@ cpdef CSR zeros(base.idxint rows, base.idxint cols):
     # actually _are_ asking for memory (Python doesn't like allocating nothing)
     cdef CSR out = empty(rows, cols, 1)
     out.data[0] = out.col_index[0] = 0
-    memset(&out.row_index[0], 0, (rows + 1) * sizeof(base.idxint))
+    memset(out.row_index, 0, (rows + 1) * sizeof(base.idxint))
     return out
 
 
@@ -315,4 +704,71 @@ cpdef CSR identity(base.idxint dimension, double complex scale=1):
         out.col_index[i] = i
         out.row_index[i] = i
     out.row_index[dimension] = dimension
+    return out
+
+cpdef CSR from_dense(Dense matrix):
+    # Assume worst-case scenario for non-zero.
+    cdef CSR out = empty(matrix.shape[0], matrix.shape[1],
+                         matrix.shape[0]*matrix.shape[1])
+    cdef size_t row, col, ptr_in, ptr_out=0, row_stride, col_stride
+    row_stride = 1 if matrix.fortran else matrix.shape[1]
+    col_stride = matrix.shape[0] if matrix.fortran else 1
+    out.row_index[0] = 0
+    for row in range(matrix.shape[0]):
+        ptr_in = row_stride * row
+        for col in range(matrix.shape[1]):
+            if matrix.data[ptr_in] != 0:
+                out.data[ptr_out] = matrix.data[ptr_in]
+                out.col_index[ptr_out] = col
+                ptr_out += 1
+            ptr_in += col_stride
+        out.row_index[row + 1] = ptr_out
+    return out
+
+cdef CSR from_coo_pointers(
+    base.idxint *rows, base.idxint *cols, double complex *data,
+    base.idxint n_rows, base.idxint n_cols, base.idxint nnz,
+):
+    # Note that COO pointers may not be sorted in row-major order, and that
+    # they may contain duplicate entries which should be implicitly summed.
+    cdef CSR out = empty(n_rows, n_cols, nnz)
+    cdef double complex *data_tmp
+    cdef base.idxint *cols_tmp
+    cdef base.idxint row
+    cdef size_t ptr_in, ptr_out, ptr_prev
+    data_tmp = <double complex *> mem.PyMem_Malloc(nnz * sizeof(double complex))
+    cols_tmp = <base.idxint *> mem.PyMem_Malloc(nnz * sizeof(base.idxint))
+    if data_tmp == NULL or cols_tmp == NULL:
+        raise MemoryError
+    memset(out.row_index, 0, (n_rows + 1) * sizeof(base.idxint))
+    for ptr_in in range(nnz):
+        out.row_index[rows[ptr_in] + 1] += 1
+    for ptr_out in range(n_rows):
+        out.row_index[ptr_out + 1] += out.row_index[ptr_out]
+    # out.row_index is currently in the normal output form, but we're
+    # temporarily going to modify it to keep track of how many values we've
+    # placed in each row as we iterate through.  At every state,
+    # out.row_index[row] will contain a pointer to the next location that an
+    # element should be placed in this row.
+    for ptr_in in range(nnz):
+        row = rows[ptr_in]
+        ptr_out = out.row_index[row]
+        cols_tmp[ptr_out] = cols[ptr_in]
+        data_tmp[ptr_out] = data[ptr_in]
+        out.row_index[row] += 1
+    # Apply the scatter/gather pattern to find the actual number of non-zero
+    # elements we're writing into each row (since there's a sum, there may be
+    # some zeros of duplicates).  Remember we also need to shift the row_index
+    # array back to what it was before as well.
+    cdef Accumulator accumulator = Accumulator(n_cols)
+    ptr_out = 0
+    ptr_prev = 0
+    for row in range(n_rows):
+        for ptr_in in range(ptr_prev, out.row_index[row]):
+            accumulator.scatter(data_tmp[ptr_in], cols_tmp[ptr_in])
+        ptr_prev = out.row_index[row]
+        out.row_index[row] = ptr_out
+        ptr_out += accumulator.gather(out.data + ptr_out, out.col_index + ptr_out)
+        accumulator.reset()
+    out.row_index[n_rows] = ptr_out
     return out

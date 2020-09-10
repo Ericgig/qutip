@@ -38,9 +38,15 @@ from qutip import (
     Qobj, sigmax, sigmay, sigmaz, identity, tensor
 )
 from qutip.qip.pulse import Pulse, Drift
+from qutip import coefficient
 
 
-def TestBasicPulse():
+def _compare_coefficient(coeff1, coeff2, t_min, t_max):
+    return all([np.allclose(coeff1(t), coeff2(t))
+                for t in t_min + np.random.rand(25) * (t_max - t_min)])
+
+
+def test_BasicPulse():
     """
     Test for basic pulse generation and attributes.
     """
@@ -51,7 +57,8 @@ def TestBasicPulse():
     # Basic tests
     pulse1 = Pulse(ham, 1, tlist, coeff)
     assert_allclose(
-        pulse1.get_ideal_qobjevo(2).ops[0].qobj, tensor(identity(2), sigmaz()))
+        pulse1.get_ideal_qobjevo(2).ops[0].qobj.full(),
+        tensor(identity(2), sigmaz()).full())
     pulse1.tlist = 2 * tlist
     assert_allclose(pulse1.tlist, 2 * tlist)
     pulse1.tlist = tlist
@@ -59,15 +66,16 @@ def TestBasicPulse():
     assert_allclose(pulse1.coeff, 2 * coeff)
     pulse1.coeff = coeff
     pulse1.qobj = 2 * sigmay()
-    assert_allclose(pulse1.qobj, 2 * sigmay())
+    assert_allclose(pulse1.qobj.full(), 2 * sigmay().full())
     pulse1.qobj = ham
     pulse1.targets = 3
     assert_allclose(pulse1.targets, 3)
     pulse1.targets = 1
-    assert_allclose(pulse1.get_ideal_qobj(2), tensor(identity(2), sigmaz()))
+    assert_allclose(pulse1.get_ideal_qobj(2).full(),
+                    tensor(identity(2), sigmaz()).full())
 
 
-def TestCoherentNoise():
+def test_CoherentNoise():
     """
     Test for pulse genration with coherent noise.
     """
@@ -78,7 +86,8 @@ def TestCoherentNoise():
     # Add coherent noise with the same tlist
     pulse1.add_coherent_noise(sigmay(), 0, tlist, coeff)
     assert_allclose(
-        pulse1.get_ideal_qobjevo(2).ops[0].qobj, tensor(identity(2), sigmaz()))
+        pulse1.get_ideal_qobjevo(2).ops[0].qobj.full(),
+        tensor(identity(2), sigmaz()).full())
     assert_(len(pulse1.coherent_noise) == 1)
     noise_qu, c_ops = pulse1.get_noisy_qobjevo(2)
     assert_allclose(c_ops, [])
@@ -87,10 +96,10 @@ def TestCoherentNoise():
     assert_(tensor(identity(2), sigmaz()) in qobj_list)
     assert_(tensor(sigmay(), identity(2)) in qobj_list)
     for ele in noise_qu.ops:
-        assert_allclose(ele.coeff, coeff)
+        assert_allclose(ele.coeff.array, coeff)
 
 
-def TestNoisyPulse():
+def test_NoisyPulse():
     """
     Test for lindblad noise and different tlist
     """
@@ -100,39 +109,51 @@ def TestNoisyPulse():
     pulse1 = Pulse(ham, 1, tlist, coeff)
     # Add coherent noise and lindblad noise with different tlist
     pulse1.spline_kind = "step_func"
-    tlist_noise = np.array([1., 2.5, 3.])
-    coeff_noise = np.array([0.5, 0.1, 0.5])
+    tlist_noise = np.array([0., 1., 2.5, 3.])
+    coeff_noise = np.array([0., 0.5, 0.1, 0.5])
     pulse1.add_coherent_noise(sigmay(), 0, tlist_noise, coeff_noise)
-    tlist_noise2 = np.array([0.5, 2, 3.])
-    coeff_noise2 = np.array([0.1, 0.2, 0.3])
+    tlist_noise2 = np.array([0., 0.5, 2, 3.])
+    coeff_noise2 = np.array([0., 0.1, 0.2, 0.3])
     pulse1.add_lindblad_noise(sigmax(), 1, coeff=True)
     pulse1.add_lindblad_noise(
         sigmax(), 0, tlist=tlist_noise2, coeff=coeff_noise2)
 
     assert_allclose(
-        pulse1.get_ideal_qobjevo(2).ops[0].qobj, tensor(identity(2), sigmaz()))
+        pulse1.get_ideal_qobjevo(2).ops[0].qobj.full(),
+        tensor(identity(2), sigmaz()).full())
     noise_qu, c_ops = pulse1.get_noisy_qobjevo(2)
     assert_allclose(noise_qu.tlist, np.array([0., 0.5,  1., 2., 2.5, 3.]))
     for ele in noise_qu.ops:
         if ele.qobj == tensor(identity(2), sigmaz()):
-            assert_allclose(
-                ele.coeff, np.array([0.1, 0.1, 0.2, 0.3, 0.3, 0.4]))
+            expected = coefficient(np.array([0.1, 0.1, 0.2, 0.3, 0.3, 0.4]),
+                                   tlist=np.array([0., 0.5,  1., 2., 2.5, 3.]),
+                                   _stepInterpolation=True
+                                  )
+            assert _compare_coefficient(ele.coeff, expected, 0, 3)
         elif ele.qobj == tensor(sigmay(), identity(2)):
-            assert_allclose(
-                ele.coeff, np.array([0., 0., 0.5, 0.5, 0.1, 0.5]))
+            expected = coefficient(np.array([0., 0., 0.5, 0.5, 0.1, 0.5]),
+                                   tlist=np.array([0., 0.5,  1., 2., 2.5, 3.]),
+                                   _stepInterpolation=True
+                                  )
+            assert _compare_coefficient(ele.coeff, expected, 0, 3)
     for c_op in c_ops:
         if len(c_op.ops) == 0:
-            assert_allclose(c_ops[0].cte, tensor(identity(2), sigmax()))
+            assert_allclose(c_ops[0].cte.full(),
+                            tensor(identity(2), sigmax()).full())
         else:
             assert_allclose(
-                c_ops[1].ops[0].qobj, tensor(sigmax(), identity(2)))
+                c_ops[1].ops[0].qobj.full(),
+                tensor(sigmax(), identity(2)).full())
             assert_allclose(
                 c_ops[1].tlist, np.array([0., 0.5, 1., 2., 2.5, 3.]))
-            assert_allclose(
-                c_ops[1].ops[0].coeff, np.array([0., 0.1, 0.1, 0.2, 0.2, 0.3]))
+            expected = coefficient(np.array([0., 0.1, 0.1, 0.2, 0.2, 0.3]),
+                                   tlist=np.array([0., 0.5,  1., 2., 2.5, 3.]),
+                                   _stepInterpolation=True
+                                  )
+            assert _compare_coefficient(c_ops[1].ops[0].coeff, expected, 0, 3)
 
 
-def TestPulseConstructor():
+def test_PulseConstructor():
     """
     Test for creating empty Pulse, Pulse with constant coefficients etc.
     """
@@ -141,8 +162,8 @@ def TestPulseConstructor():
     ham = sigmaz()
     # Special ways of initializing pulse
     pulse2 = Pulse(sigmax(), 0, tlist, True)
-    assert_allclose(pulse2.get_ideal_qobjevo(2).ops[0].qobj,
-                    tensor(sigmax(), identity(2)))
+    assert_allclose(pulse2.get_ideal_qobjevo(2).ops[0].qobj.full(),
+                    tensor(sigmax(), identity(2)).full())
 
     pulse3 = Pulse(sigmay(), 0)
     assert_allclose(pulse3.get_ideal_qobjevo(2).cte.norm(), 0.)
@@ -161,12 +182,15 @@ def TestPulseConstructor():
     pulse5.add_lindblad_noise(
         random_qobj, 0, tlist=tlist_noise2, coeff=coeff_noise2)
     qu, c_ops = pulse5.get_noisy_qobjevo(dims=[3, 2])
-    assert_allclose(qu.ops[0].qobj, tensor([identity(3), sigmaz()]))
-    assert_allclose(qu.ops[1].qobj, tensor([identity(3), sigmay()]))
-    assert_allclose(c_ops[0].ops[0].qobj, tensor([random_qobj, identity(2)]))
+    assert_allclose(qu.ops[0].qobj.full(),
+                    tensor([identity(3), sigmaz()]).full())
+    assert_allclose(qu.ops[1].qobj.full(),
+                    tensor([identity(3), sigmay()]).full())
+    assert_allclose(c_ops[0].ops[0].qobj.full(),
+                    tensor([random_qobj, identity(2)]).full())
 
 
-def TestDrift():
+def test_Drift():
     """
     Test for Drift
     """
@@ -174,8 +198,5 @@ def TestDrift():
     assert_allclose(drift.get_ideal_qobjevo(2).cte.norm(), 0)
     drift.add_drift(sigmaz(), targets=1)
     assert_allclose(
-        drift.get_ideal_qobjevo(dims=[3, 2]).cte, tensor(identity(3), sigmaz()))
-
-
-if __name__ == "__main__":
-    run_module_suite()
+        drift.get_ideal_qobjevo(dims=[3, 2]).cte.full(),
+        tensor(identity(3), sigmaz()).full())

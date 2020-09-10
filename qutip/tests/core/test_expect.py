@@ -154,7 +154,7 @@ def test_equivalent_to_matrix_element(hermitian):
     op = qutip.rand_herm(dimension, 0.2)
     if not hermitian:
         op = op + 1j*qutip.rand_herm(dimension, 0.1)
-    expected = (state.dag() * op * state).data[0, 0]
+    expected = state.dag() * op * state
     assert abs(qutip.expect(op, state) - expected) < 1e-14
 
 
@@ -168,7 +168,7 @@ def test_compatibility_with_solver(solve):
     h = qutip.sigmax()
     state = qutip.basis(2, 0)
     times = np.linspace(0, 10, 101)
-    options = qutip.Options(store_states=True)
+    options = qutip.SolverOptions(store_states=True)
     result = solve(h, state, times, e_ops=e_ops, options=options)
     direct, states = result.expect, result.states
     indirect = qutip.expect(e_ops, states)
