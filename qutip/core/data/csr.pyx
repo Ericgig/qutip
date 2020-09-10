@@ -706,6 +706,7 @@ cpdef CSR identity(base.idxint dimension, double complex scale=1):
     out.row_index[dimension] = dimension
     return out
 
+
 cpdef CSR from_dense(Dense matrix):
     # Assume worst-case scenario for non-zero.
     cdef CSR out = empty(matrix.shape[0], matrix.shape[1],

@@ -3,10 +3,10 @@
 
 cimport cython
 
-from qutip.core.data cimport Data, CSR, Dense
+from qutip.core.data cimport Data, CSR, Dense, CSC
 
 __all__ = [
-    'trace', 'trace_csr', 'trace_dense',
+    'trace', 'trace_csr', 'trace_dense', 'trace_csc',
 ]
 
 
@@ -39,6 +39,12 @@ cpdef double complex trace_dense(Dense matrix) nogil except *:
     return trace
 
 
+cpdef double complex trace_csc(CSC matrix) nogil except *:
+    _check_shape(matrix)
+    cdef CSR transposed = csc.as_tr_csr(matrix, False)
+    return trace_csr(transposed)
+
+
 from .dispatch import Dispatcher as _Dispatcher
 import inspect as _inspect
 
@@ -56,6 +62,7 @@ trace.__doc__ =\
 trace.add_specialisations([
     (CSR, trace_csr),
     (Dense, trace_dense),
+    (CSC, trace_csc),
 ], _defer=True)
 
 del _inspect, _Dispatcher

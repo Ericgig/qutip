@@ -2,11 +2,8 @@
 #cython: boundscheck=False, wraparound=False, initializedcheck=False
 
 from libc.string cimport memset, memcpy
-from libcpp.algorithm cimport sort
-from libcpp.vector cimport vector
 
 cimport cython
-
 import warnings
 
 import numpy as np
@@ -14,9 +11,14 @@ cimport numpy as cnp
 from scipy.sparse import csc_matrix as scipy_csc_matrix
 from scipy.sparse.data import _data_matrix as scipy_data_matrix
 
-from . cimport base
-from .csr cimport CSR
-from .csr cimport nnz as csrnnz
+from qutip.core.data cimport base
+from qutip.core.data.csr cimport CSR
+from qutip.core.data.dense cimport Dense
+from qutip.core.data.csr cimport nnz as csrnnz
+from .base import idxint_dtype
+from qutip.core.data.adjoint cimport (adjoint_csc, transpose_csc, conj_csc,
+                                      transpose_csr)
+from qutip.core.data.trace cimport trace_csc
 
 cnp.import_array()
 
@@ -25,6 +27,8 @@ cdef extern from *:
     void *PyDataMem_NEW(size_t size)
     void PyDataMem_FREE(void *ptr)
 
+__all__ = ['CSC']
+cdef int _ONE = 1
 
 cdef object _csc_matrix(data, indices, indptr, shape):
     """
@@ -68,9 +72,10 @@ cdef class CSC(base.Data):
         # this function that the deallocation is set up correctly if any
         # exceptions occur.
         cdef size_t ptr
-        cdef base.idxint MYROW
+        cdef base.idxint row
         cdef object data, col_index, row_index
-        if isinstance(arg, scipy_csc_matrix):
+        if isinstance(arg, scipy.sparse.spmatrix):
+            arg = arg.tocsc()
             if shape is not None and shape != arg.shape:
                 raise ValueError("".join([
                     "shapes do not match: ", str(shape), " and ", str(arg.shape),
@@ -78,30 +83,33 @@ cdef class CSC(base.Data):
             shape = arg.shape
             arg = (arg.data, arg.indices, arg.indptr)
         if not isinstance(arg, tuple):
-            raise TypeError("arg must be a scipy csc_matrix or tuple")
+            raise TypeError("arg must be a scipy matrix or tuple")
         if len(arg) != 3:
             raise ValueError("arg must be a (data, row_index, col_index) tuple")
-        data = np.array(arg[0], dtype=np.complex128, copy=copy)
-        row_index = np.array(arg[1], dtype=base.idxint_dtype, copy=copy)
-        col_index = np.array(arg[2], dtype=base.idxint_dtype, copy=copy)
+        data = np.array(arg[0], dtype=np.complex128, copy=copy, order='C')
+        row_index = np.array(arg[1], dtype=idxint_dtype, copy=copy, order='C')
+        col_index = np.array(arg[2], dtype=idxint_dtype, copy=copy, order='C')
         # This flag must be set at the same time as data, col_index and
         # row_index are assigned.  These assignments cannot raise an exception
         # in user code due to the above three lines, but further code may.
         self._deallocate = False
-        self.data = data
-        self.col_index = col_index
-        self.row_index = row_index
+        self.data = <double complex *> cnp.PyArray_GETPTR1(data, 0)
+        self.row_index = <base.idxint *> cnp.PyArray_GETPTR1(row_index, 0)
+        self.col_index = <base.idxint *> cnp.PyArray_GETPTR1(col_index, 0)
+        self.size = (cnp.PyArray_SIZE(data)
+                     if cnp.PyArray_SIZE(data) < cnp.PyArray_SIZE(row_index)
+                     else cnp.PyArray_SIZE(row_index))
         if shape is None:
             warnings.warn("instantiating CSC matrix of unknown shape")
             # row_index contains an extra element which is nnz.  We assume the
             # smallest matrix which can hold all these values by iterating
             # through the columns.  This is slow and probably inaccurate, since
             # there could be columns containing zero (hence the warning).
-            self.shape[0] = self.col_index.shape[0] - 1
-            MYROW = 1
-            for ptr in range(self.row_index.shape[0]):
-                MYROW = self.row_index[ptr] if self.row_index[ptr] > MYROW else MYROW
-            self.shape[1] = MYROW
+            self.shape[1] = self.col_index.shape[0] - 1
+            row = 1
+            for ptr in range(self.size):
+                row = self.row_index[ptr] if self.row_index[ptr] > row else row
+            self.shape[0] = row
         else:
             if not isinstance(shape, tuple):
                 raise TypeError("shape must be a 2-tuple of positive ints")
@@ -116,6 +124,9 @@ cdef class CSC(base.Data):
         # deallocated before us.
         self._scipy = _csc_matrix(data, row_index, col_index, self.shape)
 
+    def __reduce__(self):
+        return (fast_from_scipy, (self.as_scipy(),))
+
     cpdef CSC copy(self):
         """
         Return a complete (deep) copy of this object.
@@ -129,11 +140,11 @@ cdef class CSC(base.Data):
         low-level C code).
         """
         cdef base.idxint nnz_ = nnz(self)
-        cdef CSC out = empty(self.shape[0], self.shape[1], nnz_)
-        memcpy(&out.data[0], &self.data[0], nnz_*sizeof(out.data[0]))
-        memcpy(&out.row_index[0], &self.row_index[0], nnz_*sizeof(out.row_index[0]))
-        memcpy(&out.col_index[0], &self.col_index[0],
-               (self.shape[1] + 1)*sizeof(out.col_index[0]))
+        cdef CSC out = empty_like(self)
+        memcpy(out.data, self.data, nnz_*sizeof(double complex))
+        memcpy(out.row_index, self.row_index, nnz_*sizeof(base.idxint))
+        memcpy(out.col_index, self.col_index,
+               (self.shape[1] + 1)*sizeof(base.idxint))
         return out
 
     cpdef object to_array(self):
@@ -158,7 +169,12 @@ cdef class CSC(base.Data):
         `data`, `indices` and `indptr` buffers in the resulting object will
         modify this object too.
 
-        The arrays may be uninitialised.
+        If `full` is False (the default), the output array is squeezed so that
+        the SciPy array sees only the filled elements.  If `full` is True,
+        SciPy will see the full underlying buffers, which may include
+        uninitialised elements.  Setting `full=True` is intended for
+        Python-space factory methods.  In all other use cases, `full=False` is
+        much less error prone.
         """
         # We store a reference to the scipy matrix not only for caching this
         # relatively expensive method, but also because we transferred
@@ -166,15 +182,16 @@ cdef class CSC(base.Data):
         # be collected while we're alive.
         if self._scipy is not None:
             return self._scipy
-        data = cnp.PyArray_SimpleNewFromData(1, [self.data.size],
+        cdef cnp.npy_intp length = self.size if full else nnz(self)
+        data = cnp.PyArray_SimpleNewFromData(1, [length],
                                              cnp.NPY_COMPLEX128,
-                                             &self.data[0])
-        indices = cnp.PyArray_SimpleNewFromData(1, [self.row_index.size],
+                                             self.data)
+        indices = cnp.PyArray_SimpleNewFromData(1, [length],
                                                 base.idxint_DTYPE,
-                                                &self.row_index[0])
-        indptr = cnp.PyArray_SimpleNewFromData(1, [self.col_index.size],
+                                                self.row_index)
+        indptr = cnp.PyArray_SimpleNewFromData(1, [self.shape[1] + 1],
                                                base.idxint_DTYPE,
-                                               &self.col_index[0])
+                                               self.col_index)
         PyArray_ENABLEFLAGS(data, cnp.NPY_ARRAY_OWNDATA)
         PyArray_ENABLEFLAGS(indices, cnp.NPY_ARRAY_OWNDATA)
         PyArray_ENABLEFLAGS(indptr, cnp.NPY_ARRAY_OWNDATA)
@@ -197,22 +214,29 @@ cdef class CSC(base.Data):
         # need to deallocate anything ourselves.
         if not self._deallocate:
             return
-        # The only way a Cython memoryview can hold a NULL pointer is if the
-        # memoryview is uninitialised.  Since we have initializedcheck on,
-        # Cython will insert a throw if it is not initialized, and therefore
-        # accessing &self.data[0] is safe and non-NULL if no error occurs.
-        try:
-            PyDataMem_FREE(&self.data[0])
-        except AttributeError:
-            pass
-        try:
-            PyDataMem_FREE(&self.col_index[0])
-        except AttributeError:
-            pass
-        try:
-            PyDataMem_FREE(&self.row_index[0])
-        except AttributeError:
-            pass
+        if self.data != NULL:
+            PyDataMem_FREE(self.data)
+        if self.col_index != NULL:
+            PyDataMem_FREE(self.col_index)
+        if self.row_index != NULL:
+            PyDataMem_FREE(self.row_index)
+
+    cpdef CSC sort_indices(self):
+        cdef CSR transposed = as_tr_csr(self, False)
+        transposed.sort_indices()
+        return self
+
+    cpdef double complex trace(self):
+        return trace_csc(self)
+
+    cpdef CSR adjoint(self):
+        return adjoint_csc(self)
+
+    cpdef CSR conj(self):
+        return conj_csc(self)
+
+    cpdef CSR transpose(self):
+        return transpose_csc(self)
 
 
 cpdef CSC copy_structure(CSC matrix):
@@ -225,11 +249,9 @@ cpdef CSC copy_structure(CSC matrix):
     structure, but modify each non-zero data element without change their
     location.
     """
-    cdef base.idxint nnz_ = nnz(matrix)
-    cdef CSC out = empty(matrix.shape[0], matrix.shape[1], nnz_)
-    memcpy(&out.row_index[0], &matrix.row_index[0], nnz_*sizeof(out.row_index[0]))
-    memcpy(&out.col_index[0], &matrix.col_index[0],
-           (matrix.shape[0] + 1)*sizeof(out.col_index[0]))
+    cdef CSC out = empty_like(matrix)
+    memcpy(out.row_index, matrix.row_index, nnz(matrix)*sizeof(base.idxint))
+    memcpy(out.col_index, matrix.col_index, (matrix.shape[1] + 1)*sizeof(base.idxint))
     return out
 
 
@@ -238,30 +260,10 @@ cpdef inline base.idxint nnz(CSC matrix) nogil:
     return matrix.col_index[matrix.shape[1]]
 
 
-# Internal structure for sorting pairs of elements.
-cdef struct _data_row:
-    double complex data
-    base.idxint row
-
-cdef int _sort_indices_compare(_data_row x, _data_row y) nogil:
-    return x.row < y.row
-
-cpdef void sort_indices(CSC matrix) nogil:
-    """Sort the column indices and data of the matrix inplace."""
-    cdef base.idxint col, ptr, ptr_start, ptr_end, length
-    cdef vector[_data_row] pairs
-    for col in range(matrix.shape[1]):
-        ptr_start = matrix.col_index[col]
-        ptr_end = matrix.col_index[col + 1]
-        length = ptr_end - ptr_start
-        pairs.resize(length)
-        for ptr in range(length):
-            pairs[ptr].data = matrix.data[ptr_start + ptr]
-            pairs[ptr].row = matrix.row_index[ptr_start + ptr]
-        sort(pairs.begin(), pairs.end(), &_sort_indices_compare)
-        for ptr in range(length):
-            matrix.data[ptr_start + ptr] = pairs[ptr].data
-            matrix.row_index[ptr_start + ptr] = pairs[ptr].row
+cpdef CSC sorted(CSC matrix):
+    cdef CSR transposed = as_tr_csr(matrix, False)
+    cdef CSR tr_csr_sorted = csr.sorted(transposed)
+    return from_tr_csr(tr_csr_sorted, False)
 
 
 cpdef CSC empty(base.idxint rows, base.idxint cols, base.idxint size):
@@ -281,14 +283,18 @@ cpdef CSC empty(base.idxint rows, base.idxint cols, base.idxint size):
     cdef base.idxint col_size = cols + 1
     out.shape = (rows, cols)
     out.data =\
-        <double complex [:size]> PyDataMem_NEW(size * sizeof(double complex))
+        <double complex *> PyDataMem_NEW(size * sizeof(double complex))
     out.row_index =\
-        <base.idxint [:size]> PyDataMem_NEW(size * sizeof(base.idxint))
+        <base.idxint *> PyDataMem_NEW(size * sizeof(base.idxint))
     out.col_index =\
-        <base.idxint [:col_size]> PyDataMem_NEW(col_size * sizeof(base.idxint))
+        <base.idxint *> PyDataMem_NEW(col_size * sizeof(base.idxint))
     # Set the number of non-zero elements to 0.
     out.col_index[cols] = 0
     return out
+
+
+cpdef CSC empty_like(CSC other):
+    return empty(other.shape[0], other.shape[1], nnz(other))
 
 
 cpdef CSC zeros(base.idxint rows, base.idxint cols):
@@ -300,7 +306,7 @@ cpdef CSC zeros(base.idxint rows, base.idxint cols):
     # actually _are_ asking for memory (Python doesn't like allocating nothing)
     cdef CSC out = empty(rows, cols, 1)
     out.data[0] = out.row_index[0] = 0
-    memset(&out.col_index[0], 0, (cols + 1) * sizeof(base.idxint))
+    memset(out.col_index, 0, (cols + 1) * sizeof(base.idxint))
     return out
 
 
@@ -320,28 +326,105 @@ cpdef CSC identity(base.idxint dimension, double complex scale=1):
     return out
 
 
-cpdef CSC CSC_from_CSR(CSR matrix):
+cpdef CSC fast_from_scipy(object sci):
+    """
+    Fast path construction from scipy.sparse.csc_matrix.  This does _no_ type
+    checking on any of the inputs, and should consequently be considered very
+    unsafe. This is primarily for use in the unpickling operation.
+    """
+    cdef CSC out = CSC.__new__(CSC)
+    out.shape = sci.shape
+    out._deallocate = False
+    out._scipy = sci
+    out.data = <double complex *> cnp.PyArray_GETPTR1(sci.data, 0)
+    out.row_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indices, 0)
+    out.col_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indptr, 0)
+    out.size = cnp.PyArray_SIZE(sci.data)
+    return out
+
+
+cpdef CSC from_CSR(CSR matrix):
     """Transform a CSR to CSC."""
-    cdef base.idxint nnz_ = csrnnz(matrix)
-    cdef CSC out = empty(matrix.shape[0], matrix.shape[1], nnz_)
-    cdef base.idxint row, col, ptr, ptr_out
-    cdef base.idxint rows_in=matrix.shape[0], cols_out=matrix.shape[1]
-    with nogil:
-        memset(&out.col_index[0], 0, (cols_out + 1) * sizeof(base.idxint))
-        for row in range(rows_in):
-            for ptr in range(matrix.row_index[row], matrix.row_index[row + 1]):
-                col = matrix.col_index[ptr] + 1
-                out.col_index[col] += 1
-        for row in range(cols_out):
-            out.col_index[row + 1] += out.col_index[row]
-        for row in range(rows_in):
-            for ptr in range(matrix.row_index[row], matrix.row_index[row + 1]):
-                col = matrix.col_index[ptr]
-                ptr_out = out.col_index[col]
-                out.data[ptr_out] = matrix.data[ptr]
+    cdef CRS transposed = transpose_csr(matrix)
+    return from_tr_csr(transposed, False)
+
+
+cpdef CSC from_dense(Dense matrix):
+    # Assume worst-case scenario for non-zero.
+    cdef CSC out = empty(matrix.shape[0], matrix.shape[1],
+                         matrix.shape[0]*matrix.shape[1])
+    cdef size_t row, col, ptr_in, ptr_out=0, row_stride, col_stride
+    row_stride = 1 if matrix.fortran else matrix.shape[1]
+    col_stride = matrix.shape[0] if matrix.fortran else 1
+    out.col_index[0] = 0
+    for col in range(matrix.shape[1]):
+    ptr_in = col_stride * col
+        for row in range(matrix.shape[0]):
+            if matrix.data[ptr_in] != 0:
+                out.data[ptr_out] = matrix.data[ptr_in]
                 out.row_index[ptr_out] = row
-                out.col_index[col] = ptr_out + 1
-        for row in range(cols_out, 0, -1):
-            out.col_index[row] = out.col_index[row - 1]
-        out.col_index[0] = 0
+                ptr_out += 1
+            ptr_in += row_stride
+        out.col_index[col + 1] = ptr_out
+    return out
+
+
+cpdef CRS as_tr_csr(CSC matrix, bint copy=True):
+    """ Return a CSR which is the transposed to this CSC.
+    If copy is False, this CRS is a view on the CSC with no data ownership.
+    """
+    cdef CSR out = CSR.__new__(CSR)
+    out.data = matrix.data
+    out.col_index = matrix.row_index
+    out.row_index = matrix.col_index
+    out.size = matrix.size
+    out._deallocate = False
+    out.shape = (matrix.shape[1], matrix.shape[0])
+    if copy:
+        return out.copy()
+    else:
+        return out
+
+
+cpdef CSC from_tr_csr(CRS matrix, bint copy=True):
+    """ Return a CSC which is the transposed to this CRS.
+    If copy is False, steal data ownership from the CRS.
+    """
+    cdef CSC out = CSC.__new__(CSC)
+    out.data = matrix.data
+    out.col_index = matrix.row_index
+    out.row_index = matrix.col_index
+    out.size = matrix.size
+    out.shape = (self.shape[1], self.shape[0])
+    if copy:
+        out._deallocate = False
+        return out.copy()
+    else:
+        out._deallocate = True
+        matrix._deallocate = False
+        return out
+
+
+cpdef CSR to_csr(CSC matrix):
+    cdef CRS transposed = as_tr_csr(matrix, False)
+    return transpose_csr(transposed)
+
+
+cpdef Dense to_Dense(CSC matrix, bint fortran=False):
+    cdef Dense out = Dense.__new__(Dense)
+    out.shape = matrix.shape
+    out.data = (
+        <double complex *>
+        PyDataMem_NEW_ZEROED(out.shape[0]*out.shape[1], sizeof(double complex))
+    )
+    out.fortran = fortran
+    out._deallocate = True
+    cdef size_t row, ptr_in, ptr_out, row_stride, col_stride, col
+    row_stride = 1 if fortran else out.shape[1]
+    col_stride = out.shape[0] if fortran else 1
+    ptr_out = 0
+    for col in range(out.shape[0]):
+        for ptr_in in range(matrix.col_index[col], matrix.col_index[col + 1]):
+            out.data[ptr_out + matrix.row_index[ptr_in]*row_stride] = matrix.data[ptr_in]
+        ptr_out += col_stride
     return out
