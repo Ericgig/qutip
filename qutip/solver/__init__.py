@@ -17,7 +17,7 @@ from .steadystate import *
 from .stochastic import *
 
 from ._solverqevo import SolverQEvo
-from .run import Run, _driver_step, _driver_evolution
+from .run import Run
 from .evolver import EvolverScipyZvode
 
 # TODO: most of these don't have a __all__ leaking names, ex:

@@ -5,52 +5,6 @@ from ..core import Qobj, QobjEvo, spre, issuper
 from ..ui.progressbar import *
 
 
-
-
-
-
-def driver(evolver, tlist, state0, options, e_ops=[], super=False):
-    pass
-
-
-def _driver_step(evolver, tlist, state0, options, e_ops=[], super=False):
-    """
-    Internal function for solving ODEs.
-    """
-    progress_bar = get_progess_bar(options['progress_bar'])
-
-    evolver.set(state0, tlist[0])
-    res = Run(e_ops, options.results, state0, super)
-    res.add(tlist[0], state0)
-
-    #print(progress_bar, progress_bar.start, len(tlist)-1)
-    progress_bar.start(len(tlist)-1, **options['progress_kwargs'])
-    for t, state in evolver.step(tlist):
-        progress_bar.update()
-        res.add(t, state)
-    progress_bar.finished()
-
-    return res
-
-
-def _driver_evolution(evolver, tlist, state0, options, e_ops=[], super=False):
-    """
-    Internal function for solving ODEs.
-    """
-    progress_bar = get_progess_bar(options['progress_bar'])
-
-    res = Run(e_ops, options.results, state0, super)
-
-    progress_bar.start(len(tlist)-1, **options['progress_kwargs'])
-    states = evolver.evolve(state0, tlist, progress_bar)
-    progress_bar.finished()
-
-    for t, state in zip(tlist, states):
-        res.add(t, state)
-
-    return res
-
-
 def get_progess_bar(opt):
     if opt in ["Enhanced", "enhanced"]:
         progress_bar = EnhancedTextProgressBar()
@@ -64,12 +18,13 @@ def get_progess_bar(opt):
 
 
 class Run:
-    def __init__(self, e_ops, options, example_state, super):
+    def __init__(self, e_ops_raw, e_ops, options, example_state, super):
         self._dims = example_state.dims
         self._type = example_state.type
         self._isherm = example_state.isherm
         self._isunitary = example_state.isunitary
 
+        self.e_ops = e_ops_raw
         self._raw_e_ops = e_ops
         self._num_saved = 0
         self._states = []

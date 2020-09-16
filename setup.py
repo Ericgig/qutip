@@ -215,6 +215,8 @@ cy_exts = {
         'verner7robust',
         'verner7efficient',
         'verner7',
+        'explicit_rk',
+        'verner7efficientrk',
     ],
     'solver.nonmarkov': [
         '_heom',

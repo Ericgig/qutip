@@ -38,9 +38,8 @@ __all__ = ['sesolve', 'SeSolver']
 
 import numpy as np
 from .. import Qobj, QobjEvo
-from .solver import SolverOptions
+from .solver import SolverOptions, Solver
 from ._solverqevo import SolverQEvo
-from .run import _driver_step, _driver_evolution
 from .evolver import EvolverScipyZvode
 
 def sesolve(H, psi0, tlist, e_ops=None,
@@ -108,7 +107,7 @@ def sesolve(H, psi0, tlist, e_ops=None,
     return solver.run(psi0, tlist, args)
 
 
-class SeSolver:
+class SeSolver(Solver):
     def __init__(self, H, e_ops=None, options=None,
                  times=None, args=None, feedback_args=None,
                  _safe_mode=False):
@@ -139,18 +138,11 @@ class SeSolver:
             raise ValueError("Invalid Hamiltonian")
         self.evolver = EvolverScipyZvode(self.system, options)
 
-    def run(self, psi0, tlist, args={}):
-        if self._safe_mode:
-            v = psi0.full().ravel('F')
-            self.system.mul_np_vec(0., v) + v
+    def safety_check(self, state):
+        v = psi0.full().ravel('F')
+        self.system.mul_np_vec(0., v) + v
 
-            if not (psi0.isket or psi0.isunitary):
-                raise TypeError("The unitary solver requires psi0 to be"
-                                " a ket as initial state"
-                                " or a unitary as initial operator.")
-
-        if args:
-            self.system.arguments(args)
-        result = _driver_step(self.evolver, tlist, psi0,
-                              self.options, self.e_ops, False)
-        return result
+        if not (psi0.isket or psi0.isunitary):
+            raise TypeError("The unitary solver requires psi0 to be"
+                            " a ket as initial state"
+                            " or a unitary as initial operator.")

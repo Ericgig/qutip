@@ -47,6 +47,7 @@ from types import FunctionType, BuiltinFunctionType
 from .. import __version__, Qobj, QobjEvo
 from ..optionsclass import optionsclass
 from ..core import data as _data
+from .run import Run
 
 class Result:
     pass
@@ -65,6 +66,85 @@ class SolverSystem:
 
 class solver_safe:
     pass
+
+
+class Solver:
+    def __init__(self):
+        self.system = None
+        self._safe_mode = False
+        self.evolver = None
+        self.options = None
+        self.e_ops = []
+        self.super = False
+        self.state = None
+        self.t = 0
+
+    def safety_check(self, state):
+        pass
+
+    def prepare_state(self, state):
+        return state
+
+    def run(self, state0, tlist, args={}):
+        if self._safe_mode:
+            self.safety_check(state0)
+        state0 = self.prepare_state(state0)
+        if args:
+            self.evolver.update_args(args)
+        result = self._driver_step(tlist, state0)
+        return result
+
+    def start(self, state0, t0):
+        self.state = self.prepare_state(state0)
+        self.t = t0
+        self.evolver.set(self.state, self.t)
+
+    def step(self, t, args={}):
+        if args:
+            self.evolver.update_args(args)
+            self.evolver.set(self.state, self.t)
+        self.state = self.evolver.step(t)
+        self.t = t
+        return self.state
+
+    def _driver_step(self, tlist, state0):
+        """
+        Internal function for solving ODEs.
+        """
+        progress_bar = get_progess_bar(self.options['progress_bar'])
+
+        self.evolver.set(state0, tlist[0])
+        e_ops = self.evolver.e_op_prepare(self.e_ops)
+        res = Run(self.e_ops, e_ops, self.options.results,
+                  state0, self.super)
+        res.add(tlist[0], state0)
+
+        progress_bar.start(len(tlist)-1, **self.options['progress_kwargs'])
+        for t, state in self.evolver.run(tlist):
+            progress_bar.update()
+            res.add(t, state)
+        progress_bar.finished()
+
+        return res
+
+    def driver(evolver, tlist, state0):
+        pass
+
+    def _driver_evolution(self, tlist, state0):
+        """ Internal function for solving ODEs. """
+        progress_bar = get_progess_bar(options['progress_bar'])
+
+        res = Run(e_ops, options.results, state0, super)
+
+        progress_bar.start(len(tlist)-1, **options['progress_kwargs'])
+        states = evolver.evolve(state0, tlist, progress_bar)
+        progress_bar.finished()
+
+        for t, state in zip(tlist, states):
+            res.add(t, state)
+
+        return res
+
 
 @optionsclass("solver")
 class SolverOptions:

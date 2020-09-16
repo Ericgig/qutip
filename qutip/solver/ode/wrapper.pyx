@@ -5,6 +5,7 @@ from .._solverqevo cimport SolverQEvo
 from ...core cimport data as _data
 from ...core.data.norm cimport frobenius_dense, frobenius_csr
 
+
 cdef class QtOdeFuncWrapper:
     def __init__(self, f):
         self.f = f

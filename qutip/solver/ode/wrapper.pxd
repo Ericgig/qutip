@@ -3,6 +3,7 @@
 cimport numpy as cnp
 from ...core cimport data as _data
 
+
 cdef class QtOdeData:
     cdef double[::1] base
     cdef object _raw
@@ -18,6 +19,7 @@ cdef class QtOdeData:
 cdef class QtOdeFuncWrapper:
     cdef object f
     cpdef void call(self, QtOdeData out, double t, QtOdeData y)
+
 
 cdef class QtOdeFuncWrapperInplace(QtOdeFuncWrapper):
     pass

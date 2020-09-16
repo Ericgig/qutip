@@ -43,7 +43,7 @@ cdef class vern7:
         self.bi7 = tableau.bi7
         self.k = []
 
-    cpdef step(vern7 self, double t):
+    cpdef integrate(vern7 self, double t):
         cdef int nsteps = 0
         while self.t < t and nsteps < self.nsteps:
             nsteps += 1
@@ -62,9 +62,6 @@ cdef class vern7:
         elif self.t > t + 1e-15:
             self.prep_dense_out()
             self.interpolate_step(t, self._y_new)
-            return self._y_new.raw()
-        else:
-            return self.y
 
     def successful(self):
         return not self.failed

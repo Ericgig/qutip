@@ -42,7 +42,7 @@ from .. import ( Qobj, QobjEvo, isket, issuper, liouvillian, ket2dm)
 from .solver import SolverOptions
 from .sesolve import sesolve
 from ._solverqevo import SolverQEvo
-from .run import _driver_step, _driver_evolution
+# from .run import _driver_step, _driver_evolution
 from .evolver import EvolverScipyZvode
 
 
