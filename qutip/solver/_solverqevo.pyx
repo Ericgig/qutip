@@ -22,7 +22,7 @@ cdef class SolverQEvo:
                                                  state.shape[1],
                                                  state.fortran)
         self.mul_data(t, state, out)
-        return out.as_ndarray()
+        return out.as_ndarray().ravel()
 
     cdef void mul_data(self, double t, _data.Data vec, _data.Data out):
         if self.has_dynamic_args:

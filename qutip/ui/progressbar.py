@@ -33,7 +33,8 @@
 from __future__ import print_function
 
 __all__ = ['BaseProgressBar', 'TextProgressBar',
-           'EnhancedTextProgressBar', 'TqdmProgressBar']
+           'EnhancedTextProgressBar', 'TqdmProgressBar',
+           'get_progess_bar']
 
 import time
 import datetime
@@ -167,3 +168,15 @@ class TqdmProgressBar(BaseProgressBar):
 
     def finished(self):
         self.pbar.close()
+
+
+def get_progess_bar(opt):
+    if opt in ["Enhanced", "enhanced"]:
+        progress_bar = EnhancedTextProgressBar()
+    elif opt in ["Text", "text"]:
+        progress_bar = TextProgressBar()
+    elif opt in ["Tqdm", "tqdm"]:
+        progress_bar = TqdmProgressBar()
+    else:
+        progress_bar = BaseProgressBar()
+    return progress_bar

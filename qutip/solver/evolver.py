@@ -33,12 +33,17 @@
 """
 This module provides solvers for
 """
+__all__ = ['EvolverScipyZvode', 'EvolverScipyDop853', 'EvolverVern7']
+
 
 import numpy as np
 from numpy.linalg import norm as la_norm
-from scipy.integrate import solve_ivp, ode
+from scipy.integrate import ode
 from qutip.core import data as _data
 from qutip.solver._solverqevo import SolverQEvo
+from qutip.solver.ode.verner7efficientrk import vern7
+from qutip.solver.ode.wrapper import QtOdeFuncWrapperSolverQEvo
+
 
 class Evolver:
     """
@@ -50,7 +55,7 @@ class Evolver:
     evolve(state, tlist, progress_bar)
 
     """
-    def __init__(self, system, options, args, feedback_args, example_state):
+    def __init__(self, system, options, args, feedback_args):
         self.system = SolverQEvo(system, options, args, feedback_args)
         self.options = options
         self.name = "undefined"
@@ -59,6 +64,7 @@ class Evolver:
                            "the nsteps parameter in the Options class.")
         self._normalize = False
 
+    def set_shape(self, example_state):
         if example_state.shape[1] > 1:
             self._mat_state = True
             self._size = example_state.shape[0]
@@ -69,7 +75,7 @@ class Evolver:
         else:
             self._mat_state = False
 
-    def set(self, state, tlist):
+    def set(self, state, t0):
         pass
 
     def update_args(self, args):
@@ -77,10 +83,10 @@ class Evolver:
 
     def normalize(self, state):
         # TODO cannot be used for propagator evolution.
+        if self._oper:
+            return 0
         if self._dm:
             norm = _data.trace(state)
-        elif self._oper:
-            norm = _data.la_norm(state)  / state.shape[0]
         else:
             norm = _data.la_norm(state)
         state /= norms
@@ -107,6 +113,9 @@ class Evolver:
                     self.set_state(state, t)
             yield t, state
 
+    def e_op_prepare(self, e_ops):
+        return e_ops
+
 
 class EvolverScipyZvode(Evolver):
     # -------------------------------------------------------------------------
@@ -119,6 +128,7 @@ class EvolverScipyZvode(Evolver):
     name = "scipy_zvode"
 
     def set(self, state0, t0):
+        self.set_shape(state0)
         self._t = t0
 
         r = ode(self.system.mul_np_vec)
@@ -142,7 +152,10 @@ class EvolverScipyZvode(Evolver):
             return _data.dense.fast_from_numpy(self._r.y)
 
     def set_state(self, state0, t):
-        self._r.set_initial_value(_data.column_stack(state0).as_ndarray(), t)
+        self._r.set_initial_value(
+            _data.column_stack(state0).to_array().ravel(),
+            t
+        )
 
 
 class EvolverScipyDop853(Evolver):
@@ -156,6 +169,7 @@ class EvolverScipyDop853(Evolver):
     name = "scipy_dop853"
 
     def set(self, state0, t0):
+        self.set_shape(state0)
         func = self.system.mul_np_vec
         r = ode(self.funcwithfloat)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
@@ -183,7 +197,7 @@ class EvolverScipyDop853(Evolver):
 
     def set_state(self, state0, t):
         self._r.set_initial_value(
-            _data.column_stack(state0).as_ndarray().view(np.float64),
+            _data.column_stack(state0).to_array().ravel().view(np.float64),
             t
         )
 
@@ -199,6 +213,7 @@ class EvolverVern7(Evolver):
     name = "qutip_vern7"
 
     def set(self, state0, t0):
+        self.set_shape(state0)
         func = QtOdeFuncWrapperSolverQEvo(self.system)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
                         'min_step', 'interpolate']
@@ -210,36 +225,7 @@ class EvolverVern7(Evolver):
         self.set_state(state0, t0)
 
     def get_state(self):
-        if self._mat_state:
-            return _data.column_unstack_dense(
-                _data.dense.fast_from_numpy(self._r.y),
-                self._size,
-                inplace=True)
-        else:
-            return self._r.y
+        return self._r.y.copy()
 
     def set_state(self, state, t):
-        self._r.set_initial_value(state, t)
-
-
-
-
-
-
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-# TODO move in data layer?
-"""
-    def _prepare_normalize_func(self, state0):
-        opt = self.options
-        size = np.prod(state0.shape)
-        if opt.normalize_output and size == self.LH.shape[1]:
-            if self.LH.cte.issuper:
-                self.normalize_func = normalize_dm
-            else:
-                self.normalize_func = normalize_inplace
-        elif opt.normalize_output and size == np.prod(self.LH.shape):
-            self.normalize_func = normalize_op_inplace
-        elif opt.normalize_output:
-            self.normalize_func = normalize_mixed(state0.shape)
-"""
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        self._r.set_initial_value(_data.to(_data.Dense, state).copy(), t)

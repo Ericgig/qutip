@@ -5,18 +5,6 @@ from ..core import Qobj, QobjEvo, spre, issuper
 from ..ui.progressbar import *
 
 
-def get_progess_bar(opt):
-    if opt in ["Enhanced", "enhanced"]:
-        progress_bar = EnhancedTextProgressBar()
-    elif opt in ["Text", "text"]:
-        progress_bar = TextProgressBar()
-    elif opt in ["Tqdm", "tqdm"]:
-        progress_bar = TqdmProgressBar()
-    else:
-        progress_bar = BaseProgressBar()
-    return progress_bar
-
-
 class Run:
     def __init__(self, e_ops_raw, e_ops, options, example_state, super):
         self._dims = example_state.dims

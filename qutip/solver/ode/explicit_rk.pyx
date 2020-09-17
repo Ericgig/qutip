@@ -59,27 +59,26 @@ cdef class Explicit_RungeKutta:
         self.max_step = max_step
         self.interpolate = self.can_interpolate and interpolate
         self.k = []
-        self.dt_safe = 0
+        self.dt_safe = atol
 
     cpdef integrate(Explicit_RungeKutta self, double t, int step=-1):
         cdef int nsteps = 0
-        self._y_prev.copy(self._y_front)
-        self.t_prev = self.t_front
+        cdef double err = 0
         while self.t_front < t and nsteps < self.max_numsteps:
             nsteps += 1
-            dt = self.get_timestep(t)
-            err = self.compute_step(dt, self._y_front)
-            # print(err, dt, self.dt_safe)
             if err < 1:
-                self.dt_int = dt
-                self.t_front += dt
-                self.norm_front = self.norm_tmp
                 self._y_prev.copy(self._y_front)
                 self.t_prev = self.t_front
-                step -= 1
+            dt = self.get_timestep(t)
+            err = self.compute_step(dt, self._y_front)
             self.recompute_safe_step(err, dt)
-            if step == 0:
-                break
+            if err < 1:
+                self.dt_int = dt
+                self.t_front = self.t_prev + dt
+                self.norm_front = self.norm_tmp
+                step -= 1
+                if step == 0:
+                    break
         if self.t_front < t - 1e-15 and step:
             self.failed = True
         elif self.t_front > t + 1e-15:
@@ -131,8 +130,10 @@ cdef class Explicit_RungeKutta:
 
         if not self.first_step:
             self.dt_safe = self.estimate_first_step(t, self._y)
+            print("estimated")
         else:
             self.dt_safe = self.first_step
+        print(self.dt_safe)
 
     cdef double compute_step(self, double dt, QtOdeData out):
         cdef int i, j
@@ -213,7 +214,7 @@ cdef class Explicit_RungeKutta:
         if norm == 0:
             norm = 1
         tmp_norm = (<QtOdeData> self.k[0]).norm()
-        for i in range(self.order+1):
+        for i in range(1, self.order+1):
             factorial *= i
         if tmp_norm != 0:
             dt1 = (tol*factorial*norm**self.order)**(1/(self.order+1)) / tmp_norm

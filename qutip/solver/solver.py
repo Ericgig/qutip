@@ -48,6 +48,8 @@ from .. import __version__, Qobj, QobjEvo
 from ..optionsclass import optionsclass
 from ..core import data as _data
 from .run import Run
+from .evolver import *
+from ..ui.progressbar import get_progess_bar
 
 class Result:
     pass
@@ -83,7 +85,10 @@ class Solver:
         pass
 
     def prepare_state(self, state):
-        return state
+        self.state_dims = state.dims
+        self.state_type = state.type
+        self.state_qobj = state
+        return state.data
 
     def run(self, state0, tlist, args={}):
         if self._safe_mode:
@@ -105,7 +110,9 @@ class Solver:
             self.evolver.set(self.state, self.t)
         self.state = self.evolver.step(t)
         self.t = t
-        return self.state
+        return Qobj(self.state,
+                    dims=self.state_dims,
+                    type=self.state_type)
 
     def _driver_step(self, tlist, state0):
         """
@@ -116,7 +123,7 @@ class Solver:
         self.evolver.set(state0, tlist[0])
         e_ops = self.evolver.e_op_prepare(self.e_ops)
         res = Run(self.e_ops, e_ops, self.options.results,
-                  state0, self.super)
+                  self.state_qobj, self.super)
         res.add(tlist[0], state0)
 
         progress_bar.start(len(tlist)-1, **self.options['progress_kwargs'])
@@ -144,6 +151,14 @@ class Solver:
             res.add(t, state)
 
         return res
+
+    def get_evolver(self, options, args, feedback_args):
+        if options['method'] in ['adams','bdf']:
+            return EvolverScipyZvode(self.system, options, args, feedback_args)
+        elif options['method'] in ['dop853']:
+            return EvolverScipyDop853(self.system, options, args, feedback_args)
+        elif options['method'] in ['vern7']:
+            return EvolverVern7(self.system, options, args, feedback_args)
 
 
 @optionsclass("solver")

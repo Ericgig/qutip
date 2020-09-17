@@ -102,6 +102,7 @@ class _QtOptionsMaker:
         cls.__repr__ = _repr
         cls.__getitem__ = _getitem
         cls.__setitem__ = _setitem
+        cls.__contains__ = _contains
         cls.reset = _reset
         cls.save = _save
         cls.load = _load
@@ -204,6 +205,15 @@ def _load(self, file="qutiprc", _recursive=False):
     else:
         optcls = [self]
     qrc.load_rc_object(file, optcls)
+
+
+def _contains(self, key):
+    # Let the dict catch the KeyError
+    if key in self.read_only_options:
+        return True
+    if key in self.options:
+        return True
+    return False
 
 
 def _getitem(self, key):

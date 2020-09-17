@@ -126,23 +126,25 @@ class SeSolver(Solver):
         self.e_ops = e_ops
         self.options = options
         self._safe_mode = _safe_mode
+        self.super = False
+        self.state = None
+        self.t = 0
 
         if isinstance(H, QobjEvo):
-            self.system = SolverQEvo(-1j*H, None, args, feedback_args)
+            self.system = -1j*H
         elif isinstance(H, (list, Qobj)):
             H = QobjEvo(H, args=args, tlist=times)
-            self.system = SolverQEvo(-1j*H, None, args, feedback_args)
+            self.system = -1j*H
         elif callable(H):
             raise NotImplementedError
         else:
             raise ValueError("Invalid Hamiltonian")
-        self.evolver = EvolverScipyZvode(self.system, options)
+        self.evolver = self.get_evolver(options, args, feedback_args)
 
     def safety_check(self, state):
-        v = psi0.full().ravel('F')
-        self.system.mul_np_vec(0., v) + v
+        self.system.mul(0, state)
 
-        if not (psi0.isket or psi0.isunitary):
+        if not (state.isket or state.isunitary):
             raise TypeError("The unitary solver requires psi0 to be"
                             " a ket as initial state"
                             " or a unitary as initial operator.")
