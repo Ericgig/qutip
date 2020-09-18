@@ -39,11 +39,9 @@ __all__ = ['mesolve', 'MeSolver']
 
 import numpy as np
 from .. import ( Qobj, QobjEvo, isket, issuper, liouvillian, ket2dm)
-from .solver import SolverOptions
+from .solver import Solver
+from .options import SolverOptions
 from .sesolve import sesolve
-from ._solverqevo import SolverQEvo
-# from .run import _driver_step, _driver_evolution
-from .evolver import EvolverScipyZvode
 
 
 # -----------------------------------------------------------------------------
@@ -222,6 +220,9 @@ class MeSolver:
         self.e_ops = e_ops
         self.options = options
         self._safe_mode = _safe_mode
+        self.super = True
+        self.state = None
+        self.t = 0
 
         if isinstance(H, QobjEvo):
             pass
@@ -234,29 +235,30 @@ class MeSolver:
 
         c_evos = []
         for op in c_ops:
-            if isinstance(H, QobjEvo):
+            if isinstance(op, QobjEvo):
                 c_evos.append(op)
-            elif isinstance(H, (list, Qobj)):
+            elif isinstance(op, (list, Qobj)):
                 c_evos.append(QobjEvo(op, args=args, tlist=times))
-            elif callable(H):
+            elif callable(op):
                 raise NotImplementedError
             else:
                 raise ValueError("Invalid Hamiltonian")
-        self.system = SolverQEvo(liouvillian(H, c_evos), None,
-                                 args, feedback_args)
+        self.system = liouvillian(H, c_evos)
 
-        self.evolver = EvolverScipyZvode(self.system, options)
+        self.evolver = self.get_evolver(options, args, feedback_args)
 
-    def run(self, rho0, tlist, args={}):
-        if isket(rho0):
-            rho0 = ket2dm(rho0)
+    def prepare_state(self, state):
+        if isket(state):
+            state = ket2dm(state)
+        self.state_dims = state.dims
+        self.state_type = state.type
+        self.state_qobj = state
+        return state.data
 
-        if self._safe_mode:
-            v = rho0.full().ravel('F')
-            self.system.mul_np_vec(0., v) + v
+    def safety_check(self, state):
+        self.system.mul(0, state)
 
-        if args:
-            self.system.arguments(args)
-        result = _driver_step(self.evolver, tlist, rho0,
-                              self.options, self.e_ops, True)
-        return result
+        if not (state.isket or state.isunitary):
+            raise TypeError("The unitary solver requires psi0 to be"
+                            " a ket as initial state"
+                            " or a unitary as initial operator.")

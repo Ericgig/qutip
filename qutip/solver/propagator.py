@@ -38,18 +38,20 @@ import numbers
 import types
 
 import numpy as np
-import scipy.sparse as sp
 
 from .. import (
-    Qobj, tensor, qeye, unstack_columns, stack_columns, basis, projection,
+    Qobj, qeye, unstack_columns, stack_columns, basis, projection,
 )
 from ..core import data as _data
 # from ._rhs_generate import rhs_clear, td_format_check
-from .mesolve import mesolve
-from .sesolve import sesolve
-from .solver import SolverOptions, _solver_safety_check
-from ..parallel import parallel_map, _default_kwargs
+from .mesolve import *
+from .sesolve import *
+from .solver import SolverOptions
+from ..parallel import parallel_map
 from ..ui.progressbar import BaseProgressBar, TextProgressBar
+
+def _solver_safety_check(*args, **kwargs):
+    raise NotImplementedError
 
 
 def propagator(H, t, c_op_list=[], args={}, options=None,
@@ -105,14 +107,9 @@ def propagator(H, t, c_op_list=[], args={}, options=None,
     # TODO: correct for proper ammout
     num_cpus = kwargs.get('num_cpus', 1)
 
-    if progress_bar is None:
-        progress_bar = BaseProgressBar()
-    elif progress_bar is True:
-        progress_bar = TextProgressBar()
-
     if options is None:
         options = SolverOptions()
-        rhs_clear()
+    progress_bar = get_progess_bar(options['progress_bar'])
 
     if isinstance(t, numbers.Real):
         tlist = [0, t]
@@ -120,29 +117,26 @@ def propagator(H, t, c_op_list=[], args={}, options=None,
         tlist = t
 
     if _safe_mode:
-        _solver_safety_check(H, None, c_ops=c_op_list, e_ops=[], args=args)
+        pass
+        # _solver_safety_check(H, None, c_ops=c_op_list, e_ops=[], args=args)
 
     td_type = td_format_check(H, c_op_list, solver='me')
 
+    unitary_mode = 'single'
     if isinstance(H, (types.FunctionType, types.BuiltinFunctionType,
                       functools.partial)):
         H0 = H(0.0, args)
-        if unitary_mode == 'batch':
-            # batch don't work with function Hamiltonian
-            unitary_mode = 'single'
     elif isinstance(H, list):
         H0 = H[0][0] if isinstance(H[0], list) else H[0]
     else:
         H0 = H
 
+    N = H0.shape[0]
+
     if len(c_op_list) == 0 and H0.isoper:
         # calculate propagator for the wave function
-
-        N = H0.shape[0]
         dims = H0.dims
-
         if parallel:
-            unitary_mode = 'single'
             u = np.zeros([N, N, len(tlist)], dtype=complex)
             output = parallel_map(_parallel_sesolve, range(N),
                                   task_args=(N, H, tlist, args, options),
@@ -150,119 +144,38 @@ def propagator(H, t, c_op_list=[], args={}, options=None,
             for n in range(N):
                 for k, t in enumerate(tlist):
                     u[:, n, k] = output[n].states[k].full().T
+            output = [Qobj(u[:, :, k], dims=dims) for k in range(len(tlist))]
         else:
-            if unitary_mode == 'single':
-                output = sesolve(H, qeye(dims[0]), tlist, [], args, options,
-                                 _safe_mode=False)
-                if len(tlist) == 2:
-                    return output.states[-1]
-                else:
-                    return output.states
+            output = sesolve(H, qeye(dims[0]), tlist, [], args, options,
+                             _safe_mode=False).states
 
-            elif unitary_mode == 'batch':
-                u = np.zeros(len(tlist), dtype=object)
-                rows_ = np.array([(N+1)*m for m in range(N)])
-                cols_ = np.zeros_like(rows_)
-                data_ = np.ones_like(rows_, dtype=complex)
-                psi0 = Qobj(sp.coo_matrix((data_, (rows_, cols_))).tocsr())
-                if td_type[1] > 0 or td_type[2] > 0:
-                    H2 = []
-                    for Hk in H:
-                        if isinstance(Hk, list):
-                            H2.append([tensor(qeye(N), Hk[0]), Hk[1]])
-                        else:
-                            H2.append(tensor(qeye(N), Hk))
-                else:
-                    H2 = tensor(qeye(N), H)
-                options['normalize_output'] = False
-                output = sesolve(H2, psi0, tlist, [],
-                                 args=args, options=options,
-                                 _safe_mode=False)
-                for k, state in enumerate(output.states):
-                    out = unstack_columns(state.data, (N, N)).to_array()
-                    out /= np.linalg.norm(out, axis=1)
-                    u[k] = _data.create(out)
-            else:
-                raise Exception('Invalid unitary mode.')
-
-
-    elif len(c_op_list) == 0 and H0.issuper:
+    else:
         # calculate the propagator for the vector representation of the
         # density matrix (a superoperator propagator)
-        unitary_mode = 'single'
-        N = H0.shape[0]
-        sqrt_N = int(np.sqrt(N))
-        dims = H0.dims
-
-        u = np.zeros([N, N, len(tlist)], dtype=complex)
+        if H0.issuper:
+            sqrt_N = int(np.sqrt(N))
+            dims = H0.dims
+        else:
+            dims = [H0.dims, H0.dims]
+            sqrt_N = N
+            N = N*N
 
         if parallel:
+            u = np.zeros([N, N, len(tlist)], dtype=complex)
             output = parallel_map(_parallel_mesolve, range(N * N),
                                   task_args=(
-                                      sqrt_N, H, tlist, c_op_list, args,
-                                      options),
+                                      sqrt_N, H, tlist, c_op_list, args, options),
                                   progress_bar=progress_bar, num_cpus=num_cpus)
             for n in range(N * N):
                 for k, state in enumerate(output[n].states):
                     u[:, n, k] = stack_columns(state.data).to_array()[:, 0]
+            output = [Qobj(u[:, :, k], dims=dims) for k in range(len(tlist))]
+
         else:
             rho0 = qeye([sqrt_N, sqrt_N])
-            output = mesolve(H, psi0, tlist, [], args, options,
-                             _safe_mode=False)
-            return output.states[-1] if len(tlist) == 2 else output.states
+            output = mesolve(H, rho0, tlist, [], args, options).states
 
-    else:
-        # calculate the propagator for the vector representation of the
-        # density matrix (a superoperator propagator)
-        unitary_mode = 'single'
-        N = H0.shape[0]
-        dims = [H0.dims, H0.dims]
-
-        u = np.zeros([N * N, N * N, len(tlist)], dtype=complex)
-
-        if parallel:
-            output = parallel_map(_parallel_mesolve, range(N * N),
-                                  task_args=(
-                                      N, H, tlist, c_op_list, args, options),
-                                  progress_bar=progress_bar, num_cpus=num_cpus)
-            for n in range(N * N):
-                for k, state in enumerate(output[n].states):
-                    u[:, n, k] = stack_columns(state.data).to_array()[:, 0]
-        else:
-            progress_bar.start(N * N)
-            for n in range(N * N):
-                progress_bar.update(n)
-                col_idx, row_idx = np.unravel_index(n, (N, N))
-                rho0 = projection(N, row_idx, col_idx)
-                output = mesolve(H, rho0, tlist, c_op_list, [], args, options,
-                                 _safe_mode=False)
-                for k, t in enumerate(tlist):
-                    u[:, n, k] = stack_columns(output.states[k].data).to_array()[:, 0]
-            progress_bar.finished()
-
-    if len(tlist) == 2:
-        if unitary_mode == 'batch':
-            return Qobj(u[-1], dims=dims)
-        else:
-            return Qobj(u[:, :, 1], dims=dims)
-    else:
-        if unitary_mode == 'batch':
-            return np.array([Qobj(u[k], dims=dims)
-                             for k in range(len(tlist))], dtype=object)
-        else:
-            return np.array([Qobj(u[:, :, k], dims=dims)
-                             for k in range(len(tlist))], dtype=object)
-
-
-def _get_min_and_index(lst):
-    """
-    Private function for obtaining min and max indicies.
-    """
-    minval, minidx = lst[0], 0
-    for i, v in enumerate(lst[1:]):
-        if v < minval:
-            minval, minidx = v, i + 1
-    return minval, minidx
+    return output[-1] if len(tlist) == 2 else output
 
 
 def propagator_steadystate(U):

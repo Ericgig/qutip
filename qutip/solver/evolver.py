@@ -45,6 +45,9 @@ from qutip.solver.ode.verner7efficientrk import vern7
 from qutip.solver.ode.wrapper import QtOdeFuncWrapperSolverQEvo
 
 
+all_ode_method = ['adams', 'bdf', 'dop853', 'vern7']
+
+
 class Evolver:
     """
     Methods

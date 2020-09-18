@@ -2,10 +2,12 @@
 
 import numpy as np
 from ..core import Qobj, QobjEvo, spre, issuper
-from ..ui.progressbar import *
 
 
-class Run:
+__all__ = ["Result"]
+
+
+class Result:
     def __init__(self, e_ops_raw, e_ops, options, example_state, super):
         self._dims = example_state.dims
         self._type = example_state.type

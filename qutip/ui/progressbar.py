@@ -171,6 +171,8 @@ class TqdmProgressBar(BaseProgressBar):
 
 
 def get_progess_bar(opt):
+    if isinstance(opt, BaseProgressBar):
+        return opt
     if opt in ["Enhanced", "enhanced"]:
         progress_bar = EnhancedTextProgressBar()
     elif opt in ["Text", "text"]:

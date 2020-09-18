@@ -38,9 +38,9 @@ __all__ = ['sesolve', 'SeSolver']
 
 import numpy as np
 from .. import Qobj, QobjEvo
-from .solver import SolverOptions, Solver
-from ._solverqevo import SolverQEvo
-from .evolver import EvolverScipyZvode
+from .solver import Solver
+from .options import SolverOptions
+
 
 def sesolve(H, psi0, tlist, e_ops=None,
             args=None, feedback_args=None,

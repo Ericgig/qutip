@@ -43,9 +43,7 @@ import os
 import sys
 import signal
 from qutip.settings import settings as qset
-from qutip.ui.progressbar import BaseProgressBar, TextProgressBar
-
-
+from qutip.ui.progressbar import get_progess_bar
 
 
 if sys.platform == 'darwin':
@@ -195,7 +193,8 @@ def serial_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     return results
 
 
-def parallel_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
+def parallel_map(task, values, task_args=tuple(), task_kwargs={},
+                 progress_bar=None, progress_bar_kwargs={}, **kwargs):
     """
     Parallel execution of a mapping of `values` to the function `task`. This
     is functionally equivalent to::
@@ -229,25 +228,15 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     if 'num_cpus' in kwargs:
         kw['num_cpus'] = kwargs['num_cpus']
 
-    try:
-        progress_bar = kwargs['progress_bar']
-        if progress_bar is True:
-            progress_bar = TextProgressBar()
-    except:
-        progress_bar = BaseProgressBar()
-
-    progress_bar.start(len(values))
+    progress_bar = get_progess_bar(progress_bar)
+    progress_bar.start(len(values), **progress_bar_kwargs)
     nfinished = [0]
-
-    def _update_progress_bar(x):
-        nfinished[0] += 1
-        progress_bar.update(nfinished[0])
 
     try:
         pool = Pool(processes=kw['num_cpus'])
 
         async_res = [pool.apply_async(task, (value,) + task_args, task_kwargs,
-                                      _update_progress_bar)
+                                      progress_bar.update)
                      for value in values]
 
         while not all([ar.ready() for ar in async_res]):
@@ -269,6 +258,5 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
 
 
 def _default_kwargs():
-
     settings = {'num_cpus': multiprocessing.cpu_count()}
     return settings

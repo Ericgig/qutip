@@ -39,320 +39,167 @@ import os
 
 from qutip import (
     sigmax, sigmay, sigmaz, qeye, basis, expect, num, destroy, create,
-    Cubic_Spline, sesolve,
+    Cubic_Spline, QobjEvo
 )
-from qutip.solver import SolverOptions
+from qutip.solver import SolverOptions, sesolve
+from qutip.solver.evolver import all_ode_method
 
 os.environ['QUTIP_GRAPHICS'] = "NO"
 
 
-class TestSESolve:
+delta = 1.0 * 2*np.pi
+H1 = 0.5*delta*sigmax()
+tlist = np.linspace(0, 20, 200)
+S = Cubic_Spline(0, 20, np.exp(-alpha * tlist))
+args = {'alpha': 0.5}
+
+
+@pytest.mark.parametrize(['unitary_op'],
+    pytest.param(None, id="state"),
+    pytest.param(qeye(2), id="unitary"),
+])
+@pytest.mark.parametrize(['H', 'analytical'],
+    [pytest.param(H1,
+                  lambda t, args: t,
+                  id='const_H'),
+     pytest.param(lambda t, args: H1 * np.exp(-args['alpha'] * t),
+                  lambda t, args: ((1 - np.exp(-args['alpha'] * t))
+                                   / args['alpha']),
+                  id='func_H'),
+     pytest.param([[H1, lambda t, args: np.exp(-args['alpha'] * t)]],
+                  lambda t, args: ((1 - np.exp(-args['alpha'] * t))
+                                   / args['alpha']),
+                  id='list_func_H'),
+     pytest.param([[H1, 'exp(-alpha*t)']],
+                  lambda t, args: ((1 - np.exp(-args['alpha'] * t))
+                                   / args['alpha']),
+                  id='list_str_H'),
+     pytest.param([[H1, S]],
+                  lambda t, args: ((1 - np.exp(-args['alpha'] * t))
+                                   / args['alpha']),
+                  id='list_cubic_spline_H'),
+     pytest.param([[H1, np.exp(-alpha * tlist)]],
+                  lambda t, args: ((1 - np.exp(-args['alpha'] * t))
+                                   / args['alpha']),
+                  id='list_array_H'),
+     pytest.param(QobjEvo([[H1, 'exp(-alpha*t)']], args={'alpha': 0.5}),
+                  lambda t, args: ((1 - np.exp(-args['alpha'] * t))
+                                   / args['alpha']),
+                  id='QobjEvo_H'),
+])
+def test_sesolve(H, delta, psi0, tlist, analytical,
+                 unitary_op, tol=5e-3):
     """
-    A test class for the QuTiP Schrodinger Eq. solver
+    Compare integrated evolution with analytical result
+    If U0 is not None then operator evo is checked
+    Otherwise state evo
     """
+    psi0 = basis(2, 0)
 
-    def check_evolution(self, H, delta, psi0, tlist, analytic_func,
-                        U0=None, td_args={}, tol=5e-3):
-        """
-        Compare integrated evolution with analytical result
-        If U0 is not None then operator evo is checked
-        Otherwise state evo
-        """
+    if unitary_op is None:
+        output = sesolve(H, psi0, tlist, [sigmax(), sigmay(), sigmaz()],
+                         args=args)
+        sx, sy, sz = output.expect[0], output.expect[1], output.expect[2]
+    else:
+        output = sesolve(H, unitary_op, tlist, args=args)
+        sx = [expect(sigmax(), U * psi0) for U in output.states]
+        sy = [expect(sigmay(), U * psi0) for U in output.states]
+        sz = [expect(sigmaz(), U * psi0) for U in output.states]
 
-        if U0 is None:
-            output = sesolve(H, psi0, tlist, [sigmax(), sigmay(), sigmaz()],
-                             args=td_args)
-            sx, sy, sz = output.expect[0], output.expect[1], output.expect[2]
-        else:
-            output = sesolve(H, U0, tlist, args=td_args)
-            sx = [expect(sigmax(), U*psi0) for U in output.states]
-            sy = [expect(sigmay(), U*psi0) for U in output.states]
-            sz = [expect(sigmaz(), U*psi0) for U in output.states]
+    sx_analytic = np.zeros(np.shape(tlist))
+    sy_analytic = np.array([-np.sin(delta * analytic_func(t, td_args))
+                            for t in tlist])
+    sz_analytic = np.array([np.cos(delta * analytic_func(t, td_args))
+                            for t in tlist])
 
-        sx_analytic = np.zeros(np.shape(tlist))
-        sy_analytic = np.array([-np.sin(delta*analytic_func(t, td_args))
-                                for t in tlist])
-        sz_analytic = np.array([np.cos(delta*analytic_func(t, td_args))
-                                for t in tlist])
-
-        np.testing.assert_allclose(sx, sx_analytic, atol=tol)
-        np.testing.assert_allclose(sy, sy_analytic, atol=tol)
-        np.testing.assert_allclose(sz, sz_analytic, atol=tol)
-
-    def test_01_1_state_with_const_H(self):
-        "sesolve: state with const H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
-
-        analytic_func = lambda t, args: t
-
-        self.check_evolution(H1, delta, psi0, tlist, analytic_func)
-
-    def test_01_1_unitary_with_const_H(self):
-        "sesolve: unitary operator with const H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        U0 = qeye(2)                # initital operator
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
-
-        analytic_func = lambda t, args: t
-
-        self.check_evolution(H1, delta, psi0, tlist, analytic_func, U0)
-
-    def test_02_1_state_with_func_H(self):
-        "sesolve: state with td func H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
-
-        alpha = 0.1
-        td_args = {'alpha':alpha}
-        h1_func = lambda t, args: H1*np.exp(-args['alpha']*t)
-        analytic_func = lambda t, args: ((1 - np.exp(-args['alpha']*t))
-                                        /args['alpha'])
-
-        self.check_evolution(h1_func, delta, psi0, tlist, analytic_func,
-                             td_args=td_args)
-
-    def test_02_2_unitary_with_func_H(self):
-        "sesolve: unitary operator with td func H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        U0 = qeye(2)                # initital operator
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
-
-        alpha = 0.1
-        td_args = {'alpha':alpha}
-        h1_func = lambda t, args: H1*np.exp(-args['alpha']*t)
-        analytic_func = lambda t, args: ((1 - np.exp(-args['alpha']*t))
-                                        /args['alpha'])
-
-        self.check_evolution(h1_func, delta, psi0, tlist, analytic_func, U0,
-                             td_args=td_args)
-
-    def test_03_1_state_with_list_func_H(self):
-        "sesolve: state with td list func H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
-
-        alpha = 0.1
-        td_args = {'alpha':alpha}
-        h1_coeff = lambda t, args: np.exp(-args['alpha']*t)
-        H = [[H1, h1_coeff]]
-        analytic_func = lambda t, args: ((1 - np.exp(-args['alpha']*t))
-                                        /args['alpha'])
-
-        self.check_evolution(H, delta, psi0, tlist, analytic_func,
-                             td_args=td_args)
-
-    def test_03_2_unitary_with_list_func_H(self):
-        "sesolve: unitary operator with td list func H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        U0 = qeye(2)                # initital operator
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
-
-        alpha = 0.1
-        td_args = {'alpha':alpha}
-        h1_coeff = lambda t, args: np.exp(-args['alpha']*t)
-        H = [[H1, h1_coeff]]
-        analytic_func = lambda t, args: ((1 - np.exp(-args['alpha']*t))
-                                        /args['alpha'])
-
-        self.check_evolution(H, delta, psi0, tlist, analytic_func, U0,
-                             td_args=td_args)
-
-    def test_04_1_state_with_list_str_H(self):
-        "sesolve: state with td list str H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
-
-        alpha = 0.1
-        td_args = {'alpha':alpha}
-        H = [[H1, 'exp(-alpha*t)']]
-        analytic_func = lambda t, args: ((1 - np.exp(-args['alpha']*t))
-                                        /args['alpha'])
-
-        self.check_evolution(H, delta, psi0, tlist, analytic_func,
-                             td_args=td_args)
-
-    def test_04_2_unitary_with_list_func_H(self):
-        "sesolve: unitary operator with td list str H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        U0 = qeye(2)                # initital operator
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
-
-        alpha = 0.1
-        td_args = {'alpha':alpha}
-        H = [[H1, 'exp(-alpha*t)']]
-        analytic_func = lambda t, args: ((1 - np.exp(-args['alpha']*t))
-                                        /args['alpha'])
-
-        self.check_evolution(H, delta, psi0, tlist, analytic_func, U0,
-                             td_args=td_args)
+    np.testing.assert_allclose(sx, sx_analytic, atol=tol)
+    np.testing.assert_allclose(sy, sy_analytic, atol=tol)
+    np.testing.assert_allclose(sz, sz_analytic, atol=tol)
 
 
-    def test_05_1_state_with_interp_H(self):
-        "sesolve: state with td interp H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
+@pytest.mark.parametrize(['method'], params=all_ode_method, ids=all_ode_method)
+def test_sesolve_method(method):
+    """
+    Compare integrated evolution with analytical result
+    If U0 is not None then operator evo is checked
+    Otherwise state evo
+    """
+    tol = 5e-3
+    psi0 = basis(2, 0)
+    tlist = np.linspace(0, 20, 200)
+    args = {'alpha': 0.5}
+    options = SolverOptions(mehtod=method)
 
-        alpha = 0.1
-        td_args = {'alpha':alpha}
-        tcub = np.linspace(0, 20, 50)
-        S = Cubic_Spline(0, 20, np.exp(-alpha*tcub))
-        H = [[H1, S]]
-        analytic_func = lambda t, args: ((1 - np.exp(-args['alpha']*t))
-                                        /args['alpha'])
+    output = sesolve([[H1, 'exp(-alpha*t)']], psi0, tlist,
+                     [sigmax(), sigmay(), sigmaz()],
+                     args=args, options=options)
+    sx, sy, sz = output.expect[0], output.expect[1], output.expect[2]
 
-        self.check_evolution(H, delta, psi0, tlist, analytic_func,
-                             td_args=td_args)
+    sx_analytic = np.zeros(np.shape(tlist))
+    sy_analytic = np.array([-np.sin(delta * ((1 - np.exp(-args['alpha'] * t))
+                                             / args['alpha']))
+                            for t in tlist])
+    sz_analytic = np.array([np.cos(delta * ((1 - np.exp(-args['alpha'] * t))
+                                            / args['alpha']))
+                            for t in tlist])
 
-    def test_05_2_unitary_with_interp_H(self):
-        "sesolve: unitary operator with td interp H"
-        delta = 1.0 * 2*np.pi   # atom frequency
-        psi0 = basis(2, 0)        # initial state
-        U0 = qeye(2)                # initital operator
-        H1 = 0.5*delta*sigmax()      # Hamiltonian operator
-        tlist = np.linspace(0, 20, 200)
+    np.testing.assert_allclose(sx, sx_analytic, atol=tol)
+    np.testing.assert_allclose(sy, sy_analytic, atol=tol)
+    np.testing.assert_allclose(sz, sz_analytic, atol=tol)
 
-        alpha = 0.1
-        td_args = {'alpha':alpha}
-        tcub = np.linspace(0, 20, 50)
-        S = Cubic_Spline(0, 20, np.exp(-alpha*tcub))
-        H = [[H1, S]]
-        analytic_func = lambda t, args: ((1 - np.exp(-args['alpha']*t))
-                                        /args['alpha'])
 
-        self.check_evolution(H, delta, psi0, tlist, analytic_func, U0,
-                             td_args=td_args)
+eps = 0.2 * 2*np.pi
+delta = 1.0 * 2*np.pi
+w0 = 0.5*eps
+w1 = 0.5*delta
+H0 = w0*sigmaz()
+H1 = w1*sigmax()
 
-    def compare_evolution(self, H, psi0, tlist,
-                        normalize=False, td_args={}, tol=5e-5):
-        """
-        Compare integrated evolution of unitary operator with state evo
-        """
-        U0 = qeye(2)
-        options = SolverOptions(store_states=True, normalize_output=normalize)
-        out_s = sesolve(H, psi0, tlist, [sigmax(), sigmay(), sigmaz()],
-                        options=options,args=td_args)
-        xs, ys, zs = out_s.expect[0], out_s.expect[1], out_s.expect[2]
+@pytest.mark.parametrize(['normalize'], [True, False], ids=['Normalized', ''])
+@pytest.mark.parametrize(['H', 'args'],
+    [pytest.param(H0 + H1,
+                  {},
+                  id='const_H'),
+     pytest.param(lambda t, args: a * t * H0 + np.exp(-alpha * t) * H1,
+                  {'a':a, 'alpha':alpha},
+                  id='func_H'),
+     pytest.param([[H0, lambda t, args: a*t], [H1, lambda t, args: np.cos(w_a*t)]],
+                  {'a':a, 'w_a':w_a},
+                  id='list_func_H'),
+     pytest.param([H0, [H1, 'cos(w_a*t)']],
+                  {'w_a':w_a},
+                  id='list_str_H'),
+])
+def compare_evolution(H, normalize=False, args={}, tol=5e-5):
+    """
+    Compare integrated evolution of unitary operator with state evo
+    """
+    psi0 = basis(2, 0)
+    tlist = np.linspace(0, 20, 200)
 
-        out_u = sesolve(H, U0, tlist, options=options, args=td_args)
-        xu = [expect(sigmax(), U*psi0) for U in out_u.states]
-        yu = [expect(sigmay(), U*psi0) for U in out_u.states]
-        zu = [expect(sigmaz(), U*psi0) for U in out_u.states]
+    U0 = qeye(2)
+    options = SolverOptions(store_states=True, normalize_output=normalize)
+    out_s = sesolve(H, psi0, tlist, [sigmax(), sigmay(), sigmaz()],
+                    options=options,args=args)
+    xs, ys, zs = out_s.expect[0], out_s.expect[1], out_s.expect[2]
+    xss = [expect(sigmax(), U) for U in out_s.states]
+    yss = [expect(sigmay(), U) for U in out_s.states]
+    zss = [expect(sigmaz(), U) for U in out_s.states]
 
-        if normalize:
-            msg_ext = ". (Normalized)"
-        else:
-            msg_ext = ". (Not normalized)"
-        assert_(max(abs(xs - xu)) < tol,
-                msg="expect X not matching" + msg_ext)
-        assert_(max(abs(ys - yu)) < tol,
-                msg="expect Y not matching" + msg_ext)
-        assert_(max(abs(zs - zu)) < tol,
-                msg="expect Z not matching" + msg_ext)
+    assert (max(abs(xs - xss)) < tol)
+    assert (max(abs(ys - yss)) < tol)
+    assert (max(abs(zs - zss)) < tol)
 
-    def test_06_1_compare_state_and_unitary_const(self):
-        "sesolve: compare state and unitary operator evo - const H"
-        eps = 0.2 * 2*np.pi
-        delta = 1.0 * 2*np.pi   # atom frequency
-        w0 = 0.5*eps
-        w1 = 0.5*delta
-        H0 = w0*sigmaz()
-        H1 = w1*sigmax()
-        H = H0 + H1
+    out_u = sesolve(H, U0, tlist, options=options, args=args)
+    xu = [expect(sigmax(), U * psi0) for U in out_u.states]
+    yu = [expect(sigmay(), U * psi0) for U in out_u.states]
+    zu = [expect(sigmaz(), U * psi0) for U in out_u.states]
 
-        psi0 = basis(2, 0)        # initial state
-        tlist = np.linspace(0, 20, 200)
+    assert (max(abs(xs - xu)) < tol)
+    assert (max(abs(ys - yu)) < tol)
+    assert (max(abs(zs - zu)) < tol)
 
-        self.compare_evolution(H, psi0, tlist,
-                        normalize=False, tol=5e-5)
-        self.compare_evolution(H, psi0, tlist,
-                        normalize=True, tol=5e-5)
-
-    def test_06_2_compare_state_and_unitary_func(self):
-        "sesolve: compare state and unitary operator evo - func td"
-        eps = 0.2 * 2*np.pi
-        delta = 1.0 * 2*np.pi   # atom frequency
-        w0 = 0.5*eps
-        w1 = 0.5*delta
-        H0 = w0*sigmaz()
-        H1 = w1*sigmax()
-        a = 0.1
-        alpha = 0.1
-        td_args = {'a':a, 'alpha':alpha}
-        H_func = lambda t, args: a*t*H0 + H1*np.exp(-alpha*t)
-        H = H_func
-
-        psi0 = basis(2, 0)        # initial state
-        tlist = np.linspace(0, 20, 200)
-
-        self.compare_evolution(H, psi0, tlist,
-                        normalize=False, td_args=td_args, tol=5e-5)
-        self.compare_evolution(H, psi0, tlist,
-                        normalize=True, td_args=td_args, tol=5e-5)
-
-    def test_06_3_compare_state_and_unitary_list_func(self):
-        "sesolve: compare state and unitary operator evo - list func td"
-        eps = 0.2 * 2*np.pi
-        delta = 1.0 * 2*np.pi   # atom frequency
-        w0 = 0.5*eps
-        w1 = 0.5*delta
-        H0 = w0*sigmaz()
-        H1 = w1*sigmax()
-        a = 0.1
-        w_a = w0
-        td_args = {'a':a, 'w_a':w_a}
-        h0_func = lambda t, args: a*t
-        h1_func = lambda t, args: np.cos(w_a*t)
-        H = [[H0, h0_func], [H1, h1_func]]
-
-        psi0 = basis(2, 0)        # initial state
-        tlist = np.linspace(0, 20, 200)
-
-        self.compare_evolution(H, psi0, tlist,
-                        normalize=False, td_args=td_args, tol=5e-5)
-        self.compare_evolution(H, psi0, tlist,
-                        normalize=True, td_args=td_args, tol=5e-5)
-
-    def test_06_4_compare_state_and_unitary_list_str(self):
-        "sesolve: compare state and unitary operator evo - list str td"
-        eps = 0.2 * 2*np.pi
-        delta = 1.0 * 2*np.pi   # atom frequency
-        w0 = 0.5*eps
-        w1 = 0.5*delta
-        H0 = w0*sigmaz()
-        H1 = w1*sigmax()
-        w_a = w0
-
-        td_args = {'w_a':w_a}
-        H = [H0, [H1, 'cos(w_a*t)']]
-
-        psi0 = basis(2, 0)        # initial state
-        tlist = np.linspace(0, 20, 200)
-
-        self.compare_evolution(H, psi0, tlist,
-                        normalize=False, td_args=td_args, tol=5e-5)
-        self.compare_evolution(H, psi0, tlist,
-                        normalize=True, td_args=td_args, tol=5e-5)
-
-    def test_07_1_dynamic_args(self):
+def test_07_1_dynamic_args():
         "sesolve: state feedback"
         tol = 1e-3
         def f(t, args):
@@ -372,6 +219,3 @@ class TestSESolve:
                       e_ops=[num(2)], args={"expect_op_0":num(2)})
         assert_(max(abs(res.expect[0][5:])) < tol,
                 msg="evolution with feedback not proceding as expected")
-
-if __name__ == "__main__":
-    run_module_suite()
