@@ -177,7 +177,7 @@ cdef class Explicit_RungeKutta:
                 if self.a[i][j]:
                     self._y_temp.inplace_add((<QtOdeData> self.k[j]),
                                         dt * self.a[i][j])
-            self.f.call(self.k[i], t + self.c[i], self._y_temp)
+            self.f.call(self.k[i], t + dt * self.c[i], self._y_temp)
 
     cdef void interpolate_step(self, double t, QtOdeData out):
         cdef:

@@ -141,7 +141,7 @@ class ExpectOps:
         return bool(self.e_num)
 
 
-@optionsclass("solver")
+@optionsclass("solve")
 class SolverOptions:
     """
     Class of options for evolution solvers such as :func:`qutip.mesolve` and

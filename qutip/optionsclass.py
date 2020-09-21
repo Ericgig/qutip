@@ -132,14 +132,22 @@ def _make_init(all_set):
     code = f"""
 def __init__(self, file='', *,
              {attributes_kw},
+             _child_instance=False,
              **kwargs):
     self.options = self._defaultInstance.options.copy()
 {attributes_set}
     if file:
         self.load(file)
     for child in self._defaultInstance._children:
-        self._children.append(child.__class__(file, **kwargs))
+        self._children.append(child.__class__(file, _child_instance=True,
+                                              **kwargs))
         setattr(self, child._name, self._children[-1])
+        kwargs = self._children[-1].left_over_kwargs
+    if _child_instance:
+        self.left_over_kwargs = kwargs
+    elif kwargs:
+        raise KeyError("Unknown options: " +
+                       " ,".join(str(key) for key in kwargs))
 """
     ns = {}
     exec(code, globals(), ns)

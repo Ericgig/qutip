@@ -45,12 +45,6 @@ class SolverOptions:
         Maximum step size (0 = automatic)
     tidy : bool {True,False}
         Tidyup Hamiltonian and initial state by removing small terms.
-    average_states : bool {False}
-        Average states values over trajectories in stochastic solvers.
-    average_expect : bool {True}
-        Average expectation values over trajectories for stochastic solvers.
-    ntraj : int {500}
-        Number of trajectories in stochastic solvers.
     store_final_state : bool {False, True}
         Whether or not to store the final state of the evolution in the
         result class.
@@ -79,8 +73,6 @@ class SolverOptions:
         "min_step": 0,
         # tidyup Hamiltonian before calculation (default = True)
         "tidy": True,
-        # Number of trajectories (default = 500)
-        "ntraj": 500,
         "gui": False,
         # Normalize output of solvers
         # (turned off for batch unitary propagator mode)
@@ -185,4 +177,6 @@ class McOptions:
         "norm_steps": 5,
         # small value in mc solver for computing correlations
         "mc_corr_eps": 1e-10,
+        # Number of trajectories (default = 500)
+        "ntraj": 500,
     }

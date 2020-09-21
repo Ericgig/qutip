@@ -45,7 +45,7 @@ from ..core import data as _data
 from ..parallel import parallel_map, serial_map
 from ._mcsolve import CyMcOde, CyMcOdeDiag
 from .sesolve import sesolve
-from .solver import SolverOptions, Result, ExpectOps, solver_safe, SolverSystem
+from .options import SolverOptions, Result, ExpectOps, solver_safe, SolverSystem
 from ..ui.progressbar import TextProgressBar, BaseProgressBar
 
 

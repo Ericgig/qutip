@@ -131,7 +131,6 @@ cdef class CQobjEvo:
 
     cpdef Dense matmul(self, double t, Dense matrix, Dense out=None):
         cdef size_t i
-        self.dyn_args(t, matrix) # TODO: move Out
         self._factor(t)
         if out is None:
             out = matmul_csr_dense_dense(self.constant, matrix)
@@ -156,7 +155,6 @@ cdef class CQobjEvo:
             _expect = expect_super_csr if isinstance(matrix, CSR) else expect_super_csr_dense
         else:
             _expect = expect_csr if isinstance(matrix, CSR) else expect_csr_dense
-        self.dyn_args(t, matrix) # TODO: move Out
         self._factor(t)
         # end shim
         cdef size_t i
@@ -165,23 +163,3 @@ cdef class CQobjEvo:
         for i in range(self.n_ops):
             out += self.coefficients[i] * _expect(self.ops[i], matrix)
         return out
-
-    def set_dyn_args(self, object dyn_args, dict args, object op):
-        # Move elsewhere and op should be a dimensions object when available
-        self.args = args
-        self.op = op
-        self.dynamic_arguments = dyn_args
-        self.has_dynamic_args = bool(self.dynamic_arguments)
-
-    cpdef dyn_args(self, double t, Data matrix):
-        from ..qobjevo import dynamic_argument
-        cdef Coefficient coeff
-        if not self.has_dynamic_args:
-            return
-        else:
-            for name, what, e_op in self.dynamic_arguments:
-                self.args[name] = dynamic_argument(t, self.op, matrix,
-                                                   what, e_op)
-            for i in range(self.n_ops):
-                coeff = <Coefficient> self.coeff[i]
-                coeff.arguments(self.args)

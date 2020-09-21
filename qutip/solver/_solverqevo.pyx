@@ -17,11 +17,14 @@ cdef class SolverQEvo:
         self.collapse = []
 
     def mul_np_vec(self, t, vec):
+        cdef int i, row, col
         cdef _data.Dense state = _data.dense.fast_from_numpy(vec)
+        _data.column_unstack_dense(state, self.base.shape[1], inplace=True)
         cdef _data.Dense out = _data.dense.zeros(state.shape[0],
-                                                 state.shape[1],
-                                                 state.fortran)
+                                state.shape[1],
+                                state.fortran)
         self.mul_data(t, state, out)
+        _data.column_stack_dense(out, inplace=True)
         return out.as_ndarray().ravel()
 
     cdef void mul_data(self, double t, _data.Data vec, _data.Data out):

@@ -187,6 +187,7 @@ class EvolverScipyDop853(Evolver):
     def funcwithfloat(self, t, y):
         y_cplx = y.view(complex)
         dy = self.system.mul_np_vec(t, y_cplx)
+        print(dy)
         return dy.view(np.float64)
 
     def get_state(self):

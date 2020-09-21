@@ -144,7 +144,7 @@ cdef class vern7:
                 if self.a[i][j]:
                     self.yp.inplace_add((<QtOdeData> self.k[j]),
                                         dt * self.a[i][j])
-            self.f.call(self.k[i], t + self.c[i], self.yp)
+            self.f.call(self.k[i], t + dt * self.c[i], self.yp)
 
     cdef void interpolate_step(self, double t, QtOdeData out):
         cdef:

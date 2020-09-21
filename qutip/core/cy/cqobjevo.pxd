@@ -56,7 +56,6 @@ cdef class CQobjEvo:
     cdef list dynamic_arguments
     cdef dict args
     cdef object op
-    cpdef dyn_args(self, double t, Data matrix)
 
     cpdef Dense matmul(self, double t, Dense matrix, Dense out=*)
     cpdef double complex expect(self, double t, Data matrix) except *

@@ -46,7 +46,7 @@ from ..core import data as _data
 # from ._rhs_generate import rhs_clear, td_format_check
 from .mesolve import *
 from .sesolve import *
-from .solver import SolverOptions
+from .options import SolverOptions
 from ..parallel import parallel_map
 from ..ui.progressbar import BaseProgressBar, TextProgressBar
 

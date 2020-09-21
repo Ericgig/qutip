@@ -96,8 +96,8 @@ class Solver:
 
         self.evolver.set(state0, tlist[0])
         e_ops = self.evolver.e_op_prepare(self.e_ops)
-        res = Run(self.e_ops, e_ops, self.options.results,
-                  self.state_qobj, self.super)
+        res = Result(self.e_ops, e_ops, self.options.results,
+                     self.state_qobj, self.super)
         res.add(tlist[0], state0)
 
         progress_bar.start(len(tlist)-1, **self.options['progress_kwargs'])
@@ -115,7 +115,7 @@ class Solver:
         """ Internal function for solving ODEs. """
         progress_bar = get_progess_bar(options['progress_bar'])
 
-        res = Run(e_ops, options.results, state0, super)
+        res = Result(e_ops, options.results, state0, super)
 
         progress_bar.start(len(tlist)-1, **options['progress_kwargs'])
         states = evolver.evolve(state0, tlist, progress_bar)
