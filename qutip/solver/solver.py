@@ -64,6 +64,11 @@ class Solver:
         self.state_qobj = state
         return state.data
 
+    def restore_state(self, state):
+        return Qobj(state,
+                    dims=self.state_dims,
+                    type=self.state_type)
+
     def run(self, state0, tlist, args={}):
         if self._safe_mode:
             self.safety_check(state0)
@@ -84,9 +89,7 @@ class Solver:
             self.evolver.set(self.state, self.t)
         self.state = self.evolver.step(t)
         self.t = t
-        return Qobj(self.state,
-                    dims=self.state_dims,
-                    type=self.state_type)
+        return self.restore_state(self.state)
 
     def _driver_step(self, tlist, state0):
         """
@@ -98,18 +101,15 @@ class Solver:
         e_ops = self.evolver.e_op_prepare(self.e_ops)
         res = Result(self.e_ops, e_ops, self.options.results,
                      self.state_qobj, self.super)
-        res.add(tlist[0], state0)
+        res.add(tlist[0], self.state_qobj)
 
         progress_bar.start(len(tlist)-1, **self.options['progress_kwargs'])
         for t, state in self.evolver.run(tlist):
             progress_bar.update()
-            res.add(t, state)
+            res.add(t, self.restore_state(state))
         progress_bar.finished()
 
         return res
-
-    def driver(evolver, tlist, state0):
-        pass
 
     def _driver_evolution(self, tlist, state0):
         """ Internal function for solving ODEs. """
@@ -122,7 +122,7 @@ class Solver:
         progress_bar.finished()
 
         for t, state in zip(tlist, states):
-            res.add(t, state)
+            res.add(t, self.restore_state(state))
 
         return res
 

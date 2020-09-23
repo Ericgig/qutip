@@ -7,7 +7,7 @@ cimport qutip.core.data as _data
 import qutip.core.data as data
 from qutip import Qobj, spre
 cimport cython
-from ._feedback cimport *
+from qutip.solver._feedback cimport *
 
 
 cdef class SolverQEvo:
@@ -21,8 +21,7 @@ cdef class SolverQEvo:
         cdef _data.Dense state = _data.dense.fast_from_numpy(vec)
         _data.column_unstack_dense(state, self.base.shape[1], inplace=True)
         cdef _data.Dense out = _data.dense.zeros(state.shape[0],
-                                state.shape[1],
-                                state.fortran)
+                                state.shape[1], state.fortran)
         self.mul_data(t, state, out)
         _data.column_stack_dense(out, inplace=True)
         return out.as_ndarray().ravel()

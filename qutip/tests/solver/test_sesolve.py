@@ -41,9 +41,10 @@ from qutip import (
     sigmax, sigmay, sigmaz, qeye, basis, expect, num, destroy, create,
     Cubic_Spline, QobjEvo, Qobj
 )
-from qutip.solver import SolverOptions, sesolve
+from qutip.solver import SolverOptions, sesolve, SeSolver
 from qutip.solver.evolver import all_ode_method
 import pytest
+import pickle
 
 os.environ['QUTIP_GRAPHICS'] = "NO"
 
@@ -228,3 +229,30 @@ class TestSeSolve():
                       e_ops=[num(2)], args={"e":1},
                       feedback_args={"e":num(2)})
         assert max(abs(res.expect[0][5:])) < tol
+
+    def test_sesolver_pickling(self):
+        solver_obj = SeSolver(self.H0 + self.H1,
+                              e_ops=[sigmax(), sigmay(), sigmaz()])
+        copy = pickle.loads(pickle.dumps(solver_obj))
+        sx, sy, sz = solver_obj.run(basis(2,1), [0, 1, 2, 3], {}).expect
+        csx, csy, csz = solver_obj.run(basis(2,1), [0, 1, 2, 3], {}).expect
+        np.testing.assert_allclose(sx, csx)
+        np.testing.assert_allclose(sy, csy)
+        np.testing.assert_allclose(sz, csz)
+
+    @pytest.mark.parametrize('method',
+                             all_ode_method, ids=all_ode_method)
+    def test_sesolver_steping(self, method):
+        options = SolverOptions(method=method, atol=1e-7, rtol=1e-8)
+        solver_obj = SeSolver([self.H1, lambda t, args: args["a"]],
+                              args={"a":0.25}, options=options)
+        solver_obj.start(basis(2,0), 0)
+        sr2 = -2**.5/2
+        state = solver_obj.step(1)
+        np.testing.assert_allclose(expect(sigmax(), state), 0., atol=2e-6)
+        np.testing.assert_allclose(expect(sigmay(), state), -1, atol=2e-6)
+        np.testing.assert_allclose(expect(sigmaz(), state), 0., atol=2e-6)
+        state = solver_obj.step(2, args={"a":0.125})
+        np.testing.assert_allclose(expect(sigmax(), state), 0., atol=2e-6)
+        np.testing.assert_allclose(expect(sigmay(), state), sr2, atol=2e-6)
+        np.testing.assert_allclose(expect(sigmaz(), state), sr2, atol=2e-6)

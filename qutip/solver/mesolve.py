@@ -42,6 +42,7 @@ from .. import ( Qobj, QobjEvo, isket, issuper, liouvillian, ket2dm)
 from .solver import Solver
 from .options import SolverOptions
 from .sesolve import sesolve
+from ..core.data import column_stack, column_unstack
 
 
 # -----------------------------------------------------------------------------
@@ -178,6 +179,7 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
         operators for which to calculate the expectation values.
 
     """
+    c_ops = c_ops if c_ops is not None else []
     solver = MeSolver(H, c_ops, e_ops, options, tlist,
                       args, feedback_args, _safe_mode)
 
@@ -201,7 +203,7 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
         return sesolve(H, rho0, tlist, e_ops=e_ops, args=args, options=options,
                        progress_bar=progress_bar, _safe_mode=_safe_mode)
 """
-class MeSolver:
+class MeSolver(Solver):
     def __init__(self, H, c_ops, e_ops=None, options=None,
                  times=None, args=None, feedback_args=None,
                  _safe_mode=False):
@@ -251,11 +253,26 @@ class MeSolver:
         if isket(state):
             state = ket2dm(state)
         self.state_dims = state.dims
+        self.state_shape = state.shape
         self.state_type = state.type
         self.state_qobj = state
-        return state.data
+        if state.dims[0] == self.system.dims[1]:
+            return state.data
+        return column_stack(state.data)
+
+    def restore_state(self, state):
+        if self.state_dims[0] == self.system.dims[1]:
+            return Qobj(state,
+                        dims=self.state_dims,
+                        type=self.state_type)
+        else:
+            return Qobj(column_unstack(state, self.state_shape[0]),
+                        dims=self.state_dims,
+                        type=self.state_type)
 
     def safety_check(self, state):
+        return None
+        # Todo: make proper checks
         self.system.mul(0, state)
 
         if not (state.isket or state.isunitary):
