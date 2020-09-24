@@ -304,6 +304,10 @@ class QobjEvo:
         return self.cte.dims
 
     @property
+    def issuper(self):
+        return self.cte.issuper
+
+    @property
     def tlist(self):
         from warnings import warn
         warn("tlist is to be removed from QobjEvo", DeprecationWarning)
@@ -740,7 +744,7 @@ class QobjEvo:
         else:
             raise TypeError("The vector must be an array or Qobj")
 
-        if self.cte.issuper:
+        if self.issuper:
             state = _data.column_stack_dense(state)
         exp = self.compiled_qobjevo.expect(t, state)
         return exp.real if herm else exp
@@ -757,7 +761,7 @@ class QobjEvo:
         if not isinstance(t, (int, float)):
             raise TypeError("the time need to be a real scalar")
         if isinstance(vec, Qobj):
-            if self.cte.dims[1] != vec.dims[0]:
+            if self.dims[1] != vec.dims[0]:
                 raise Exception("Dimensions do not fit")
             was_Qobj = True
             dims = vec.dims
@@ -769,7 +773,7 @@ class QobjEvo:
             vec = _data.Dense(vec[:, None])
         else:
             raise TypeError("The vector must be an array or Qobj")
-        if vec.shape[0] != self.cte.shape[1]:
+        if vec.shape[0] != self.shape[1]:
             raise Exception("The length do not match")
 
         out = self.compiled_qobjevo.matmul(t, vec).as_ndarray()[:, 0]
@@ -784,12 +788,13 @@ class QobjEvo:
         Product of the operator quantum object at time t
         with the given matrix state.
         """
+        # TODO: Not always fallback to Dense
         was_Qobj = False
         was_vec = False
         if not isinstance(t, (int, float)):
             raise TypeError("the time need to be a real scalar")
         if isinstance(mat, Qobj):
-            if self.cte.dims[1] != mat.dims[0]:
+            if self.dims[1] != mat.dims[0]:
                 raise Exception("Dimensions do not fit")
             was_Qobj = True
             dims = mat.dims
@@ -805,7 +810,7 @@ class QobjEvo:
                 raise Exception("The matrice must be 1d or 2d")
         else:
             raise TypeError("The vector must be an array or Qobj")
-        if mat.shape[0] != self.cte.shape[1]:
+        if mat.shape[0] != self.shape[1]:
             raise Exception("The length do not match")
 
         out = self.compiled_qobjevo.matmul(t, mat).as_ndarray()

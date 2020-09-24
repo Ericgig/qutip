@@ -360,6 +360,8 @@ cdef class StrCoefficient(Coefficient):
 
 def compile_code(code, file_name, parsed, c_opt):
     root = qset.install['tmproot']
+    pwd = os.getcwd()
+    os.chdir(root)
     full_file_name = os.path.join(root, file_name)
     file_ = open(full_file_name + ".pyx", "w")
     file_.writelines(code)
@@ -382,6 +384,7 @@ def compile_code(code, file_name, parsed, c_opt):
     except Exception:
         warn("File")
     sys.argv = oldargs
+    os.chdir(pwd)
     return try_import(file_name, parsed)
 
 

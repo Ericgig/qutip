@@ -41,6 +41,7 @@ import multiprocessing
 from functools import partial
 import os
 import sys
+import time
 import signal
 from qutip.settings import settings as qset
 from qutip.ui.progressbar import BaseProgressBar, TextProgressBar
@@ -223,12 +224,12 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     executor = get_reusable_executor(max_workers=kw['num_cpus'])
     end_time = kw['timeout'] + time.time()
     job_time = kw['job_timeout']
+    result = []
 
     try:
         jobs = [executor.submit(task, value, *task_args, **task_kwargs)
                for value in values]
 
-        results = []
         for job in jobs:
             remaining_time = end_time - time.time()
             result.append(job.result(min(remaining_time, job_time)))
@@ -242,7 +243,7 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     executor.shutdown()
     progress_bar.finished()
     os.environ['QUTIP_IN_PARALLEL'] = 'FALSE'
-    return results
+    return result
 
 #TODO: move to options
 def _default_kwargs():
