@@ -33,7 +33,8 @@
 """
 This module provides solvers for
 """
-__all__ = ['EvolverScipyZvode', 'EvolverScipyDop853', 'EvolverVern7']
+__all__ = ['EvolverScipyZvode', 'EvolverScipyDop853',
+           'EvolverVern7', 'get_evolver']
 
 
 import numpy as np
@@ -46,6 +47,14 @@ from qutip.solver.ode.wrapper import QtOdeFuncWrapperSolverQEvo
 
 
 all_ode_method = ['adams', 'bdf', 'dop853', 'vern7']
+
+def get_evolver(system, options, args, feedback_args):
+    if options['method'] in ['adams','bdf']:
+        return EvolverScipyZvode(system, options, args, feedback_args)
+    elif options['method'] in ['dop853']:
+        return EvolverScipyDop853(system, options, args, feedback_args)
+    elif options['method'] in ['vern7']:
+        return EvolverVern7(system, options, args, feedback_args)
 
 
 class Evolver:

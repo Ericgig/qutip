@@ -127,9 +127,4 @@ class Solver:
         return res
 
     def get_evolver(self, options, args, feedback_args):
-        if options['method'] in ['adams','bdf']:
-            return EvolverScipyZvode(self.system, options, args, feedback_args)
-        elif options['method'] in ['dop853']:
-            return EvolverScipyDop853(self.system, options, args, feedback_args)
-        elif options['method'] in ['vern7']:
-            return EvolverVern7(self.system, options, args, feedback_args)
+        return get_evolver(self.system, options, args, feedback_args)
