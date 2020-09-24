@@ -179,15 +179,8 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
         operators for which to calculate the expectation values.
 
     """
-    c_ops = c_ops if c_ops is not None else []
-    solver = MeSolver(H, c_ops, e_ops, options, tlist,
-                      args, feedback_args, _safe_mode)
-
-    return solver.run(rho0, tlist, args)
-
-"""
     use_mesolve = (
-        (c_ops and len(c_ops) > 0)
+        (c_ops is not None and len(c_ops) > 0)
         or (not rho0.isket)
         or (isinstance(H, Qobj) and H.issuper)
         or (isinstance(H, QobjEvo) and H.cte.issuper)
@@ -195,14 +188,20 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
         or (not isinstance(H, (Qobj, QobjEvo))
             and callable(H)
             and H(0., args).issuper)
-        or (not isinstance(H, (Qobj, QobjEvo))
-            and callable(H))
+        or (feedback_args is not None and feedback_args)
     )
 
     if not use_mesolve:
         return sesolve(H, rho0, tlist, e_ops=e_ops, args=args, options=options,
-                       progress_bar=progress_bar, _safe_mode=_safe_mode)
-"""
+                       feedback_args=feedback_args, _safe_mode=_safe_mode)
+
+    c_ops = c_ops if c_ops is not None else []
+    solver = MeSolver(H, c_ops, e_ops, options, tlist,
+                      args, feedback_args, _safe_mode)
+
+    return solver.run(rho0, tlist, args)
+
+
 class MeSolver(Solver):
     def __init__(self, H, c_ops, e_ops=None, options=None,
                  times=None, args=None, feedback_args=None,

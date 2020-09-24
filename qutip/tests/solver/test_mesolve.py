@@ -59,7 +59,7 @@ class TestMESolveDecay:
     N = 10
     a = destroy(N)
     kappa = 0.2
-    tlist = np.linspace(0, 10, 101)
+    tlist = np.linspace(0, 10, 201)
     ada = a.dag() * a
 
     @pytest.fixture(params=[
@@ -85,9 +85,9 @@ class TestMESolveDecay:
         pytest.param([a, 'sqrt(kappa)'],
                   id='list_str'),
         pytest.param([a, Cubic_Spline(0, 10, np.sqrt(kappa) *
-                                      np.ones(101, dtype=complex))],
+                                      np.ones_like(tlist))],
                   id='list_cubic_spline'),
-        pytest.param([a, np.sqrt(kappa) * np.ones(101, dtype=complex)],
+        pytest.param([a, np.sqrt(kappa) * np.ones_like(tlist)],
                   id='list_array'),
         pytest.param(QobjEvo([a, 'sqrt(kappa)'], args={'kappa': kappa}),
                   id='QobjEvo'),
@@ -268,7 +268,7 @@ def testME_SesolveFallback(super_):
     else:
         assert result.final_state.dims == ket2dm(psi0).dims
 
-"""
+
 @pytest.mark.parametrize('method',
                          all_ode_method, ids=all_ode_method)
 def testMESolveHFeedback(method):
@@ -283,7 +283,7 @@ def testMESolveHFeedback(method):
                   c_ops=[qeye(2)], e_ops=[num(2)], options=options,
                   args={"state": ket2dm(basis(2, 1))},
                   feedback_args={'state': Qobj})
-    assert max(abs(res.expect[0][:5])) < tol
+    assert max(abs(res.expect[0][-5:])) < tol
 
     def f(t, args):
         return np.sqrt(args["e"])
@@ -292,35 +292,41 @@ def testMESolveHFeedback(method):
     res = mesolve(H, basis(2, 1), tlist=np.linspace(0, 10, 21),
                   c_ops=[qeye(2)], e_ops=[num(2)], options=options,
                   args={"e": 1.}, feedback_args={'e': num(2)})
-    assert max(abs(res.expect[0][:5])) < tol
+    assert max(abs(res.expect[0][-5:])) < tol
 
 
 @pytest.mark.parametrize('method',
                          all_ode_method, ids=all_ode_method)
 def testMESolveDecayFeedback(method):
     "mesolve: state feedback"
+    #
     tol = 1e-3
     options = SolverOptions(method=method)
     def f(t, args):
-        return np.sqrt(args["state"][1,1])
+        return np.sqrt(args["state"][2,2])
 
-    H = qeye(2)
-    res = mesolve(H, basis(2, 1), tlist=np.linspace(0, 10, 21),
-                  c_ops=[[destroy(2)+create(2), f]], e_ops=[num(2)],
+    H = qeye(3)
+    b12 = basis(3, 1) * basis(3, 2).dag()
+    res = mesolve(H, basis(3, 2), tlist=np.linspace(0, 10, 21),
+                  c_ops=[[destroy(3), f], b12],
+                  e_ops=[num(3), ket2dm(basis(3, 2))],
                   options=options,
-                  args={"state": ket2dm(basis(2, 1))},
+                  args={"state": ket2dm(basis(3, 2))},
                   feedback_args={'state': Qobj})
-    assert max(abs(res.expect[0][:5])) < tol
+    assert abs(res.expect[0][-1]) > 0.5
+    assert abs(res.expect[1][-1]) < tol
 
     def f(t, args):
         return np.sqrt(args["e"])
 
-    res = mesolve(H, basis(2, 1), tlist=np.linspace(0, 10, 11),
-                  c_ops=[[destroy(2)+create(2), f]], e_ops=[num(2)],
+    res = mesolve(H, basis(3, 1), tlist=np.linspace(0, 10, 11),
+                  c_ops=[[destroy(3), f], b12],
+                  e_ops=[num(3), ket2dm(basis(3, 2))],
                   options=options,
-                  args={"e": 1.}, feedback_args={'e': num(2)})
-    assert max(abs(res.expect[0][5:])) < tol
-"""
+                  args={"e": 1.}, feedback_args={'e': ket2dm(basis(3, 2))})
+    assert abs(res.expect[0][-1]) > 0.5
+    assert abs(res.expect[1][-1]) < tol
+
 
 class TestJCModelEvolution:
     """
@@ -607,7 +613,7 @@ class TestMESolveStepFuncCoeff:
                      tlist=tlist, args={"_step_func_coeff": 1})
         result = mesolve(qu, rho0=rho0, tlist=tlist)
         assert_allclose(
-            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-6)
+            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-5)
 
     def test_array_cte_coeff(self):
         """
@@ -620,7 +626,7 @@ class TestMESolveStepFuncCoeff:
                      tlist=tlist, args={"_step_func_coeff": 1})
         result = mesolve(qu, rho0=rho0, tlist=tlist)
         assert_allclose(
-            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-6)
+            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-5)
 
     def test_array_t_coeff(self):
         """
@@ -650,7 +656,7 @@ class TestMESolveStepFuncCoeff:
             tlist=tlist, args={"_step_func_coeff": 1})
         result = mesolve(qu, rho0=rho0, tlist=tlist)
         assert_allclose(
-            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=2.e-6)
+            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=2.e-5)
 
     def test_array_str_py_coeff(self):
         """
@@ -668,4 +674,4 @@ class TestMESolveStepFuncCoeff:
             tlist=tlist, args={"_step_func_coeff": 1})
         result = mesolve(qu, rho0=rho0, tlist=tlist)
         assert_allclose(
-            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=3.e-6)
+            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=2.e-5)
