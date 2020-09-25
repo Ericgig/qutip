@@ -69,8 +69,8 @@ class TestMESolveDecay:
                       id='Hlist_cubic_spline'),
         pytest.param([ada, np.ones_like(tlist)], id='Hlist_array'),
         pytest.param(QobjEvo([ada, '1']), id='HQobjEvo'),
-        # pytest.param(lambda t, args: ada,
-        #              id='func'),
+        pytest.param(lambda t, args: create(10) * destroy(10),
+                     id='func'),
     ])
     def H(self, request):
         return request.param
@@ -78,8 +78,8 @@ class TestMESolveDecay:
     @pytest.fixture(params=[
         pytest.param(np.sqrt(kappa) * a,
                   id='const'),
-        # pytest.param(lambda t, args: np.sqrt(args['kappa']) * a,
-        #              id='func'),
+        pytest.param(lambda t, args: np.sqrt(args['kappa']) * destroy(10),
+                     id='func'),
         pytest.param([a, lambda t, args: np.sqrt(args['kappa'])],
                   id='list_func'),
         pytest.param([a, 'sqrt(kappa)'],
@@ -107,8 +107,9 @@ class TestMESolveDecay:
         pytest.param(QobjEvo([a, 'sqrt(kappa * exp(-t))'],
                           args={'kappa': kappa}),
                   id='QobjEvo'),
-        # pytest.param(lambda t, args: np.sqrt(args['kappa'] * np.exp(-t)) * a,
-        #              id='func'),
+        pytest.param(lambda t, args: (np.sqrt(args['kappa'] * np.exp(-t)) *
+                                      destroy(10)),
+                     id='func'),
     ])
     def c_ops(self, request):
         return request.param

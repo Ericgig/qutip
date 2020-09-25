@@ -124,7 +124,15 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
 
     td = False
     L = None
-    if isinstance(H, QobjEvo):
+    if isinstance(H, QobjEvoFunc):
+        td = True
+        if H.cte.isoper:
+            L = H._liouvillian_h()
+        else:
+            L = H
+        data = L.cte.data * 0
+
+    elif isinstance(H, QobjEvo):
         td = True
         if H.cte.isoper:
             L = -1.0j * (spre(H) - spost(H))
@@ -225,6 +233,8 @@ def lindblad_dissipator(a, b=None, data_only=False, chi=None):
     """
     if b is None:
         b = a
+        if isinstance(a, QobjEvoFunc):
+            return a._lindblad_dissipator(chi)
     ad_b = a.dag() * b
     if chi:
         D = (
@@ -444,3 +454,4 @@ def reshuffle(q_oper):
 
 
 from .qobjevo import QobjEvo
+from .qobjevofunc import QobjEvoFunc

@@ -35,19 +35,12 @@ for function returning Qobj.
 """
 __all__ = ['QobjEvoFunc']
 
-from qutip.qobj import Qobj
-from qutip.qobjevo import QobjEvo
-import qutip.settings as qset
-from types import FunctionType, BuiltinFunctionType
+from .qobj import Qobj
+from .qobjevo import QobjEvo
 import numpy as np
-from qutip.cy.spmatfuncs import cy_expect_rho_vec, cy_expect_psi, spmv
-from qutip.cy.cqobjevo import CQobjFunc
-from qutip.superoperator import spre, spost, liouvillian, lindblad_dissipator
-
-import pickle
-import sys
-import scipy
-import os
+from .cy.cqobjevo import CQobjFunc
+from .superoperator import *
+from .tensor import tensor
 
 
 class QobjEvoFunc(QobjEvo):
@@ -63,31 +56,10 @@ class QobjEvoFunc(QobjEvo):
     constructed from a function that return a Qobj from time and extra
     arguments.
 
-    The signature of the function must be one of
-    - f(t)
-    - f(t, args)
-    - f(t, **kwargs)
-    - f(t, state, args)  -- for backward compatibility, to be deprecated --
+    The signature of the function must be
+    - f(t, args) -> Qobj
 
-    args is a dict of (name:object). The name must be a valid variables string.
-    Some solvers support arguments that update at each call:
-    sesolve, mesolve, mcsolve:
-        state can be obtained with:
-            "state_vec":psi0, args["state_vec"] = state as 1D np.ndarray
-            "state_mat":psi0, args["state_mat"] = state as 2D np.ndarray
-            "state":psi0, args["state"] = state as Qobj
-
-            This Qobj is the initial value.
-
-        expectation values:
-            "expect_op_n":0, args["expect_op_n"] = expect(e_ops[int(n)], state)
-            expect is <phi|O|psi> or tr(state * O) depending on state
-            dimensions.
-
-    mcsolve:
-        collapse can be obtained with:
-            "collapse":list => args[name] == list of collapse
-            each collapse will be appended to the list as (time, which c_ops)
+    args is a dict of (key: object). The keys must be a valid variables string.
 
     Parameters
     ----------
@@ -103,30 +75,12 @@ class QobjEvoFunc(QobjEvo):
         If Q_object is already a QobjEvo, return a copy.
 
     tlist : array_like
-        List of times at which the numpy-array coefficients are applied. Times
-        must be equidistant and start from 0.
-
-    state : Qobj
-        First state to use if the state is used for args.
-
-    e_ops : list of Qobj
-        Operators from which args can be build.
-        args["expect_op_0"] = expect(e_ops[0], state)
+        Not unsed, to match QobjEvo signature
 
     Attributes
     ----------
     cte : Qobj
         Constant part of the QobjEvo
-
-    ops : list
-        List of Qobj and the coefficients.
-        [(Qobj, coefficient as a function, original coefficient,
-            type, local arguments ), ... ]
-        type :
-            1: function
-            2: string
-            3: np.array
-            4: Cubic_Spline
 
     args : map
         arguments of the coefficients
@@ -134,10 +88,7 @@ class QobjEvoFunc(QobjEvo):
     tlist : array_like
         List of times at which the numpy-array coefficients are applied.
 
-    compiled : int
-        Has the cython version of the QobjEvo been created
-
-    compiled_qobjevo : cy_qobj (CQobjCte or CQobjEvoTd)
+    compiled_qobjevo : cy_qobj
         Cython version of the QobjEvo
 
     dummy_cte : bool
@@ -145,15 +96,6 @@ class QobjEvoFunc(QobjEvo):
 
     const : bool
         Indicates if quantum object is Constant
-
-    type : int
-        information about the type of coefficient
-            "string", "func", "array",
-            "spline", "mixed_callable", "mixed_compilable"
-
-    num_obj : int
-        number of Qobj in the QobjEvo : len(ops) + (1 if not dummy_cte)
-
 
     Methods
     -------
@@ -229,8 +171,7 @@ class QobjEvoFunc(QobjEvo):
     to_list():
         Return the time-dependent quantum object as a list
     """
-    def __init__(self, Q_object=[], args={}, copy=True,
-                 tlist=None, state=None, e_ops=[]):
+    def __init__(self, Q_object=[], args={}, copy=True, tlist=None):
         if isinstance(Q_object, QobjEvoFunc):
             if copy:
                 self._inplace_copy(Q_object)
@@ -239,9 +180,18 @@ class QobjEvoFunc(QobjEvo):
             if args:
                 self.arguments(args, state, e_ops)
             return
+
+        if not callable(Q_object):
+            raise TypeError("expected a function")
+        self.func = Q_object
+        self.cte = self.func(0, args)
+        if not isinstance(self.cte, Qobj):
+            raise TypeError("QobjEvoFunc require a "
+                            "function returning a Qobj")
+
         self.args = args.copy() if copy else args
 
-        self.compiled_qobjevo = None
+        self.compiled_qobjevo = CQobjFunc(self)
         self.operation_stack = []
         self.shifted = False
         self.const = False
@@ -250,20 +200,7 @@ class QobjEvoFunc(QobjEvo):
         self.coeff_get = None
         self.tlist = None
         self.omp = 0
-        self.num_obj = 1
         self.dummy_cte = True
-        self.type = ""
-
-        if not callable(Q_object):
-            raise TypeError("expected a function")
-        self._args_checks(state, e_ops)
-
-        self.func = Q_object
-        # Let Q_object call raise an error if wrong definition
-        self.cte = self.func(0, self.args)
-        if not isinstance(self.cte, Qobj):
-            raise TypeError("QobjEvoFunc require a "
-                            "function returning a Qobj")
 
     def __del__(self):
         pass
@@ -306,7 +243,6 @@ class QobjEvoFunc(QobjEvo):
         self.cte = other.cte
         self.args = other.args.copy()
         self.operation_stack = [oper.copy() for oper in other.operation_stack]
-        self.type = other.type
         self.shifted = other.shifted
         self.func = other.func
 
@@ -463,13 +399,6 @@ class QobjEvoFunc(QobjEvo):
         self._check_validity()
         return res
 
-    def _liouvillian(self, c_ops=[], chi=None):
-        res = self.copy()
-        c_ops = [qobjevo_maker(c_op) for c_op in c_ops]
-        res.operation_stack.append(_Block_liouvillian(c_ops, chi))
-        self._check_validity()
-        return res
-
     def _lindblad_dissipator(self, chi=0):
         res = self.copy()
         chi = 0 if chi is None else chi
@@ -527,12 +456,14 @@ class QobjEvoFunc(QobjEvo):
         """
         Apply function to each Qobj contribution.
         """
+        if function is spre:
+            return self._spre
+        if function is spost:
+            return self._spost
+
         res = self.copy()
         res.operation_stack.append(_Block_apply(function, args, kw_args))
         return res
-
-    def _compile(self, code=False, matched=False, dense=False):
-        self.compiled_qobjevo = CQobjFunc(self)
 
 
 class _Block_transform:
@@ -569,16 +500,6 @@ class _Block_rmul(_Block_transform):
         return self.other * obj
 
 
-class _Block_tensor_l(_Block_transform):
-    def __call__(self, obj, t, args={}):
-        return tensor(obj, self.other)
-
-
-class _Block_tensor_r(_Block_transform):
-    def __call__(self, obj, t, args={}):
-        return tensor(self.other, obj)
-
-
 class _Block_Sum_Qoe(_Block_transform):
     def __call__(self, obj, t, args={}):
         return obj + self.other(t, args=args)
@@ -592,6 +513,20 @@ class _Block_mul_Qoe(_Block_transform):
 class _Block_rmul_Qoe(_Block_transform):
     def __call__(self, obj, t, args={}):
         return self.other(t, args=args) * obj
+
+
+class _Block_tensor_l(_Block_transform):
+    def __call__(self, obj, t, args={}):
+        if isinstance(self.other, QobjEvo):
+            return tensor(obj, self.other(t, args))
+        return tensor(obj, self.other)
+
+
+class _Block_tensor_r(_Block_transform):
+    def __call__(self, obj, t, args={}):
+        if isinstance(self.other, QobjEvo):
+            return tensor(self.other(t, args), obj)
+        return tensor(self.other, obj)
 
 
 class _Block_trans(_Block_transform):

@@ -39,6 +39,7 @@ __all__ = ['mesolve', 'MeSolver']
 
 import numpy as np
 from .. import ( Qobj, QobjEvo, isket, issuper, liouvillian, ket2dm)
+from ..core.qobjevofunc import QobjEvoFunc
 from .solver import Solver
 from .options import SolverOptions
 from .sesolve import sesolve
@@ -230,7 +231,7 @@ class MeSolver(Solver):
         elif isinstance(H, (list, Qobj)):
             H = QobjEvo(H, args=args, tlist=times)
         elif callable(H):
-            raise NotImplementedError
+            H = QobjEvoFunc(H, args=args)
         else:
             raise ValueError("Invalid Hamiltonian")
 
@@ -241,7 +242,7 @@ class MeSolver(Solver):
             elif isinstance(op, (list, Qobj)):
                 c_evos.append(QobjEvo(op, args=args, tlist=times))
             elif callable(op):
-                raise NotImplementedError
+                c_evos.append(QobjEvoFunc(op, args=args))
             else:
                 raise ValueError("Invalid Hamiltonian")
         self.system = liouvillian(H, c_evos)

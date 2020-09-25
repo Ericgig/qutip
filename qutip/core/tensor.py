@@ -89,8 +89,15 @@ shape = [4, 4], type = oper, isHerm = True
     if not all(isinstance(q, (Qobj, QobjEvo)) for q in args):
         raise TypeError("requires Qobj or QobjEvo operands")
     if any(isinstance(q, QobjEvo) for q in args):
+        # First make tensor from pairs only
         if len(args) >= 3:
             return tensor(args[0], tensor(args[1:]))
+        # QobjEvoFunc: Add to operation stack
+        if instances(args[0], QobjEvoFunc):
+            return args[0]._tensor(args[1])
+        if instances(args[1], QobjEvoFunc):
+            return args[1]._tensor_left(args[0])
+
         left = args[0]
         right = args[1]
         if isinstance(left, Qobj):

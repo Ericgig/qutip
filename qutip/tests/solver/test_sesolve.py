@@ -65,10 +65,10 @@ class TestSeSolve():
         [pytest.param(H1,
                       lambda t, args: t,
                       id='const_H'),
-        # pytest.param(lambda t, args: H1 * np.exp(-args['alpha'] * t),
-        #              lambda t, args: ((1 - np.exp(-args['alpha'] * t))
-        #                               / args['alpha']),
-        #              id='func_H'),
+         pytest.param(lambda t, args: np.pi * sigmax() * np.exp(-args['alpha'] * t),
+                      lambda t, args: ((1 - np.exp(-args['alpha'] * t))
+                                       / args['alpha']),
+                      id='func_H'),
          pytest.param([[H1, lambda t, args: np.exp(-args['alpha'] * t)]],
                       lambda t, args: ((1 - np.exp(-args['alpha'] * t))
                                        / args['alpha']),
@@ -162,17 +162,16 @@ class TestSeSolve():
         np.testing.assert_allclose(sy, sy_analytic, atol=tol)
         np.testing.assert_allclose(sz, sz_analytic, atol=tol)
 
-
     @pytest.mark.parametrize('normalize',
                              [True, False], ids=['Normalized', ''])
     @pytest.mark.parametrize(['H', 'args'],
         [pytest.param(H0 + H1,
                       {},
                       id='const_H'),
-        # pytest.param(lambda t, args: args['a'] * t * H0 + \
-        #                              np.cos(args['w_a'] * t) * H1,
-        #              {'a':a, 'w_a':w_a},
-        #              id='func_H'),
+         pytest.param(lambda t, args: args['a'] * t * 0.2 * np.pi * sigmaz() + \
+                                      np.cos(args['w_a'] * t) * np.pi * sigmax(),
+                      {'a':a, 'w_a':w_a},
+                      id='func_H'),
          pytest.param([[H0, lambda t, args: args['a']*t],
                        [H1, lambda t, args: np.cos(args['w_a']*t)]],
                       {'a':a, 'w_a':w_a},
@@ -190,7 +189,7 @@ class TestSeSolve():
         U0 = qeye(2)
         options = SolverOptions(store_states=True, normalize_output=normalize)
         out_s = sesolve(H, psi0, self.tlist, [sigmax(), sigmay(), sigmaz()],
-                        options=options,args=args)
+                        options=options, args=args)
         xs, ys, zs = out_s.expect[0], out_s.expect[1], out_s.expect[2]
         xss = [expect(sigmax(), U) for U in out_s.states]
         yss = [expect(sigmay(), U) for U in out_s.states]

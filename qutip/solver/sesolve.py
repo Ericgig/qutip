@@ -38,6 +38,7 @@ __all__ = ['sesolve', 'SeSolver']
 
 import numpy as np
 from .. import Qobj, QobjEvo
+from ..core.qobjevofunc import QobjEvoFunc
 from .solver import Solver
 from .options import SolverOptions
 
@@ -136,7 +137,7 @@ class SeSolver(Solver):
             H = QobjEvo(H, args=args, tlist=times)
             self.system = -1j*H
         elif callable(H):
-            raise NotImplementedError
+            self.system = -1j*QobjEvoFunc(H, args=args)
         else:
             raise ValueError("Invalid Hamiltonian")
         self.evolver = self.get_evolver(options, args, feedback_args)
