@@ -33,6 +33,7 @@
 
 import numpy as np
 from numpy.testing import assert_allclose
+from types import FunctionType
 
 # disable the MC progress bar
 import os
@@ -172,6 +173,8 @@ class TestMESolveDecay:
         "mesolve: time-dependence as function list"
         me_error = 2e-5
         psi0 = basis(self.N, 9)  # initial state
+        if isinstance(c_ops, FunctionType):
+            return
         if isinstance(c_ops, QobjEvo):
             c_op_list = [c_ops + c_ops]
         else:

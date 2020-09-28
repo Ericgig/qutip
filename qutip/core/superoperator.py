@@ -131,6 +131,7 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
         else:
             L = H
         data = L.cte.data * 0
+        data_empty = True
 
     elif isinstance(H, QobjEvo):
         td = True
@@ -139,6 +140,7 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
         else:
             L = H
         data = L.cte.data
+        data_empty = False
         L.cte *= 0
 
     elif isinstance(H, Qobj):
@@ -148,10 +150,13 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
                              scale=1j)
         else:
             data = H.data
+        data_empty = False
     else:
         data = _data.zeros(*sop_shape)
+        data_empty = True
 
     td_c_ops = []
+
     for idx, c_op in enumerate(c_ops):
         if isinstance(c_op, QobjEvo):
             td = True
@@ -178,6 +183,7 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
             cdc = cd @ c
             data -= _data.kron(0.5*spI, cdc)
             data -= _data.kron(cdc.transpose(), 0.5*spI)
+        data_empty = False
 
     if data_only and not td:
         return data
@@ -197,7 +203,7 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
                              type='super',
                              superrep='super',
                              copy=False))
-        else:
+        elif not data_empty:
             L += Qobj(data,
                       dims=sop_dims,
                       type='super',

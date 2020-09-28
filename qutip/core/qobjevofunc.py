@@ -85,13 +85,8 @@ class QobjEvoFunc(QobjEvo):
     args : map
         arguments of the coefficients
 
-    tlist : array_like
-        List of times at which the numpy-array coefficients are applied.
-
     compiled_qobjevo : cy_qobj
         Cython version of the QobjEvo
-
-    dummy_cte : bool
         is self.cte a dummy Qobj
 
     const : bool
@@ -174,7 +169,14 @@ class QobjEvoFunc(QobjEvo):
     def __init__(self, Q_object=[], args={}, copy=True, tlist=None):
         if isinstance(Q_object, QobjEvoFunc):
             if copy:
-                self._inplace_copy(Q_object)
+                self.cte = Q_object.cte
+                self.args = Q_object.args.copy()
+                self.operation_stack = [oper.copy()
+                                        for oper in Q_object.operation_stack]
+                self.shifted = Q_object.shifted
+                self.func = Q_object.func
+                self.const = False
+                self.compiled_qobjevo = CQobjFunc(self)
             else:
                 self.__dict__ = Q_object.__dict__
             if args:
@@ -195,12 +197,6 @@ class QobjEvoFunc(QobjEvo):
         self.operation_stack = []
         self.shifted = False
         self.const = False
-
-        # Dummy attributes from QobjEvo
-        self.coeff_get = None
-        self.tlist = None
-        self.omp = 0
-        self.dummy_cte = True
 
     def __del__(self):
         pass
@@ -235,16 +231,10 @@ class QobjEvoFunc(QobjEvo):
     def copy(self):
         new = QobjEvoFunc.__new__(QobjEvoFunc)
         new.__dict__ = self.__dict__.copy()
+        new.compiled_qobjevo = CQobjFunc(new)
         new.args = self.args.copy()
         new.operation_stack = [oper.copy() for oper in self.operation_stack]
         return new
-
-    def _inplace_copy(self, other):
-        self.cte = other.cte
-        self.args = other.args.copy()
-        self.operation_stack = [oper.copy() for oper in other.operation_stack]
-        self.shifted = other.shifted
-        self.func = other.func
 
     def arguments(self, new_args, state=None, e_ops=[]):
         if not isinstance(new_args, dict):
@@ -378,46 +368,46 @@ class QobjEvoFunc(QobjEvo):
     def _tensor(self, other):
         res = self.copy()
         res.operation_stack.append(_Block_tensor_r())
-        self._check_validity()
+        res._check_validity()
         return res
 
     def _tensor_left(self, other):
         res = self.copy()
         res.operation_stack.append(_Block_tensor_l())
-        self._check_validity()
+        res._check_validity()
         return res
 
     def _spre(self):
         res = self.copy()
         res.operation_stack.append(_Block_pre())
-        self._check_validity()
+        res._check_validity()
         return res
 
     def _spost(self):
         res = self.copy()
         res.operation_stack.append(_Block_post())
-        self._check_validity()
+        res._check_validity()
         return res
 
     def _lindblad_dissipator(self, chi=0):
         res = self.copy()
         chi = 0 if chi is None else chi
         res.operation_stack.append(_Block_lindblad_dissipator(chi))
-        self._check_validity()
+        res._check_validity()
         return res
 
     def _prespostdag(self):
         """return spre(a) * spost(a.dag()) """
         res = self.copy()
         res.operation_stack.append(_Block_prespostdag())
-        self._check_validity()
+        res._check_validity()
         return res
 
     def _liouvillian_h(self):
         """return 1j * (spre(a) - spost(a)) """
         res = self.copy()
         res.operation_stack.append(_Block_liouvillian_H())
-        self._check_validity()
+        res._check_validity()
         return res
 
     def _shift(self):
@@ -447,6 +437,7 @@ class QobjEvoFunc(QobjEvo):
     def _check_validity(self):
         try:
             self.cte = self.__call__(0)
+            self.compiled_qobjevo.reset_shape()
         except Exception:
             return False
         return True
@@ -463,6 +454,7 @@ class QobjEvoFunc(QobjEvo):
 
         res = self.copy()
         res.operation_stack.append(_Block_apply(function, args, kw_args))
+        res._check_validity()
         return res
 
 

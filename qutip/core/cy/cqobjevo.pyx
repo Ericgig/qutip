@@ -170,9 +170,12 @@ cdef class CQobjFunc(CQobjEvo):
     cdef object base
     def __init__(self, base):
         self.base = base
-        self.shape = base.shape
-        self.dims = base.dims
-        self.issuper = base.issuper
+        self.reset_shape()
+
+    def reset_shape(self):
+        self.shape = self.base.shape
+        self.dims = self.base.dims
+        self.issuper = self.base.issuper
 
     def call(self, double t, int data=0):
         return self.base(t, data=data)

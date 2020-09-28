@@ -233,6 +233,8 @@ class QobjEvo:
     """
     def __init__(self, Q_object=[], args={}, copy=True,
                  tlist=None, state0=None, e_ops=[]):
+        if isinstance(Q_object, QobjEvoFunc):
+            raise TypeError
         if isinstance(Q_object, QobjEvo):
             if copy:
                 self._inplace_copy(Q_object)
@@ -404,16 +406,22 @@ class QobjEvo:
 
     # Math function
     def __add__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         res = self.copy()
         res += other
         return res
 
     def __radd__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         res = self.copy()
         res += other
         return res
 
     def __iadd__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         if isinstance(other, QobjEvo):
             self.cte += other.cte
             l = len(self.ops)
@@ -431,20 +439,28 @@ class QobjEvo:
         return self
 
     def __sub__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         res = self.copy()
         res -= other
         return res
 
     def __rsub__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         res = -self.copy()
         res += other
         return res
 
     def __isub__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         self += (-other)
         return self
 
     def __matmul__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         res = self.copy()
         res *= other
         return res
@@ -462,11 +478,15 @@ class QobjEvo:
             return res
 
     def __imatmul__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         res = self.copy()
         res *= other
         return res
 
     def __mul__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         res = self.copy()
         res *= other
         return res
@@ -484,6 +504,8 @@ class QobjEvo:
             return res
 
     def __imul__(self, other):
+        if isinstance(other, QobjEvoFunc):
+            return NotImplemented
         if isinstance(other, Qobj) or isinstance(other, numbers.Number):
             self.cte *= other
             for op in self.ops:
@@ -825,3 +847,5 @@ class QobjEvo:
     def _compile(self, code=False, matched=False, dense=False):
         self.tidyup()
         self.compiled_qobjevo = CQobjEvo(self.cte, self.ops)
+
+from .qobjevofunc import QobjEvoFunc
