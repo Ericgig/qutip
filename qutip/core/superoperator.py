@@ -52,7 +52,7 @@ def _map_over_compound_operators(f):
     """
     @functools.wraps(f)
     def out(qobj):
-        if isinstance(qobj, QobjEvo):
+        if isinstance(qobj, (QobjEvo, QobjEvoFunc)):
             return qobj.apply(f)
         if not isinstance(qobj, Qobj):
             raise TypeError("expected a quantum object")
@@ -80,14 +80,14 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
         Liouvillian superoperator.
 
     """
-    if isinstance(c_ops, (Qobj, QobjEvo)):
+    if isinstance(c_ops, (Qobj, QobjEvo, QobjEvoFunc)):
         c_ops = [c_ops]
     if chi and len(chi) != len(c_ops):
         raise ValueError('chi must be a list with same length as c_ops')
 
     h = None
     if H is not None:
-        if isinstance(H, QobjEvo):
+        if isinstance(H, (QobjEvo, QobjEvoFunc)):
             h = H.cte
         else:
             h = H
@@ -158,7 +158,7 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
     td_c_ops = []
 
     for idx, c_op in enumerate(c_ops):
-        if isinstance(c_op, QobjEvo):
+        if isinstance(c_op, (QobjEvo, QobjEvoFunc)):
             td = True
             if c_op.const:
                 c_ = c_op.cte
@@ -420,7 +420,10 @@ def sprepost(A, B):
     super : Qobj or QobjEvo
         Superoperator formed from input quantum objects.
     """
-    if isinstance(A, QobjEvo) or isinstance(B, QobjEvo):
+    if (
+        isinstance(A, (QobjEvo, QobjEvoFunc)) or
+        isinstance(B, (QobjEvo, QobjEvoFunc))
+    ):
         return spre(A) * spost(B)
     dims = [[_drop_projected_dims(A.dims[0]),
              _drop_projected_dims(B.dims[1])],

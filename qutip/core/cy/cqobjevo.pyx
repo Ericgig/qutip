@@ -206,12 +206,12 @@ cdef class CQobjFunc(CQobjEvo):
                       else column_stack_dense(matrix, inplace=True))
             _expect = (expect_super_csr if isinstance(matrix, CSR)
                        else expect_super_csr_dense)
-            out = _expect(self.constant, matrix)
+            out = _expect(objdata, matrix)
             if isinstance(matrix, Dense):
                 column_unstack_dense(matrix, nrow, inplace=True)
         else:
             _expect = expect_csr if isinstance(matrix, CSR) else expect_csr_dense
-            out = _expect(self.constant, matrix)
+            out = _expect(objdata, matrix)
         # end shim
         return out
 

@@ -601,6 +601,10 @@ class TestMESolveStepFuncCoeff:
     A Test class for using time-dependent array coefficients
     as step functions instead of doing interpolation
     """
+    # Runge-Kutta method (dop853) behave better with step function evolution
+    # than multi-step methods (adams, qutip 4's default)
+    options = SolverOptions(method="dop853")
+
     def python_coeff(self, t, args):
         if t < np.pi/2:
             return 1.
@@ -615,9 +619,9 @@ class TestMESolveStepFuncCoeff:
         tlist = np.array([0, np.pi/2])
         qu = QobjEvo([[sigmax(), self.python_coeff]],
                      tlist=tlist, args={"_step_func_coeff": 1})
-        result = mesolve(qu, rho0=rho0, tlist=tlist)
+        result = mesolve(qu, rho0=rho0, tlist=tlist, options=self.options)
         assert_allclose(
-            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-5)
+            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-6)
 
     def test_array_cte_coeff(self):
         """
@@ -628,9 +632,9 @@ class TestMESolveStepFuncCoeff:
         npcoeff = np.array([0.25, 0.75, 0.75])
         qu = QobjEvo([[sigmax(), npcoeff]],
                      tlist=tlist, args={"_step_func_coeff": 1})
-        result = mesolve(qu, rho0=rho0, tlist=tlist)
+        result = mesolve(qu, rho0=rho0, tlist=tlist, options=self.options)
         assert_allclose(
-            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-5)
+            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-6)
 
     def test_array_t_coeff(self):
         """
@@ -641,9 +645,9 @@ class TestMESolveStepFuncCoeff:
         npcoeff = np.array([0.5, 0.25, 0.25])
         qu = QobjEvo([[sigmax(), npcoeff]],
                      tlist=tlist, args={"_step_func_coeff": 1})
-        result = mesolve(qu, rho0=rho0, tlist=tlist)
+        result = mesolve(qu, rho0=rho0, tlist=tlist, options=self.options)
         assert_allclose(
-            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=2.e-6)
+            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-6)
 
     def test_array_str_coeff(self):
         """
@@ -658,9 +662,9 @@ class TestMESolveStepFuncCoeff:
         qu = QobjEvo(
             [[sigmax(), npcoeff1], [sigmax(), strcoeff], [sigmax(), npcoeff2]],
             tlist=tlist, args={"_step_func_coeff": 1})
-        result = mesolve(qu, rho0=rho0, tlist=tlist)
+        result = mesolve(qu, rho0=rho0, tlist=tlist, options=self.options)
         assert_allclose(
-            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=2.e-5)
+            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-6)
 
     def test_array_str_py_coeff(self):
         """
@@ -676,6 +680,6 @@ class TestMESolveStepFuncCoeff:
             [[sigmax(), npcoeff1], [sigmax(), npcoeff2],
              [sigmax(), self.python_coeff], [sigmax(), strcoeff]],
             tlist=tlist, args={"_step_func_coeff": 1})
-        result = mesolve(qu, rho0=rho0, tlist=tlist)
+        result = mesolve(qu, rho0=rho0, tlist=tlist, options=self.options)
         assert_allclose(
-            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=2.e-5)
+            fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-6)

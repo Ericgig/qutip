@@ -43,7 +43,7 @@ import os
 import sys
 import signal
 from qutip.settings import settings as qset
-from qutip.ui.progressbar import get_progess_bar
+from qutip.ui.progressbar import BaseProgressBar, TextProgressBar
 
 
 if sys.platform == 'darwin':
@@ -228,9 +228,12 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={},
     if 'num_cpus' in kwargs:
         kw['num_cpus'] = kwargs['num_cpus']
 
-    progress_bar = get_progess_bar(progress_bar)
-    progress_bar.start(len(values), **progress_bar_kwargs)
-    nfinished = [0]
+    try:
+        progress_bar = kwargs['progress_bar']
+        if progress_bar is True:
+            progress_bar = TextProgressBar()
+    except:
+        progress_bar = BaseProgressBar()
 
     try:
         pool = Pool(processes=kw['num_cpus'])

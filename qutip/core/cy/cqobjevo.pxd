@@ -39,10 +39,10 @@ from qutip.core.data cimport CSR, Dense, Data
 
 cdef class CQobjEvo:
     cdef readonly (idxint, idxint) shape
-    cdef object dims
+    cdef readonly object dims
     cdef str type
     cdef str superrep
-    cdef bint issuper
+    cdef readonly bint issuper
     cdef size_t n_ops
 
     cdef CSR constant

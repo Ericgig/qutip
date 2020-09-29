@@ -44,7 +44,7 @@ import sys
 import time
 import signal
 from qutip.settings import settings as qset
-from qutip.ui.progressbar import BaseProgressBar, TextProgressBar
+from qutip.ui.progressbar import get_progess_bar
 
 
 if sys.platform == 'darwin':
@@ -53,7 +53,8 @@ else:
     Pool = multiprocessing.Pool
 
 
-def serial_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
+def serial_map(task, values, task_args=tuple(), task_kwargs={},
+               progress_bar=None, progress_bar_kwargs={}, **kwargs):
     """
     Serial mapping function with the same call signature as parallel_map, for
     easy switching between serial and parallel execution. This
@@ -85,14 +86,9 @@ def serial_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
         value in ``values``.
 
     """
-    try:
-        progress_bar = kwargs['progress_bar']
-        if progress_bar is True:
-            progress_bar = TextProgressBar()
-    except:
-        progress_bar = BaseProgressBar()
+    progress_bar = get_progess_bar(progress_bar)
+    progress_bar.start(len(values), progress_bar_kwargs)
 
-    progress_bar.start(len(values))
     results = []
     for n, value in enumerate(values):
         progress_bar.update(n)
@@ -103,7 +99,8 @@ def serial_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     return results
 
 
-def parallel_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
+def parallel_map(task, values, task_args=tuple(), task_kwargs={},
+                 progress_bar=None, progress_bar_kwargs={}, **kwargs):
     """
     Parallel execution of a mapping of `values` to the function `task`. This
     is functionally equivalent to::
@@ -137,25 +134,14 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     if 'num_cpus' in kwargs:
         kw['num_cpus'] = kwargs['num_cpus']
 
-    try:
-        progress_bar = kwargs['progress_bar']
-        if progress_bar is True:
-            progress_bar = TextProgressBar()
-    except:
-        progress_bar = BaseProgressBar()
-
-    progress_bar.start(len(values))
-    nfinished = [0]
-
-    def _update_progress_bar(x):
-        nfinished[0] += 1
-        progress_bar.update(nfinished[0])
+    progress_bar = get_progess_bar(progress_bar)
+    progress_bar.start(len(values), progress_bar_kwargs)
 
     try:
         pool = Pool(processes=kw['num_cpus'])
 
         async_res = [pool.apply_async(task, (value,) + task_args, task_kwargs,
-                                      _update_progress_bar)
+                                      progress_bar.update)
                      for value in values]
 
         while not all([ar.ready() for ar in async_res]):
@@ -176,7 +162,8 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     return [ar.get() for ar in async_res]
 
 
-def loky_pmap(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
+def loky_pmap(task, values, task_args=tuple(), task_kwargs={},
+              progress_bar=None, progress_bar_kwargs={}, **kwargs):
     """
     Parallel execution of a mapping of `values` to the function `task`. This
     is functionally equivalent to::
@@ -212,14 +199,8 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     if 'num_cpus' in kwargs:
         kw['num_cpus'] = kwargs['num_cpus']
 
-    try:
-        progress_bar = kwargs['progress_bar']
-        if progress_bar is True:
-            progress_bar = TextProgressBar()
-    except:
-        progress_bar = BaseProgressBar()
-
-    progress_bar.start(len(values))
+    progress_bar = get_progess_bar(progress_bar)
+    progress_bar.start(len(values), progress_bar_kwargs)
 
     executor = get_reusable_executor(max_workers=kw['num_cpus'])
     end_time = kw['timeout'] + time.time()

@@ -36,14 +36,13 @@ for function returning Qobj.
 __all__ = ['QobjEvoFunc']
 
 from .qobj import Qobj
-from .qobjevo import QobjEvo
+from .qobjevo import QobjEvo, QobjEvoBase
 import numpy as np
 from .cy.cqobjevo import CQobjFunc
 from .superoperator import *
-from .tensor import tensor
 
 
-class QobjEvoFunc(QobjEvo):
+class QobjEvoFunc(QobjEvoBase):
     """A class for representing time-dependent quantum objects,
     such as quantum operators and states from a function or callable.
 
@@ -130,46 +129,25 @@ class QobjEvoFunc(QobjEvo):
         Apply the function f to every Qobj. f(Qobj) -> Qobj
         Return a modified QobjEvo and let the original one untouched
 
-    tidyup(atol=1e-12)
-        Removes small elements from quantum object.
-
-    compress():
-        Merge ops which are based on the same quantum object and coeff type.
-
-    compile(code=False, matched=False, dense=False, omp=0):
-        Create the associated cython object for faster usage.
-        code: return the code generated for compilation of the strings.
-        matched: the compiled object use sparse matrix with matching indices.
-                    (experimental, no real advantage)
-        dense: the compiled object use dense matrix.
-        omp: (int) number of thread: the compiled object use spmvpy_openmp.
-
     __call__(t, data=False, state=None, args={}):
         Return the Qobj at time t.
-        *Faster after compilation
 
-    mul_mat(t, mat):
+    mul(t, mat):
         Product of this at t time with the dense matrix mat.
-        *Faster after compilation
 
     mul_vec(t, psi):
         Apply the quantum object (if operator, no check) to psi.
         More generaly, return the product of the object at t with psi.
-        *Faster after compilation
 
     expect(t, psi, herm=False):
         Calculates the expectation value for the quantum object (if operator,
             no check) and state psi.
         Return only the real part if herm.
-        *Faster after compilation
-
-    to_list():
-        Return the time-dependent quantum object as a list
     """
-    def __init__(self, Q_object=[], args={}, copy=True, tlist=None):
+    def __init__(self, Q_object=[], args={}, copy=True):
         if isinstance(Q_object, QobjEvoFunc):
             if copy:
-                self.cte = Q_object.cte
+                self.cte = Q_object.cte.copy()
                 self.args = Q_object.args.copy()
                 self.operation_stack = [oper.copy()
                                         for oper in Q_object.operation_stack]
@@ -198,16 +176,11 @@ class QobjEvoFunc(QobjEvo):
         self.shifted = False
         self.const = False
 
-    def __del__(self):
-        pass
-
-    def __call__(self, t, data=False, state=None, args={}):
+    def __call__(self, t, args={}, data=False):
         try:
             t = float(t)
         except Exception as e:
             raise TypeError("t should be a real scalar.") from e
-        if state is not None:
-            self._dynamics_args_update(t, state)
         out = self._get_qobj(t, args)
         if data:
             out = out.data
@@ -233,6 +206,7 @@ class QobjEvoFunc(QobjEvo):
         new.__dict__ = self.__dict__.copy()
         new.compiled_qobjevo = CQobjFunc(new)
         new.args = self.args.copy()
+        new.cte = self.cte.copy()
         new.operation_stack = [oper.copy() for oper in self.operation_stack]
         return new
 
@@ -240,9 +214,6 @@ class QobjEvoFunc(QobjEvo):
         if not isinstance(new_args, dict):
             raise TypeError("The new args must be in a dict")
         self.args.update(new_args)
-
-    def to_list(self):
-        return self.func
 
     # Math function
     def __add__(self, other):
@@ -256,19 +227,15 @@ class QobjEvoFunc(QobjEvo):
         return res
 
     def __iadd__(self, other):
-        if isinstance(other, QobjEvo):
+        if isinstance(other, (QobjEvo, QobjEvoFunc)):
             self.operation_stack.append(_Block_Sum_Qoe(other))
         elif isinstance(other, Qobj):
             self.operation_stack.append(_Block_Sum(other))
         else:
-            try:
-                other = Qobj(other)
-                self.operation_stack.append(_Block_Sum(other))
-            except Exception:
-                return NotImplemented
+            self.operation_stack.append(_Block_Sum(other))
         if not self._check_validity():
             self.operation_stack = self.operation_stack[:-1]
-            raise Exception
+            return NotImplemented
         return self
 
     def __sub__(self, other):
@@ -292,7 +259,7 @@ class QobjEvoFunc(QobjEvo):
 
     def __rmul__(self, other):
         res = self.copy()
-        if isinstance(other, QobjEvo):
+        if isinstance(other, (QobjEvo, QobjEvoFunc)):
             res.operation_stack.append(_Block_rmul_Qoe(other))
         else:
             res.operation_stack.append(_Block_rmul(other))
@@ -302,7 +269,7 @@ class QobjEvoFunc(QobjEvo):
         return res
 
     def __imul__(self, other):
-        if isinstance(other, QobjEvo):
+        if isinstance(other, (QobjEvo, QobjEvoFunc)):
             self.operation_stack.append(_Block_mul_Qoe(other))
         else:
             self.operation_stack.append(_Block_mul(other))
@@ -310,6 +277,34 @@ class QobjEvoFunc(QobjEvo):
             self.operation_stack = self.operation_stack[:-1]
             raise Exception
         return self
+
+    def __matmul__(self, other):
+        res = self.copy()
+        res *= other
+        return res
+
+    def __rmatmul__(self, other):
+        res = self.copy()
+        if isinstance(other, (QobjEvo, QobjEvoFunc)):
+            res.operation_stack.append(_Block_rmul_Qoe(other))
+        else:
+            res.operation_stack.append(_Block_rmul(other))
+        if not self._check_validity():
+            self.operation_stack = self.operation_stack[:-1]
+            raise Exception
+        return res
+
+
+    def __imatmul__(self, other):
+        if isinstance(other, (QobjEvo, QobjEvoFunc)):
+            self.operation_stack.append(_Block_mul_Qoe(other))
+        else:
+            self.operation_stack.append(_Block_mul(other))
+        if not self._check_validity():
+            self.operation_stack = self.operation_stack[:-1]
+            raise Exception
+        return self
+
 
     def __div__(self, other):
         if isinstance(other, (int, float, complex,
@@ -367,13 +362,13 @@ class QobjEvoFunc(QobjEvo):
 
     def _tensor(self, other):
         res = self.copy()
-        res.operation_stack.append(_Block_tensor_r())
+        res.operation_stack.append(_Block_tensor_l(other))
         res._check_validity()
         return res
 
     def _tensor_left(self, other):
         res = self.copy()
-        res.operation_stack.append(_Block_tensor_l())
+        res.operation_stack.append(_Block_tensor_r(other))
         res._check_validity()
         return res
 
@@ -509,14 +504,14 @@ class _Block_rmul_Qoe(_Block_transform):
 
 class _Block_tensor_l(_Block_transform):
     def __call__(self, obj, t, args={}):
-        if isinstance(self.other, QobjEvo):
+        if isinstance(self.other, (QobjEvo, QobjEvoFunc)):
             return tensor(obj, self.other(t, args))
         return tensor(obj, self.other)
 
 
 class _Block_tensor_r(_Block_transform):
     def __call__(self, obj, t, args={}):
-        if isinstance(self.other, QobjEvo):
+        if isinstance(self.other, (QobjEvo, QobjEvoFunc)):
             return tensor(self.other(t, args), obj)
         return tensor(self.other, obj)
 
@@ -561,16 +556,6 @@ class _Block_post(_Block_transform):
         return spost(obj)
 
 
-class _Block_liouvillian(_Block_transform):
-    def __init__(self, other, chi):
-        self.other = other
-        self.chi = chi
-
-    def __call__(self, obj, t, args={}):
-        c_ops = [op(t, args) for op in self.other]
-        return liouvillian(obj, c_ops, self.chi)
-
-
 class _Block_liouvillian_H(_Block_transform):
     def __call__(self, obj, t, args={}):
         return -1.0j * (spre(obj) - spost(obj))
@@ -592,3 +577,5 @@ class _Block_apply(_Block_transform):
 
     def __call__(self, obj, t, args={}):
         return self.func(obj, *self.args, **self.kwargs)
+
+from .tensor import tensor

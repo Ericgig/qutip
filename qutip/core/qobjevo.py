@@ -34,23 +34,110 @@
 """
 __all__ = ['QobjEvo']
 
-import functools
 import numbers
-import os
-import re
-from types import FunctionType, BuiltinFunctionType
-
 import numpy as np
-import scipy
-from scipy.interpolate import CubicSpline, interp1d
 
 import qutip
 from .qobj import Qobj
 from .cy.cqobjevo import CQobjEvo
-from .coefficient import coefficient, CompilationOptions
-from .cy.coefficient import Coefficient
-from .superoperator import stack_columns, unstack_columns
+from .coefficient import *
 from . import data as _data
+
+
+class QobjEvoBase:
+    def __init__(self):
+        self.cte = Qobj()
+        self.dummy_cte = True
+        self.const = True
+
+    @property
+    def shape(self):
+        return self.cte.shape
+
+    @property
+    def dims(self):
+        return self.cte.dims
+
+    @property
+    def issuper(self):
+        return self.cte.issuper
+
+    def __call__(self, t, args):
+        return self.cte
+
+    def expect(self, t, state, herm=0):
+        """
+        Expectation value of the operator quantum object at time t
+        for the given state.
+        """
+        if not isinstance(t, numbers.Real):
+            raise TypeError("time needs to be a real scalar")
+        if isinstance(state, Qobj):
+            state = _data.Dense(state.full())
+        elif isinstance(state, np.ndarray):
+            state = _data.dense.fast_from_numpy(state)
+        # TODO: remove shim once dispatch available.
+        elif isinstance(state, _data.CSR):
+            state = _data.Dense(state.to_array())
+        elif isinstance(state, _data.Dense):
+            pass
+        else:
+            raise TypeError("The vector must be an array or Qobj")
+
+        if self.issuper:
+            state = _data.column_stack_dense(state)
+        exp = self.compiled_qobjevo.expect(t, state)
+        return exp.real if herm else exp
+
+    def mul_vec(self, t, vec):
+        """
+        Product of the operator quantum object at time t
+        with the given vector state.
+        """
+        # TODO: mostly used in test to compare with the cqobjevo version.
+        # __mul__ sufficient? remove?
+        # Still used in mcsolve, remove later
+        return self.mul(t, vec)
+
+    def mul(self, t, mat):
+        """
+        Product of the operator quantum object at time t
+        with the given matrix state.
+        """
+        # TODO: Not always fallback to Dense
+        was_Qobj = False
+        was_vec = False
+        if not isinstance(t, (int, float)):
+            raise TypeError("the time need to be a real scalar")
+        if isinstance(mat, Qobj):
+            if self.dims[1] != mat.dims[0]:
+                raise Exception("Dimensions do not fit")
+            was_Qobj = True
+            dims = mat.dims
+            mat = mat.to(_data.Dense).data
+        elif isinstance(mat, np.ndarray):
+            if mat.ndim == 1:
+                # TODO: do this properly.
+                mat = _data.Dense(mat[:, None])
+                was_vec = True
+            elif mat.ndim == 2:
+                mat = _data.Dense(mat)
+            else:
+                raise Exception("The matrice must be 1d or 2d")
+        else:
+            raise TypeError("The vector must be an array or Qobj")
+        if mat.shape[0] != self.shape[1]:
+            raise Exception("The length do not match")
+
+        out = self.compiled_qobjevo.matmul(t, mat)
+
+        if was_Qobj:
+            return Qobj(out, dims=dims)
+        elif was_vec:
+            return out.as_ndarray()[:, 0]
+        else:
+            return out.as_ndarray()
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # object for each time dependent element of the QobjEvo
@@ -62,7 +149,7 @@ class EvoElement:
         self.coeff = coeff
 
 
-class QobjEvo:
+class QobjEvo(QobjEvoBase):
     """A class for representing time-dependent quantum objects,
     such as quantum operators and states.
 
@@ -233,9 +320,10 @@ class QobjEvo:
     """
     def __init__(self, Q_object=[], args={}, copy=True,
                  tlist=None, state0=None, e_ops=[]):
-        if isinstance(Q_object, QobjEvoFunc):
-            raise TypeError
         if isinstance(Q_object, QobjEvo):
+            from .qobjevofunc import QobjEvoFunc
+            if isinstance(Q_object, QobjEvoFunc):
+                raise TypeError
             if copy:
                 self._inplace_copy(Q_object)
             else:
@@ -261,7 +349,7 @@ class QobjEvo:
         if isinstance(Q_object, Qobj):
             self.cte = Q_object
             self.const = True
-        else:
+        elif isinstance(Q_object, list):
             use_step_func = self.args.get("_step_func_coeff", 0)
             for op in Q_object:
                 if isinstance(op, Qobj):
@@ -277,7 +365,8 @@ class QobjEvo:
                                         tlist=tlist,
                                         args=args,
                                         _stepInterpolation=use_step_func,
-                                        compile_opt=CompilationOptions(extra_import=" ")
+                                        compile_opt=CompilationOptions(
+                                            extra_import=" ")
                         )))
 
             if self.cte is None:
@@ -294,20 +383,10 @@ class QobjEvo:
 
             if not self.ops:
                 self.const = True
+        else:
+            raise TypeError("Format not understood")
 
         self._compile()
-
-    @property
-    def shape(self):
-        return self.cte.shape
-
-    @property
-    def dims(self):
-        return self.cte.dims
-
-    @property
-    def issuper(self):
-        return self.cte.issuper
 
     @property
     def tlist(self):
@@ -325,7 +404,7 @@ class QobjEvo:
         # Todo: remove, add deprecationwarning in 4.6.0
         pass
 
-    def __call__(self, t, data=False, args={}):
+    def __call__(self, t, args={}, data=False):
         # TODO: no more data option. Always Qobj
         try:
             t = float(t)
@@ -406,22 +485,18 @@ class QobjEvo:
 
     # Math function
     def __add__(self, other):
-        if isinstance(other, QobjEvoFunc):
+        if not isinstance(other, (Qobj, QobjEvo, numbers.Number)):
             return NotImplemented
         res = self.copy()
         res += other
         return res
 
     def __radd__(self, other):
-        if isinstance(other, QobjEvoFunc):
-            return NotImplemented
         res = self.copy()
         res += other
         return res
 
     def __iadd__(self, other):
-        if isinstance(other, QobjEvoFunc):
-            return NotImplemented
         if isinstance(other, QobjEvo):
             self.cte += other.cte
             l = len(self.ops)
@@ -432,34 +507,36 @@ class QobjEvo:
             self.const = self.const and other.const
             self.dummy_cte = self.dummy_cte and other.dummy_cte
             self.compiled_qobjevo = None
-        else:
+        elif isinstance(other, (Qobj, numbers.Number)):
             self.cte += other
             self.dummy_cte = False
+        else:
+            return NotImplemented
         self._compile()
         return self
 
     def __sub__(self, other):
-        if isinstance(other, QobjEvoFunc):
+        if not isinstance(other, (Qobj, QobjEvo, numbers.Number)):
             return NotImplemented
         res = self.copy()
         res -= other
         return res
 
     def __rsub__(self, other):
-        if isinstance(other, QobjEvoFunc):
+        if not isinstance(other, (Qobj, QobjEvo, numbers.Number)):
             return NotImplemented
         res = -self.copy()
         res += other
         return res
 
     def __isub__(self, other):
-        if isinstance(other, QobjEvoFunc):
+        if not isinstance(other, (Qobj, QobjEvo, numbers.Number)):
             return NotImplemented
         self += (-other)
         return self
 
     def __matmul__(self, other):
-        if isinstance(other, QobjEvoFunc):
+        if not isinstance(other, (Qobj, QobjEvo)):
             return NotImplemented
         res = self.copy()
         res *= other
@@ -478,14 +555,14 @@ class QobjEvo:
             return res
 
     def __imatmul__(self, other):
-        if isinstance(other, QobjEvoFunc):
+        if not isinstance(other, (Qobj, QobjEvo)):
             return NotImplemented
         res = self.copy()
         res *= other
         return res
 
     def __mul__(self, other):
-        if isinstance(other, QobjEvoFunc):
+        if not isinstance(other, (Qobj, numbers.Number, Coefficient, QobjEvo)):
             return NotImplemented
         res = self.copy()
         res *= other
@@ -504,8 +581,6 @@ class QobjEvo:
             return res
 
     def __imul__(self, other):
-        if isinstance(other, QobjEvoFunc):
-            return NotImplemented
         if isinstance(other, Qobj) or isinstance(other, numbers.Number):
             self.cte *= other
             for op in self.ops:
@@ -550,8 +625,7 @@ class QobjEvo:
                 self.dummy_cte = self.dummy_cte and other.dummy_cte
 
         else:
-            raise TypeError("QobjEvo can only be multiplied"
-                            " with QobjEvo, Qobj or numbers")
+            return NotImplemented
         self._compile()
         return self
 
@@ -644,6 +718,35 @@ class QobjEvo:
             op.qobj = op.qobj.tidyup(atol)
         return self
 
+    def permute(self, order):
+        """
+        Permute tensor subspaces of the quantum object
+        """
+        res = self.copy()
+        res.cte = res.cte.permute(order)
+        for op in res.ops:
+            op.qobj = op.qobj.permute(order)
+        return res
+
+    # function to apply custom transformations
+    def apply(self, function, *args, **kw_args):
+        """
+        Apply function to each Qobj contribution.
+        """
+        res = self.copy()
+        cte_res = function(res.cte, *args, **kw_args)
+        if not isinstance(cte_res, Qobj):
+            raise TypeError("The function must return a Qobj")
+        res.cte = cte_res
+        for op in res.ops:
+            op.qobj = function(op.qobj, *args, **kw_args)
+        res._compile()
+        return res
+
+    def _compile(self, code=False, matched=False, dense=False):
+        self.tidyup()
+        self.compiled_qobjevo = CQobjEvo(self.cte, self.ops)
+
     def _compress_make_set(self):
         sets = []
         callable_flags = ["func", "spline"]
@@ -721,131 +824,3 @@ class QobjEvo:
         elif N_fsets < num_ops:
             self._compress_merge_func(fsets)
         self._compile()
-
-    def permute(self, order):
-        """
-        Permute tensor subspaces of the quantum object
-        """
-        res = self.copy()
-        res.cte = res.cte.permute(order)
-        for op in res.ops:
-            op.qobj = op.qobj.permute(order)
-        return res
-
-    # function to apply custom transformations
-    def apply(self, function, *args, **kw_args):
-        """
-        Apply function to each Qobj contribution.
-        """
-        res = self.copy()
-        cte_res = function(res.cte, *args, **kw_args)
-        if not isinstance(cte_res, Qobj):
-            raise TypeError("The function must return a Qobj")
-        res.cte = cte_res
-        for op in res.ops:
-            op.qobj = function(op.qobj, *args, **kw_args)
-        res._compile()
-        return res
-
-    def expect(self, t, state, herm=0):
-        """
-        Expectation value of the operator quantum object at time t
-        for the given state.
-        """
-        if not isinstance(t, numbers.Real):
-            raise TypeError("time needs to be a real scalar")
-        if isinstance(state, Qobj):
-            state = _data.Dense(state.full())
-        elif isinstance(state, np.ndarray):
-            state = _data.dense.fast_from_numpy(state)
-        # TODO: remove shim once dispatch available.
-        elif isinstance(state, _data.CSR):
-            state = _data.Dense(state.to_array())
-        elif isinstance(state, _data.Dense):
-            pass
-        else:
-            raise TypeError("The vector must be an array or Qobj")
-
-        if self.issuper:
-            state = _data.column_stack_dense(state)
-        exp = self.compiled_qobjevo.expect(t, state)
-        return exp.real if herm else exp
-
-    def mul_vec(self, t, vec):
-        """
-        Product of the operator quantum object at time t
-        with the given vector state.
-        """
-        # TODO: mostly used in test to compare with the cqobjevo version.
-        # __mul__ sufficient? remove?
-        # Still used in mcsolve, remove later
-        was_Qobj = False
-        if not isinstance(t, (int, float)):
-            raise TypeError("the time need to be a real scalar")
-        if isinstance(vec, Qobj):
-            if self.dims[1] != vec.dims[0]:
-                raise Exception("Dimensions do not fit")
-            was_Qobj = True
-            dims = vec.dims
-            vec = _data.dense.fast_from_numpy(vec.full())
-        elif isinstance(vec, np.ndarray):
-            if vec.ndim != 1:
-                raise Exception("The vector must be 1d")
-
-            vec = _data.Dense(vec[:, None])
-        else:
-            raise TypeError("The vector must be an array or Qobj")
-        if vec.shape[0] != self.shape[1]:
-            raise Exception("The length do not match")
-
-        out = self.compiled_qobjevo.matmul(t, vec).as_ndarray()[:, 0]
-
-        if was_Qobj:
-            return Qobj(out, dims=dims)
-        else:
-            return out
-
-    def mul(self, t, mat):
-        """
-        Product of the operator quantum object at time t
-        with the given matrix state.
-        """
-        # TODO: Not always fallback to Dense
-        was_Qobj = False
-        was_vec = False
-        if not isinstance(t, (int, float)):
-            raise TypeError("the time need to be a real scalar")
-        if isinstance(mat, Qobj):
-            if self.dims[1] != mat.dims[0]:
-                raise Exception("Dimensions do not fit")
-            was_Qobj = True
-            dims = mat.dims
-            mat = _data.dense.fast_from_numpy(mat.full())
-        elif isinstance(mat, np.ndarray):
-            if mat.ndim == 1:
-                # TODO: do this properly.
-                mat = _data.Dense(mat[:, None])
-                was_vec = True
-            elif mat.ndim == 2:
-                mat = _data.Dense(mat)
-            else:
-                raise Exception("The matrice must be 1d or 2d")
-        else:
-            raise TypeError("The vector must be an array or Qobj")
-        if mat.shape[0] != self.shape[1]:
-            raise Exception("The length do not match")
-
-        out = self.compiled_qobjevo.matmul(t, mat).as_ndarray()
-
-        if was_Qobj:
-            return Qobj(out, dims=dims)
-        elif was_vec:
-            return out[:, 0]
-        else:
-            return out
-
-    def _compile(self, code=False, matched=False, dense=False):
-        self.tidyup()
-        self.compiled_qobjevo = CQobjEvo(self.cte, self.ops)
-
-from .qobjevofunc import QobjEvoFunc
