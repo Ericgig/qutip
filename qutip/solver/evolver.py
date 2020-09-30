@@ -102,7 +102,7 @@ class Evolver:
         else:
             norm = _data.la_norm(state)
         state /= norms
-        return abs(norm-1)
+        return abs(norm-1) > (self.options.rtol / 1000)
 
     def step(self, t):
         self._r.integrate(t)
@@ -157,11 +157,11 @@ class EvolverScipyZvode(Evolver):
     def get_state(self):
         if self._mat_state:
             return _data.column_unstack_dense(
-                _data.dense.fast_from_numpy(self._r.y),
+                _data.dense.fast_from_numpy(self._r._y),
                 self._size,
                 inplace=True)
         else:
-            return _data.dense.fast_from_numpy(self._r.y)
+            return _data.dense.fast_from_numpy(self._r._y)
 
     def set_state(self, state0, t):
         self._r.set_initial_value(
@@ -201,11 +201,11 @@ class EvolverScipyDop853(Evolver):
     def get_state(self):
         if self._mat_state:
             return _data.column_unstack_dense(
-                _data.dense.fast_from_numpy(self._r.y.view(np.complex)),
+                _data.dense.fast_from_numpy(self._r._y.view(np.complex)),
                 self._size,
                 inplace=True)
         else:
-            return _data.dense.fast_from_numpy(self._r.y.view(np.complex))
+            return _data.dense.fast_from_numpy(self._r._y.view(np.complex))
 
     def set_state(self, state0, t):
         self._r.set_initial_value(
@@ -237,7 +237,7 @@ class EvolverVern7(Evolver):
         self.set_state(state0, t0)
 
     def get_state(self):
-        return self._r.y.copy()
+        return self._r.y
 
     def set_state(self, state, t):
         self._r.set_initial_value(_data.to(_data.Dense, state).copy(), t)

@@ -264,11 +264,13 @@ class MeSolver(Solver):
         if self.state_dims[0] == self.system.dims[1]:
             return Qobj(state,
                         dims=self.state_dims,
-                        type=self.state_type)
+                        type=self.state_type,
+                        copy=False)
         else:
             return Qobj(column_unstack(state, self.state_shape[0]),
                         dims=self.state_dims,
-                        type=self.state_type)
+                        type=self.state_type,
+                        copy=False)
 
     def safety_check(self, state):
         return None

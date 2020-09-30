@@ -76,9 +76,6 @@ class SolverOptions:
         "gui": False,
         # Normalize output of solvers
         # (turned off for batch unitary propagator mode)
-        "normalize_output": True,
-        # Normalize output of solvers
-        # (turned off for batch unitary propagator mode)
         "progress_bar": "text",
         # Normalize output of solvers
         # (turned off for batch unitary propagator mode)
@@ -131,6 +128,9 @@ class SolverResultsOptions:
         "store_states": False,
         # average mcsolver density matricies assuming steady state evolution
         "steady_state_average": False,
+        # Normalize output of solvers
+        # (turned off for batch unitary propagator mode)
+        "normalize_output": "ket",
     }
 
 @optionsclass("mcsolve", SolverOptions)
@@ -179,4 +179,6 @@ class McOptions:
         "mc_corr_eps": 1e-10,
         # Number of trajectories (default = 500)
         "ntraj": 500,
+
+        "map": "parallel_map",
     }

@@ -66,11 +66,10 @@ class Result:
     def add(self, t, state):
         self.times.append(t)
 
-        if self._store_final_state:
-            self._last_state = state
-
         if self._store_states:
-            self._states.append(state)
+            self._states.append(state.copy())
+        elif self._store_final_state:
+            self._last_state = state.copy()
 
         for i, e_call in enumerate(self._e_ops):
             self._expects[i].append(e_call(t, state))
@@ -81,32 +80,13 @@ class Result:
     @property
     def states(self):
         return self._states
-        """[Qobj(state,
-                     dims=self._dims,
-                     type=self._type,
-                     isherm=self._isherm,
-                     isunitary=self._isunitary,
-                     copy=False)
-                for state in self._states]"""
 
     @property
     def final_state(self):
-        if self._store_final_state:
-            return self._last_state
-            """Qobj(self._last_state,
-                        dims=self._dims,
-                        type=self._type,
-                        isherm=self._isherm,
-                        isunitary=self._isunitary,
-                        copy=False)"""
-        elif self._store_states:
+        if self._store_states:
             return self._states[-1]
-            """Qobj(self._states[-1],
-                        dims=self._dims,
-                        type=self._type,
-                        isherm=self._isherm,
-                        isunitary=self._isunitary,
-                        copy=False)"""
+        elif self._store_final_state:
+            return self._last_state
         else:
             return None
 

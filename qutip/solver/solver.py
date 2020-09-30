@@ -67,7 +67,8 @@ class Solver:
     def restore_state(self, state):
         return Qobj(state,
                     dims=self.state_dims,
-                    type=self.state_type)
+                    type=self.state_type,
+                    copy=False)
 
     def run(self, state0, tlist, args={}):
         if self._safe_mode:
