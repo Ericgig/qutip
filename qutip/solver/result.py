@@ -8,19 +8,34 @@ __all__ = ["Result"]
 
 
 class Result:
-    def __init__(self, e_ops_raw, e_ops, options, example_state, super):
-        self._dims = example_state.dims
-        self._type = example_state.type
-        self._isherm = example_state.isherm
-        self._isunitary = example_state.isunitary
+    """
+    Result for one trajectory of an solver evolution.
 
-        self.e_ops = e_ops_raw
-        self._raw_e_ops = e_ops
-        self._num_saved = 0
-        self._states = []
+    Property
+    --------
+    states : list of Qobj
+        Every state of the evolution
+
+    final_state : Qobj
+        Last state of the evolution
+
+    expect : list
+        list of list of expectation values
+        expect[e_ops][t]
+
+    times : list
+        list of the times at which the expectation values and
+        states where taken.
+    """
+    def __init__(self, e_ops, options, super):
+        self.e_ops = e_ops
         self.times = []
+
+        self._raw_e_ops = e_ops
+        self._states = []
         self._expects = []
         self._last_state = None
+        self._super = super
 
         self._read_e_ops(super)
         self._read_options(options)
@@ -62,20 +77,38 @@ class Result:
     def _read_options(self, options):
         self._store_states = self._e_num == 0 or options['store_states']
         self._store_final_state = options['store_final_state']
+        self._normalize_outputs = False # options['normalize']
+
+    def _normalize(self, state):
+        if state.shape[1] == 1:
+            state /= state.norm()
+        elif state.shape[1] == state.shape[0] and self._super:
+            state /= state.norm()
+        elif state.shape[1] == state.shape[0]:
+            # TODO add normalization for propagator evolution.
+            pass
 
     def add(self, t, state):
+        """
+        Add a state to the results for the time t of the evolution.
+        The state is expected to be a Qobj with the right dims.
+        """
         self.times.append(t)
+        state_norm = False
+        if self._normalize_outputs:
+            state_norm = state.copy()
+            self._normalize(state_norm)
 
         if self._store_states:
-            self._states.append(state.copy())
+            self._states.append(state_norm or state.copy())
         elif self._store_final_state:
-            self._last_state = state.copy()
+            self._last_state = state_norm or state.copy()
 
         for i, e_call in enumerate(self._e_ops):
-            self._expects[i].append(e_call(t, state))
+            self._expects[i].append(e_call(t, state_norm or state))
 
     def copy(self):
-        return Run(self._raw_e_ops, self.options)
+        return Run(self._raw_e_ops, self.options, self.super)
 
     @property
     def states(self):

@@ -45,6 +45,9 @@ from . import data as _data
 
 
 class QobjEvoBase:
+    """ Parent of QobjEvo and QobjEvoFunc.
+    Exist so QobjEvo is not the parent of QobjEvoFunc.
+    """
     def __init__(self):
         self.cte = Qobj()
         self.dummy_cte = True
@@ -197,40 +200,23 @@ class QobjEvo(QobjEvoBase):
         H = QobjEvo([H0, [H1, np.exp(-1j*tlist)], [H2, np.cos(2.*tlist)]],
                     tlist=tlist)
 
-    args is a dict of (name:object). The name must be a valid variables string.
-    Some solvers support arguments that update at each call:
-    sesolve, mesolve, mcsolve:
-        state can be obtained with:
-            "state_vec":psi0, args["state_vec"] = state as 1D np.ndarray
-            "state_mat":psi0, args["state_mat"] = state as 2D np.ndarray
-            "state":psi0, args["state"] = state as Qobj
-
-            This Qobj is the initial value.
-
-        expectation values:
-            "expect_op_n":0, args["expect_op_n"] = expect(e_ops[int(n)], state)
-            expect is <phi|O|psi> or tr(state * O) depending on state
-            dimensions
-
-    mcsolve:
-        collapse can be obtained with:
-            "collapse":list => args[name] == list of collapse
-            each collapse will be appended to the list as (time, which c_ops)
-
-    Mixing the formats is possible, but not recommended.
-    Mixing tlist will cause problem.
+    `args` is a dict of (name:object).
+    The name must be a valid variables string.
 
     Parameters
     ----------
-    QobjEvo(Q_object=[], args={}, tlist=None)
+    QobjEvo(Q_object=[], args={}, tlist=None, copy=True)
 
     Q_object : array_like
         Data for vector/matrix representation of the quantum object.
 
-    args : dictionary that contain the arguments for
+    args : dictionary that contain the arguments for the coeffients
 
     tlist : array_like
         List of times at which the numpy-array coefficients are applied.
+
+    copy : bool
+        If Q_object is already a QobjEvoFunc, return a copy.
 
     Attributes
     ----------
@@ -238,14 +224,8 @@ class QobjEvo(QobjEvoBase):
         Constant part of the QobjEvo
 
     ops : list of EvoElement
-        List of Qobj and the coefficients.
-        [(Qobj, coefficient as a function, original coefficient,
-            type, local arguments ), ... ]
-        type :
-            1: function
-            2: string
-            3: np.array
-            4: Cubic_Spline
+        List of Qobj and coefficients.
+        [(Qobj, coefficient ) ]
 
     args : map
         arguments of the coefficients
@@ -259,8 +239,16 @@ class QobjEvo(QobjEvoBase):
     const : bool
         Indicates if quantum object is Constant
 
-    num_obj : int
-        number of Qobj in the QobjEvo : len(ops) + (1 if not dummy_cte)
+    Property
+    --------
+    dims : list
+        List of dimensions keeping track of the tensor structure.
+
+    shape : list
+        Shape of the underlying `data` array.
+
+    issuper : bool
+        Indicates if the quantum object represents a superoperator.
 
     Methods
     -------
@@ -288,15 +276,14 @@ class QobjEvo(QobjEvoBase):
     trans()
         Return the transpose of quantum object.
 
-    _cdc()
-        Return self.dag() * self.
-
     permute(order)
         Returns composite qobj with indices reordered.
 
+    &
+        tensor between Quantum Object
+
     apply(f, *args, **kw_args)
         Apply the function f to every Qobj. f(Qobj) -> Qobj
-        Return a modified QobjEvo and let the original one untouched
 
     tidyup(atol=1e-12)
         Removes small elements from quantum object.
@@ -304,22 +291,20 @@ class QobjEvo(QobjEvoBase):
     compress():
         Merge ops which are based on the same quantum object and coeff type.
 
-    __call__(t, data=False, state=None, args={}):
+    __call__(t, args={}, data=False):
         Return the Qobj at time t.
 
     mul(t, mat):
-        Product of this at t time with the dense matrix mat.
+        Product of this at t time with a Qobj or np.ndarray.
 
     expect(t, psi, herm=False):
         Calculates the expectation value for the quantum object (if operator,
             no check) and state psi.
         Return only the real part if herm.
 
-    to_list():
-        Return the time-dependent quantum object as a list
     """
     def __init__(self, Q_object=[], args={}, copy=True,
-                 tlist=None, state0=None, e_ops=[]):
+                 tlist=None):
         if isinstance(Q_object, QobjEvo):
             from .qobjevofunc import QobjEvoFunc
             if isinstance(Q_object, QobjEvoFunc):

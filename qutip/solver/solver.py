@@ -45,52 +45,85 @@ from .evolver import *
 from ..ui.progressbar import get_progess_bar
 
 class Solver:
+    """
+    Main class of the solvers.
+    Do the loop over each times in tlist and does the interface between the
+    evolver which deal in data and the Result which use Qobj.
+    It's children (SeSolver, McSolver) are responsible with building the system
+    (-1j*H).
+
+    methods
+    -------
+    run(state0, tlist, args={}):
+        Do an evolution starting with `state0` at `tlist[0]` and obtain a
+        result for each time in `tlist`.
+        The system's arguments can be changed with `args`.
+
+    start(state0, t0):
+        Set the initial values for an evolution by steps
+
+    step(t, args={}):
+        Do a step to `t`. The system arguments for this step can be updated
+        with `args`
+
+    attributes
+    ----------
+    options : SolverOptions
+        Options for the solver
+
+    e_ops : list
+        list of Qobj or QobjEvo to compute the expectation values.
+        Alternatively, function[s] with the signature f(t, state) -> expect
+        can be used.
+
+    """
     def __init__(self):
-        self.system = None
+        self._system = None
         self._safe_mode = False
-        self.evolver = None
+        self._evolver = None
+        self._super = False
+        self._state = None
+        self._t = 0
+
         self.options = None
         self.e_ops = []
-        self.super = False
-        self.state = None
-        self.t = 0
 
-    def safety_check(self, state):
+    def _safety_check(self, state):
         pass
 
-    def prepare_state(self, state):
-        self.state_dims = state.dims
-        self.state_type = state.type
-        self.state_qobj = state
+    def _prepare_state(self, state):
+        self._state_dims = state.dims
+        self._state_type = state.type
+        self._state_qobj = state
         return state.data
 
-    def restore_state(self, state):
+    def _restore_state(self, state):
         return Qobj(state,
-                    dims=self.state_dims,
-                    type=self.state_type,
+                    dims=self._state_dims,
+                    type=self._state_type,
                     copy=False)
 
     def run(self, state0, tlist, args={}):
         if self._safe_mode:
-            self.safety_check(state0)
-        state0 = self.prepare_state(state0)
+            self._safety_check(state0)
+        state0 = self._prepare_state(state0)
         if args:
-            self.evolver.update_args(args)
+            self._evolver.update_args(args)
         result = self._driver_step(tlist, state0)
         return result
 
     def start(self, state0, t0):
-        self.state = self.prepare_state(state0)
-        self.t = t0
-        self.evolver.set(self.state, self.t)
+        self._state = self._prepare_state(state0)
+        self._t = t0
+        self._evolver.set(self._state, self._t, self.options)
 
     def step(self, t, args={}):
         if args:
-            self.evolver.update_args(args)
-            self.evolver.set(self.state, self.t)
-        self.state = self.evolver.step(t)
+            self._evolver.update_args(args)
+            self._evolver.set(self._state, self._t, self.options)
+        self._state = self._evolver.step(t)
         self.t = t
-        return self.restore_state(self.state)
+        return self._restore_state(self._state.copy())
 
     def _driver_step(self, tlist, state0):
         """
@@ -98,34 +131,17 @@ class Solver:
         """
         progress_bar = get_progess_bar(self.options['progress_bar'])
 
-        self.evolver.set(state0, tlist[0])
-        e_ops = self.evolver.e_op_prepare(self.e_ops)
-        res = Result(self.e_ops, e_ops, self.options.results,
-                     self.state_qobj, self.super)
+        self._evolver.set(state0, tlist[0, self.options])
+        res = Result(self.e_ops, self.options.results, self._super)
         res.add(tlist[0], self.state_qobj)
 
         progress_bar.start(len(tlist)-1, **self.options['progress_kwargs'])
-        for t, state in self.evolver.run(tlist):
+        for t, state in self._evolver.run(tlist):
             progress_bar.update()
-            res.add(t, self.restore_state(state))
+            res.add(t, self._restore_state(state))
         progress_bar.finished()
 
         return res
 
-    def _driver_evolution(self, tlist, state0):
-        """ Internal function for solving ODEs. """
-        progress_bar = get_progess_bar(options['progress_bar'])
-
-        res = Result(e_ops, options.results, state0, super)
-
-        progress_bar.start(len(tlist)-1, **options['progress_kwargs'])
-        states = evolver.evolve(state0, tlist, progress_bar)
-        progress_bar.finished()
-
-        for t, state in zip(tlist, states):
-            res.add(t, self.restore_state(state))
-
-        return res
-
-    def get_evolver(self, options, args, feedback_args):
-        return get_evolver(self.system, options, args, feedback_args)
+    def _get_evolver(self, options, args, feedback_args):
+        return get_evolver(self._system, options, args, feedback_args)

@@ -153,7 +153,7 @@ class EnhancedTextProgressBar(BaseProgressBar):
 
 class TqdmProgressBar(BaseProgressBar):
     """
-    An enhanced text-based progress bar.
+    A progress bar using tqdm module
     """
 
     def __init__(self, iterations=0, chunk_size=10):

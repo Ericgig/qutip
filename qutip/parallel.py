@@ -193,8 +193,7 @@ def serial_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     return results
 
 
-def parallel_map(task, values, task_args=tuple(), task_kwargs={},
-                 progress_bar=None, progress_bar_kwargs={}, **kwargs):
+def parallel_map(task, values, task_args=tuple(), task_kwargs={}, **kwargs):
     """
     Parallel execution of a mapping of `values` to the function `task`. This
     is functionally equivalent to::
@@ -235,11 +234,18 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={},
     except:
         progress_bar = BaseProgressBar()
 
+    progress_bar.start(len(values))
+    nfinished = [0]
+
+    def _update_progress_bar(x):
+        nfinished[0] += 1
+        progress_bar.update(nfinished[0])
+
     try:
         pool = Pool(processes=kw['num_cpus'])
 
         async_res = [pool.apply_async(task, (value,) + task_args, task_kwargs,
-                                      progress_bar.update)
+                                      _update_progress_bar)
                      for value in values]
 
         while not all([ar.ready() for ar in async_res]):
@@ -261,5 +267,6 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={},
 
 
 def _default_kwargs():
+
     settings = {'num_cpus': multiprocessing.cpu_count()}
     return settings

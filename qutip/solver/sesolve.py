@@ -86,6 +86,13 @@ def sesolve(H, psi0, tlist, e_ops=None,
     args : None / *dictionary*
         dictionary of parameters for time-dependent Hamiltonians
 
+    feedback_args : None / *dictionary*
+        dictionary of args that dependent on the states.
+        With `feedback_args = {key: Qobj}`
+        args[key] will be updated to be the state as a Qobj at every use of
+        the system.
+        `feedback_args = {key: op}` will make args[key] == expect(op, state)
+
     options : None / :class:`qutip.SolverOptions`
         with options for the ODE solver.
 
@@ -109,6 +116,74 @@ def sesolve(H, psi0, tlist, e_ops=None,
 
 
 class SeSolver(Solver):
+    """
+    Schrodinger equation evolution of a state vector or unitary matrix
+    for a given Hamiltonian.
+
+    Parameters
+    ----------
+    SeSolver(H, e_ops=None, options=None,
+             times=None, args=None, feedback_args=None,
+             _safe_mode=False)
+
+    H : :class:`qutip.qobj`, :class:`qutip.qobjevo`, *list*, *callable*
+        System Hamiltonian as a Qobj, list of Qobj and coefficient, QobjEvo,
+        or a callback function for time-dependent Hamiltonians.
+        list format and options can be found in QobjEvo's description.
+
+    e_ops : None / list of :class:`qutip.qobj` or callback function
+        single operator or list of operators for which to evaluate
+        expectation values.
+        For list operator evolution, the overlap is computed:
+            tr(e_ops[i].dag()*op(t))
+
+    options : SolverOptions
+        Options for the solver
+
+    times : array_like
+        List of times at which the numpy-array coefficients are applied.
+        Does not need to be the same times as those used for the evolution.
+
+    args : dict
+        dictionary that contain the arguments for the coeffients
+
+    feedback_args : None / *dictionary*
+        dictionary of args that dependent on the states.
+        With `feedback_args = {key: Qobj}`
+        args[key] will be updated to be the state as a Qobj at every use of
+        the system.
+        `feedback_args = {key: op}` will make args[key] == expect(op, state)
+
+    methods
+    -------
+    run(state, tlist, args)
+        Evolve the state vector (`psi0`) using a given
+        Hamiltonian (`H`), by integrating the set of ordinary differential
+        equations that define the system. Alternatively evolve a unitary
+        matrix in solving the Schrodinger operator equation.
+        return a Result object
+
+    start(state0, t0):
+        Set the initial values for an evolution by steps
+
+    step(t, args={}):
+        Evolve to `t`. The system arguments for this step can be updated
+        with `args`.
+        return the state at t (Qobj), does not compute the expectation values.
+
+    attributes
+    ----------
+    options : SolverOptions
+        Options for the solver
+        options can be changed between evolution (before `run` and `start`),
+        but not between `step`.
+
+    e_ops : list
+        list of Qobj or QobjEvo to compute the expectation values.
+        Alternatively, function[s] with the signature f(t, state) -> expect
+        can be used.
+
+    """
     def __init__(self, H, e_ops=None, options=None,
                  times=None, args=None, feedback_args=None,
                  _safe_mode=False):
@@ -124,26 +199,27 @@ class SeSolver(Solver):
         if feedback_args is None:
             feedback_args = {}
 
-        self.e_ops = e_ops
-        self.options = options
         self._safe_mode = _safe_mode
-        self.super = False
-        self.state = None
-        self.t = 0
+        self._super = False
+        self._state = None
+        self._t = 0
+
+        self.options = options
+        self.e_ops = e_ops
 
         if isinstance(H, QobjEvo):
-            self.system = -1j*H
+            self._system = -1j*H
         elif isinstance(H, (list, Qobj)):
             H = QobjEvo(H, args=args, tlist=times)
-            self.system = -1j*H
+            self._system = -1j*H
         elif callable(H):
-            self.system = -1j*QobjEvoFunc(H, args=args)
+            self._system = -1j*QobjEvoFunc(H, args=args)
         else:
             raise ValueError("Invalid Hamiltonian")
-        self.evolver = self.get_evolver(options, args, feedback_args)
+        self._evolver = self._get_evolver(options, args, feedback_args)
 
-    def safety_check(self, state):
-        self.system.mul(0, state)
+    def _safety_check(self, state):
+        self._system.mul(0, state)
 
         if not (state.isket or state.isunitary):
             raise TypeError("The unitary solver requires psi0 to be"

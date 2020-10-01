@@ -75,18 +75,20 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
 
     **Time-dependent operators**
 
-    For time-dependent problems, `H` and `c_ops` can be a specified in a
-    nested-list format where each element in the list is a list of length 2,
-    containing an operator (:class:`qutip.qobj`) at the first element and where
-    the second element is either a string (*list string format*), a callback
-    function (*list callback format*) that evaluates to the time-dependent
-    coefficient for the corresponding operator, or a NumPy array (*list
-    array format*) which specifies the value of the coefficient to the
-    corresponding operator for each value of t in `tlist`.
+    For time-dependent problems, `H` and `c_ops` can be a QobjEvo or
+    specified in a nested-list format where each element in the list is a list
+    of length 2, containing an operator (:class:`qutip.qobj`) at the first
+    element and where the second element is either a string
+    (*list string format*), a callback function (*list callback format*)
+    that evaluates to the time-dependent coefficient for the corresponding
+    operator, or a NumPy array (*list array format*) which specifies the value
+    of the coefficient to the corresponding operator for each value of t in
+    `tlist`. See :class:`qutip.core.QobjEvo` for more detail on building time
+    dependent Quantum object.
 
-    Alternatively, `H` (but not `c_ops`) can be a callback function with the
-    signature `f(t, args) -> Qobj` (*callback format*), which can return the
-    Hamiltonian or Liouvillian superoperator at any point in time.  If the
+    Alternatively, `H` and individual `c_ops` can be a callback function with
+    the signature `f(t, args) -> Qobj` (*callback format*), which can return
+    the Hamiltonian or Liouvillian superoperator at any point in time.  If the
     equation cannot be put in standard Lindblad form, then this time-dependence
     format must be used.
 
@@ -111,7 +113,7 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
     **Additional options**
 
     Additional options to mesolve can be set via the `options` argument, which
-    should be an instance of :class:`qutip.solver.Options`. Many ODE
+    should be an instance of :class:`qutip.solver.SolverOptions`. Many ODE
     integration options can be set this way, and the `store_states` and
     `store_final_state` options can be used to store states even though
     expectation values are requested via the `e_ops` argument.
@@ -123,18 +125,6 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
         added to the total Liouvillian of the problem without further
         transformation. This allows for using mesolve for solving master
         equations that are not in standard Lindblad form.
-
-    .. note::
-
-        On using callback functions: mesolve transforms all :class:`qutip.Qobj`
-        objects to sparse matrices before handing the problem to the integrator
-        function. In order for your callback function to work correctly, pass
-        all :class:`qutip.Qobj` objects that are used in constructing the
-        Hamiltonian via `args`. mesolve will check for :class:`qutip.Qobj` in
-        `args` and handle the conversion to sparse matrices. All other
-        :class:`qutip.Qobj` objects that are not passed via `args` will be
-        passed on to the integrator in scipy which will raise a NotImplemented
-        exception.
 
     Parameters
     ----------
@@ -160,6 +150,13 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
     args : None / *dictionary*
         dictionary of parameters for time-dependent Hamiltonians and
         collapse operators.
+
+    feedback_args : None / *dictionary*
+        dictionary of args that dependent on the states.
+        With `feedback_args = {key: Qobj}`
+        args[key] will be updated to be the state as a Qobj at every use of
+        the system.
+        `feedback_args = {key: op}` will make args[key] == expect(op, state)
 
     options : None / :class:`qutip.SolverOptions`
         with options for the solver.
@@ -204,6 +201,88 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
 
 
 class MeSolver(Solver):
+    """
+    Master equation evolution of a density matrix for a given Hamiltonian and
+    set of collapse operators, or a Liouvillian.
+
+    Evolve the density matrix (`rho0`) using a given
+    Hamiltonian or Liouvillian (`H`) and an optional set of collapse operators
+    (`c_ops`), by integrating the set of ordinary differential equations
+    that define the system.
+
+    If either `H` or the Qobj elements in `c_ops` are superoperators, they
+    will be treated as direct contributions to the total system Liouvillian.
+    This allows the solution of master equations that are not in standard
+    Lindblad form.
+
+    Parameters
+    ----------
+    MeSolver(H, c_ops, e_ops=None, options=None,
+             times=None, args=None, feedback_args=None,
+             _safe_mode=False)
+
+    H : :class:`qutip.qobj`, :class:`qutip.qobjevo`, *list*, *callable*
+        System Hamiltonian as a Qobj, list of Qobj and coefficient, QobjEvo,
+        or a callback function for time-dependent Hamiltonians.
+        list format and options can be found in QobjEvo's description.
+        Alternatively a system Liouvillian.
+
+    c_ops : list of :class:`qutip.Qobj`
+        single collapse operator, or list of collapse operators, or a list
+        of Liouvillian superoperators. If none are needed, use an empty list.
+
+    e_ops : None / list of :class:`qutip.qobj` or callback function
+        single operator or list of operators for which to evaluate
+        expectation values.
+        For list operator evolution, the overlap is computed:
+            tr(e_ops[i].dag()*op(t))
+
+    options : SolverOptions
+        Options for the solver
+
+    times : array_like
+        List of times at which the numpy-array coefficients are applied.
+        Does not need to be the same times as those used for the evolution.
+
+    args : dict
+        dictionary that contain the arguments for the coeffients
+
+    feedback_args : None / *dictionary*
+        dictionary of args that dependent on the states.
+        With `feedback_args = {key: Qobj}`
+        args[key] will be updated to be the state as a Qobj at every use of
+        the system.
+        `feedback_args = {key: op}` will make args[key] == expect(op, state)
+
+    methods
+    -------
+    run(state, tlist, args)
+        Evolve the density matrix (`rho0`) using a given
+        Hamiltonian (`H`) or Liouvillian (`H`), Alternatively evolve a unitary
+        matrix.
+        return a Result object
+
+    start(state0, t0):
+        Set the initial values for an evolution by steps
+
+    step(t, args={}):
+        Evolve to `t`. The system arguments for this step can be updated
+        with `args`.
+        return the state at t (Qobj), does not compute the expectation values.
+
+    attributes
+    ----------
+    options : SolverOptions
+        Options for the solver
+        options can be changed between evolution (before `run` and `start`),
+        but not between `step`.
+
+    e_ops : list
+        list of Qobj or QobjEvo to compute the expectation values.
+        Alternatively, function[s] with the signature f(t, state) -> expect
+        can be used.
+
+    """
     def __init__(self, H, c_ops, e_ops=None, options=None,
                  times=None, args=None, feedback_args=None,
                  _safe_mode=False):
@@ -219,12 +298,13 @@ class MeSolver(Solver):
         if feedback_args is None:
             feedback_args = {}
 
+        self._safe_mode = _safe_mode
+        self._super = True
+        self._state = None
+        self._t = 0
+
         self.e_ops = e_ops
         self.options = options
-        self._safe_mode = _safe_mode
-        self.super = True
-        self.state = None
-        self.t = 0
 
         if isinstance(H, QobjEvo):
             pass
@@ -245,37 +325,37 @@ class MeSolver(Solver):
                 c_evos.append(QobjEvoFunc(op, args=args))
             else:
                 raise ValueError("Invalid Hamiltonian")
-        self.system = liouvillian(H, c_evos)
 
-        self.evolver = self.get_evolver(options, args, feedback_args)
+        self._system = liouvillian(H, c_evos)
+        self._evolver = self._get_evolver(options, args, feedback_args)
 
-    def prepare_state(self, state):
+    def _prepare_state(self, state):
         if isket(state):
             state = ket2dm(state)
-        self.state_dims = state.dims
-        self.state_shape = state.shape
-        self.state_type = state.type
-        self.state_qobj = state
-        if state.dims[0] == self.system.dims[1]:
+        self._state_dims = state.dims
+        self._state_shape = state.shape
+        self._state_type = state.type
+        self._state_qobj = state
+        if state.dims[0] == self._system.dims[1]:
             return state.data
         return column_stack(state.data)
 
-    def restore_state(self, state):
-        if self.state_dims[0] == self.system.dims[1]:
+    def _restore_state(self, state):
+        if self._state_dims[0] == self._system.dims[1]:
             return Qobj(state,
-                        dims=self.state_dims,
-                        type=self.state_type,
+                        dims=self._state_dims,
+                        type=self._state_type,
                         copy=False)
         else:
-            return Qobj(column_unstack(state, self.state_shape[0]),
-                        dims=self.state_dims,
-                        type=self.state_type,
+            return Qobj(column_unstack(state, self._state_shape[0]),
+                        dims=self._state_dims,
+                        type=self._state_type,
                         copy=False)
 
-    def safety_check(self, state):
+    def _safety_check(self, state):
         return None
         # Todo: make proper checks
-        self.system.mul(0, state)
+        self._system.mul(0, state)
 
         if not (state.isket or state.isunitary):
             raise TypeError("The unitary solver requires psi0 to be"

@@ -42,29 +42,50 @@ from numpy.linalg import norm as la_norm
 from scipy.integrate import ode
 from qutip.core import data as _data
 from qutip.solver._solverqevo import SolverQEvo
-from qutip.solver.ode.verner7efficientrk import vern7
+from qutip.solver.ode.verner7efficient import vern7
+from qutip.solver.ode.verner9efficient import vern9
 from qutip.solver.ode.wrapper import QtOdeFuncWrapperSolverQEvo
 
 
-all_ode_method = ['adams', 'bdf', 'dop853', 'vern7']
+all_ode_method = ['adams', 'bdf', 'dop853', 'vern7', 'vern9']
 
 def get_evolver(system, options, args, feedback_args):
     if options['method'] in ['adams','bdf']:
         return EvolverScipyZvode(system, options, args, feedback_args)
     elif options['method'] in ['dop853']:
         return EvolverScipyDop853(system, options, args, feedback_args)
-    elif options['method'] in ['vern7']:
-        return EvolverVern7(system, options, args, feedback_args)
+    elif options['method'] in ['vern7', 'vern9']:
+        return EvolverVern(system, options, args, feedback_args)
+    elif options['method'] in ['diagonalized', 'diag']:
+        return EvolverDiag(system, options, args, feedback_args)
+    raise ValueError("method options not recognized")
 
 
 class Evolver:
-    """
+    """ A wrapper around ODE solvers.
+    Ensure a common interface for Solver usage.
+    Take and return states as :class:`qutip.core.data.Data`.
+
+
     Methods
     -------
-    set(state, tlist)
-    step()
-        Create copy of Qobj
-    evolve(state, tlist, progress_bar)
+    set(state, t0, options)
+        Prepare the ODE solver.
+
+    step(t)
+        Evolve to t, must be `set` before.
+
+    run(state, tlist)
+        Yield (t, state(t)) for t in tlist, must be `set` before.
+
+    update_args(args)
+        Change the argument of the active system
+
+    get_state()
+        Optain the state of the solver.
+
+    set_state(state, t)
+        Set the state of an existing ODE solver.
 
     """
     def __init__(self, system, options, args, feedback_args):
@@ -74,59 +95,46 @@ class Evolver:
         self._error_msg = ("ODE integration error: Try to increase "
                            "the allowed number of substeps by increasing "
                            "the nsteps parameter in the Options class.")
-        self._normalize = False
+        self._ode_solver = None
 
-    def set_shape(self, example_state):
+    def _set_shape(self, example_state):
         if example_state.shape[1] > 1:
             self._mat_state = True
             self._size = example_state.shape[0]
-            if abs(example_state.trace() - 1) > self.options['rtol']:
-                self._oper = True
-            else:
-                self._dm = True
         else:
             self._mat_state = False
 
-    def set(self, state, t0):
+    def set(self, state, t0, set_shape):
         pass
 
     def update_args(self, args):
         self.system.arguments(args)
 
-    def normalize(self, state):
-        # TODO cannot be used for propagator evolution.
-        if self._oper:
-            return 0
-        if self._dm:
-            norm = _data.trace(state)
-        else:
-            norm = _data.la_norm(state)
-        state /= norms
-        return abs(norm-1) > (self.options.rtol / 1000)
-
     def step(self, t):
-        self._r.integrate(t)
-        if not self._r.successful():
+        """ Evolve to t, must be `set` before. """
+        self._ode_solver.integrate(t)
+        if not self._ode_solver.successful():
             raise Exception(self._error_msg)
         state = self.get_state()
-        if self._normalize:
-            if self.normalize(state):
-                self.set_state(state, t)
         return state
 
     def run(self, tlist):
+        """ Yield (t, state(t)) for t in tlist, must be `set` before. """
         for t in tlist[1:]:
-            self._r.integrate(t)
-            if not self._r.successful():
+            self._ode_solver.integrate(t)
+            if not self._ode_solver.successful():
                 raise Exception(self._error_msg)
             state = self.get_state()
-            if self._normalize:
-                if self.normalize(state):
-                    self.set_state(state, t)
             yield t, state
 
     def e_op_prepare(self, e_ops):
         return e_ops
+
+    def get_state(self):
+        pass
+
+    def set_state(self, state0, t):
+        pass
 
 
 class EvolverScipyZvode(Evolver):
@@ -139,32 +147,33 @@ class EvolverScipyZvode(Evolver):
     #
     name = "scipy_zvode"
 
-    def set(self, state0, t0):
-        self.set_shape(state0)
+    def set(self, state0, t0, options):
+        self.options = options
+        self._set_shape(state0)
         self._t = t0
 
         r = ode(self.system.mul_np_vec)
         options_keys = ['atol', 'rtol', 'nsteps', 'method', 'order',
                         'first_step', 'max_step', 'min_step']
-        options = {key: self.options[key]
+        options = {key: options[key]
                    for key in options_keys
-                   if key in self.options}
+                   if key in options}
         r.set_integrator('zvode', **options)
-        self._r = r
+        self._ode_solver = r
 
         self.set_state(state0, t0)
 
     def get_state(self):
         if self._mat_state:
             return _data.column_unstack_dense(
-                _data.dense.fast_from_numpy(self._r._y),
+                _data.dense.fast_from_numpy(self._ode_solver._y),
                 self._size,
                 inplace=True)
         else:
-            return _data.dense.fast_from_numpy(self._r._y)
+            return _data.dense.fast_from_numpy(self._ode_solver._y)
 
     def set_state(self, state0, t):
-        self._r.set_initial_value(
+        self._ode_solver.set_initial_value(
             _data.column_stack(state0).to_array().ravel(),
             t
         )
@@ -180,17 +189,18 @@ class EvolverScipyDop853(Evolver):
     #
     name = "scipy_dop853"
 
-    def set(self, state0, t0):
-        self.set_shape(state0)
+    def set(self, state0, t0, options):
+        self.options = options
+        self._set_shape(state0)
         func = self.system.mul_np_vec
         r = ode(self.funcwithfloat)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
                         'ifactor', 'dfactor', 'beta']
-        options = {key: self.options[key]
+        options = {key: options[key]
                    for key in options_keys
-                   if key in self.options}
+                   if key in options}
         r.set_integrator('dop853', **options)
-        self._r = r
+        self._ode_solver = r
         self.set_state(state0, t0)
 
     def funcwithfloat(self, t, y):
@@ -201,20 +211,22 @@ class EvolverScipyDop853(Evolver):
     def get_state(self):
         if self._mat_state:
             return _data.column_unstack_dense(
-                _data.dense.fast_from_numpy(self._r._y.view(np.complex)),
+                _data.dense.fast_from_numpy(self._ode_solver.
+                                            _y.view(np.complex)),
                 self._size,
                 inplace=True)
         else:
-            return _data.dense.fast_from_numpy(self._r._y.view(np.complex))
+            return _data.dense.fast_from_numpy(self._ode_solver.
+                                               _y.view(np.complex))
 
     def set_state(self, state0, t):
-        self._r.set_initial_value(
+        self._ode_solver.set_initial_value(
             _data.column_stack(state0).to_array().ravel().view(np.float64),
             t
         )
 
 
-class EvolverVern7(Evolver):
+class EvolverVern(Evolver):
     # -------------------------------------------------------------------------
     # Solve an ODE for func.
     # Calculate the required expectation values or invoke callback
@@ -224,20 +236,80 @@ class EvolverVern7(Evolver):
     #
     name = "qutip_vern7"
 
-    def set(self, state0, t0):
-        self.set_shape(state0)
+    def set(self, state0, t0, options):
+        self.options = options
+        self._set_shape(state0)
         func = QtOdeFuncWrapperSolverQEvo(self.system)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
                         'min_step', 'interpolate']
-        options = {key: self.options[key]
+        options = {key: options[key]
                    for key in options_keys
-                   if key in self.options}
-        r = vern7(func, **options)
-        self._r = r
+                   if key in options}
+        ode = vern7 if options.method == 'vern7' else vern9
+        self._ode_solver = ode(func, **options)
         self.set_state(state0, t0)
 
     def get_state(self):
-        return self._r.y
+        return self._ode_solver.y
 
     def set_state(self, state, t):
-        self._r.set_initial_value(_data.to(_data.Dense, state).copy(), t)
+        self._ode_solver.set_initial_value(_data.to(_data.Dense, state).copy(),
+                                           t)
+
+
+class EvolverDiag(Evolver):
+    # -------------------------------------------------------------------------
+    # Solve an ODE for func.
+    # Calculate the required expectation values or invoke callback
+    # function at each time step.
+    #
+    # Diagonalize the Hamiltonian and
+    # This should be used for constant Hamiltonian evolution (sesolve, mcsolve)
+    #
+    name = "qutip_diagonalized"
+
+    def __init__(self, system, options, args, feedback_args):
+        if not system.const:
+            raise ValueError("Hamiltonian system must be constant to use "
+                             "diagonalized method")
+        self.system = system
+        self.U, self.diag = system(0).eigenstates()
+        self._dt
+        self.Ud = self.U.T.conj()
+        self.options = options
+
+    def set(self, state0, t0, options):
+        self.options = options
+        self._set_shape(state0)
+        self._t = t0
+        self._y = self.Ud @ state0.as_array()
+        self.set_state(state0, t0)
+
+    def step(self, t):
+        """ Evolve to t, must be `set` before. """
+        dt = self._t - t
+        if self.dt != dt
+            self.expH = np.exp(self.diag * dt)
+            self.dt = dt
+        self._y *= self.expH
+        self._t = t
+        return self.get_state()
+
+    def run(self, tlist):
+        """ Yield (t, state(t)) for t in tlist, must be `set` before. """
+        for t in tlist[1:]:
+    inplace_add        state = self.step(t)
+            yield t, state
+
+    def get_state(self):
+        y = self.U @ self._y
+        if self._mat_state:
+            return _data.column_unstack_dense(
+                _data.dense.fast_from_numpy(y),
+                self._size,
+                inplace=True)
+        else:
+            return _data.dense.fast_from_numpy(y)
+
+    def set_state(self, state0, t):
+        self._y = self.Ud @ state0.as_array()

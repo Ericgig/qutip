@@ -48,9 +48,9 @@ class QobjEvoFunc(QobjEvoBase):
 
     The QobjEvoFunc class is a representation of time-dependent Qutip quantum
     objects (Qobj). This class implements math operations :
-        +,- : QobjEvo, Qobj
-        * : Qobj, C-number
-        / : C-number
+        +,- : QobjEvo[Func], Qobj
+        * : QobjEvo[Func], Qobj, Complex-number
+        / : Complex-number
     and some common linear operator/state operations. The QobjEvoFunc is
     constructed from a function that return a Qobj from time and extra
     arguments.
@@ -62,47 +62,49 @@ class QobjEvoFunc(QobjEvoBase):
 
     Parameters
     ----------
-    QobjEvoFunc(Q_object=[], args={}, copy=True,
-                 tlist=None, state=None, e_ops=[])
+    QobjEvoFunc(Q_object=[], args={}, copy=True)
 
     Q_object : callable
         Function/method that return the Qobj at time t.
 
-    args : dictionary that contain the arguments for coefficients.
+    args : dictionary that contain the arguments for function.
 
     copy : bool
-        If Q_object is already a QobjEvo, return a copy.
-
-    tlist : array_like
-        Not unsed, to match QobjEvo signature
+        If Q_object is already a QobjEvoFunc, return a copy.
 
     Attributes
     ----------
+    func : callable
+        Funtion wrapped to a Qobj.
+
     cte : Qobj
-        Constant part of the QobjEvo
+        Value at time 0. (To obtain the dimensions, etc.)
 
     args : map
         arguments of the coefficients
 
     compiled_qobjevo : cy_qobj
         Cython version of the QobjEvo
-        is self.cte a dummy Qobj
 
     const : bool
         Indicates if quantum object is Constant
+
+    operation_stack : list of _Block_transform
+        List of operation that are done on the Qobj.
+        ex. func -> liouvillian -> + Qobj
 
     Methods
     -------
     copy() :
         Create copy of QobjEvoFunc
 
-    arguments(new_args, state, e_ops):
+    arguments(new_args):
         Update the args and set the dynamics_args
 
     Math:
         +/- QobjEvo, Qobj, scalar:
             Addition is possible between QobjEvo and with Qobj or scalar
-        -:
+        -
             Negation operator
         * Qobj, scalar:
             Product is possible with Qobj or scalar
@@ -125,24 +127,22 @@ class QobjEvoFunc(QobjEvoBase):
     permute(order)
         Returns composite qobj with indices reordered.
 
-    apply(f, *args, **kw_args)
-        Apply the function f to every Qobj. f(Qobj) -> Qobj
-        Return a modified QobjEvo and let the original one untouched
+    &
+        tensor between Quantum Object
 
-    __call__(t, data=False, state=None, args={}):
+    apply(f, *args, **kw_args)
+        Apply a transformation function to the Quantum Object
+
+    __call__(t, args={}, data=False):
         Return the Qobj at time t.
 
     mul(t, mat):
-        Product of this at t time with the dense matrix mat.
-
-    mul_vec(t, psi):
-        Apply the quantum object (if operator, no check) to psi.
-        More generaly, return the product of the object at t with psi.
+        Product of this at t time with a Qobj or np.ndarray.
 
     expect(t, psi, herm=False):
         Calculates the expectation value for the quantum object (if operator,
             no check) and state psi.
-        Return only the real part if herm.
+        Return only the real part if `herm` is True.
     """
     def __init__(self, Q_object=[], args={}, copy=True):
         if isinstance(Q_object, QobjEvoFunc):
@@ -151,7 +151,7 @@ class QobjEvoFunc(QobjEvoBase):
                 self.args = Q_object.args.copy()
                 self.operation_stack = [oper.copy()
                                         for oper in Q_object.operation_stack]
-                self.shifted = Q_object.shifted
+                self._shifted = Q_object._shifted
                 self.func = Q_object.func
                 self.const = False
                 self.compiled_qobjevo = CQobjFunc(self)
@@ -173,7 +173,7 @@ class QobjEvoFunc(QobjEvoBase):
 
         self.compiled_qobjevo = CQobjFunc(self)
         self.operation_stack = []
-        self.shifted = False
+        self._shifted = False
         self.const = False
 
     def __call__(self, t, args={}, data=False):
@@ -194,7 +194,7 @@ class QobjEvoFunc(QobjEvoBase):
             now_args.update(args)
         else:
             now_args = self.args
-        if self.shifted:
+        if self._shifted:
             t += now_args["_t0"]
         qobj = self.func(t, now_args)
         for transform in self.operation_stack:
@@ -408,7 +408,7 @@ class QobjEvoFunc(QobjEvoBase):
     def _shift(self):
         """shift t by args("_t0") """
         res = self.copy()
-        res.shifted = True
+        res._shifted = True
         res.args["_t0"] = 0
         return res
 

@@ -75,8 +75,12 @@ def serial_map(task, values, task_args=tuple(), task_kwargs={},
         The optional additional argument to the ``task`` function.
     task_kwargs : list / dictionary
         The optional additional keyword argument to the ``task`` function.
-    progress_bar : ProgressBar
-        Progress bar class instance for showing progress.
+    progress_bar : string
+        Progress bar options's string for showing progress.
+    progress_bar_kwargs : dict
+        Options for the progress bar
+    **kwargs:
+        Other options
 
     Returns
     --------
@@ -118,8 +122,12 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={},
         The optional additional argument to the ``task`` function.
     task_kwargs : list / dictionary
         The optional additional keyword argument to the ``task`` function.
-    progress_bar : ProgressBar
-        Progress bar class instance for showing progress.
+    progress_bar : string
+        Progress bar options's string for showing progress.
+    progress_bar_kwargs : dict
+        Options for the progress bar
+    **kwargs:
+        Other options
 
     Returns
     --------
@@ -170,6 +178,8 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={},
 
         result = [task(value, *task_args, **task_kwargs) for value in values]
 
+    Use the loky module instead of multiprocessing.
+
     Parameters
     ----------
     task : a Python function
@@ -181,8 +191,12 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={},
         The optional additional argument to the ``task`` function.
     task_kwargs : list / dictionary
         The optional additional keyword argument to the ``task`` function.
-    progress_bar : ProgressBar
-        Progress bar class instance for showing progress.
+    progress_bar : string
+        Progress bar options's string for showing progress.
+    progress_bar_kwargs : dict
+        Options for the progress bar
+    **kwargs:
+        Other options to pass to loky
 
     Returns
     --------
@@ -196,8 +210,7 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={},
     from loky import get_reusable_executor, TimeoutError
 
     kw = _default_kwargs()
-    if 'num_cpus' in kwargs:
-        kw['num_cpus'] = kwargs['num_cpus']
+    kw.update(kwargs)
 
     progress_bar = get_progess_bar(progress_bar)
     progress_bar.start(len(values), progress_bar_kwargs)

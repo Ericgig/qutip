@@ -4,5 +4,5 @@
 from qutip.solver.ode.explicit_rk cimport Explicit_RungeKutta
 from .wrapper cimport QtOdeData, QtOdeFuncWrapper
 
-cdef class vern7(Explicit_RungeKutta):
-    cdef QtOdeData _y_8, _y_9
+cdef class vern9(Explicit_RungeKutta):
+    cdef QtOdeData _y_14, _y_15
