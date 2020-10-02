@@ -131,7 +131,7 @@ class Solver:
         """
         progress_bar = get_progess_bar(self.options['progress_bar'])
 
-        self._evolver.set(state0, tlist[0, self.options])
+        self._evolver.set(state0, tlist[0], self.options)
         res = Result(self.e_ops, self.options.results, self._super)
         res.add(tlist[0], self.state_qobj)
 

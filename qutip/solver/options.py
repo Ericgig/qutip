@@ -80,6 +80,8 @@ class SolverOptions:
         # Normalize output of solvers
         # (turned off for batch unitary propagator mode)
         "progress_kwargs": {"chunk_size":10},
+        # Normalize the states received in feedback_args
+        "feedback_normalize": True,
     }
 
 @optionsclass("results", SolverOptions)

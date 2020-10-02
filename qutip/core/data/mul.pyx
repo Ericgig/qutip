@@ -83,6 +83,23 @@ mul.add_specialisations([
     (Dense, Dense, mul_dense),
 ], _defer=True)
 
+mul_inplace = _Dispatcher(
+    _inspect.Signature([
+        _inspect.Parameter('matrix', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        _inspect.Parameter('value', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    ]),
+    name='mul_inplace',
+    module=__name__,
+    inputs=('matrix',),
+    out=False,
+)
+mul_inplace.__doc__ =\
+    """Multiply inplace a matrix element-wise by a scalar."""
+mul_inplace.add_specialisations([
+    (CSR, mul_csr_inplace),
+    (Dense, mul_dense_inplace),
+], _defer=True)
+
 neg = _Dispatcher(
     _inspect.Signature([
         _inspect.Parameter('matrix', _inspect.Parameter.POSITIONAL_OR_KEYWORD),

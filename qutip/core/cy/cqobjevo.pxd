@@ -45,7 +45,7 @@ cdef class CQobjEvo:
     cdef readonly bint issuper
     cdef size_t n_ops
 
-    cdef CSR constant
+    cdef Data constant
     cdef list ops
     cdef list coeff
     cdef object coefficients
@@ -57,5 +57,5 @@ cdef class CQobjEvo:
     cdef dict args
     cdef object op
 
-    cpdef Dense matmul(self, double t, Dense matrix, Dense out=*)
+    cpdef Data matmul(self, double t, Data matrix, Data out=*)
     cpdef double complex expect(self, double t, Data matrix) except *

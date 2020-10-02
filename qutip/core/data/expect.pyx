@@ -170,6 +170,23 @@ cpdef double complex expect_super_csr_dense(CSR op, Dense state) nogil except *:
     return out
 
 
+cpdef double complex expect_super_dense_dense(CSR op, Dense state) nogil except *:
+    """
+    Perform the operation `tr(op @ state)` where `op` is supplied as a
+    superoperator, and `state` is a column-stacked operator.
+    """
+    _check_shape_super(op, state)
+    cdef double complex out=0
+    cdef size_t row=0, i, N = state.shape[0]
+    cdef size_t n = <size_t> sqrt(state.shape[0])
+    # TODO: finish, fortran vs C etc...
+    for _ in range(n):
+        for i in range(N):
+            out += op.data[row*N + i] * state.data[i]
+        row += n + 1
+    return out
+
+
 from .dispatch import Dispatcher as _Dispatcher
 import inspect as _inspect
 

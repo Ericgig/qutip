@@ -5,6 +5,8 @@ from qutip.core cimport data as _data
 cdef class Feedback:
     cdef str key
     cdef object _call(self, double t, _data.Data state)
+    cdef bint norm
+    cdef bint issuper
 
 cdef class QobjFeedback(Feedback):
     cdef:
@@ -17,7 +19,6 @@ cdef class QobjFeedback(Feedback):
 
 cdef class ExpectFeedback(Feedback):
     cdef _data.Data op
-    cdef bint issuper
 
 cdef class CollapseFeedback(Feedback):
     cdef list collapse

@@ -46,6 +46,8 @@ from .. import data as _data
 
 from qutip.core.data cimport CSR, Dense, dense
 from qutip.core.data.add cimport add_csr
+from qutip.core.data.add cimport (matmul_csr, matmul_csr_dense_dense,
+                                  matmul_dense)
 # TODO: handle dispatch properly.  We import rather than cimport because we
 # have to call with Python semantics.
 from qutip.core.data.expect import (
@@ -59,6 +61,31 @@ from qutip.core.cy.coefficient cimport Coefficient
 
 cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
+
+
+# TODO: CQobjEvo use a lot of python dispatcher function.
+# time and use cython function where it's better.
+
+ctypedef fused base_type:
+    CRS
+    Dense
+    Data
+
+ctypedef fused state_type:
+    CRS
+    Dense
+    Data
+
+cdef matmul_inplace(base_type left, state_type right,
+                    double complex scale, state_type out):
+    if base_type is CRS and state_type is CRS:
+        matmul_csr(left, right, scale, out)
+    elif base_type is CRS and state_type is Dense:
+        matmul_dense(left, right, scale, out)
+    elif base_type is Dense and state_type is Dense:
+        matmul_csr_dense_dense(left, right, scale, out)
+    else:
+        out = _data.matmul(left, right, scale)
 
 
 cdef class CQobjEvo:
@@ -130,16 +157,16 @@ cdef class CQobjEvo:
             self.coefficients[i] = coeff._call(t)
         return
 
-    cpdef Dense matmul(self, double t, Dense matrix, Dense out=None):
+    cpdef Dense matmul(self, double t, Data matrix, Data out=None):
         cdef size_t i
         self._factor(t)
         if out is None:
-            out = matmul_csr_dense_dense(self.constant, matrix)
+            out = _data.matmul(self.constant, matrix)
         else:
-            matmul_csr_dense_dense(self.constant, matrix, scale=1, out=out)
+            matmul_inplace(self.constant, matrix, 1, out)
         for i in range(self.n_ops):
-            matmul_csr_dense_dense(self.ops[i], matrix,
-                                   scale=self.coefficients[i], out=out)
+            matmul_inplace(self.ops[i], matrix,
+                           self.coefficients[i], out)
         return out
 
     cpdef double complex expect(self, double t, Data matrix) except *:
@@ -149,13 +176,11 @@ cdef class CQobjEvo:
         superoperator.  If `matrix` is an operator and `self` is an operator,
         then expectation is `trace(self @ matrix)`.
         """
-        # TODO: remove shim once we have dispatching
         if self.issuper:
-            matrix = (column_stack_csr(matrix) if isinstance(matrix, CSR)
-                      else column_stack_dense(matrix, inplace=True))
-            _expect = expect_super_csr if isinstance(matrix, CSR) else expect_super_csr_dense
+            matrix = _data.column_stack(matrix)
+            _expect = _data.expect_super
         else:
-            _expect = expect_csr if isinstance(matrix, CSR) else expect_csr_dense
+            _expect = _data.expect
         self._factor(t)
         # end shim
         cdef size_t i
@@ -180,13 +205,13 @@ cdef class CQobjFunc(CQobjEvo):
     def call(self, double t, int data=0):
         return self.base(t, data=data)
 
-    cpdef Dense matmul(self, double t, Dense matrix, Dense out=None):
+    cpdef Dense matmul(self, double t, Data matrix, Data out=None):
         # TODO: like cQobjEvo, only work for CRS x Dense...
         objdata = self.base(t, data=True)
         if out is None:
-            out = matmul_csr_dense_dense(objdata, matrix)
+            out = _data.matmul(objdata, matrix)
         else:
-            matmul_csr_dense_dense(objdata, matrix, scale=1, out=out)
+            matmul_inplace(objdata, matrix, 1, out)
         return out
 
     cpdef double complex expect(self, double t, Data matrix) except *:
@@ -196,78 +221,14 @@ cdef class CQobjFunc(CQobjEvo):
         superoperator.  If `matrix` is an operator and `self` is an operator,
         then expectation is `trace(self @ matrix)`.
         """
-        # TODO: remove shim once we have dispatching
         cdef double complex out
         cdef int nrow
         objdata = self.base(t, data=True)
         if self.issuper:
-            nrow = matrix.shape[0]
-            matrix = (column_stack_csr(matrix) if isinstance(matrix, CSR)
-                      else column_stack_dense(matrix, inplace=True))
-            _expect = (expect_super_csr if isinstance(matrix, CSR)
-                       else expect_super_csr_dense)
-            out = _expect(objdata, matrix)
-            if isinstance(matrix, Dense):
-                column_unstack_dense(matrix, nrow, inplace=True)
+            matrix = _data.column_stack(matrix)
+            out = _data.expect_super(objdata, matrix)
         else:
             _expect = expect_csr if isinstance(matrix, CSR) else expect_csr_dense
             out = _expect(objdata, matrix)
         # end shim
         return out
-
-    """
-    cdef complex _expect(self, double t, complex* vec):
-        ""<vec| self |vec>""
-        objdata = self.base(t, data=True, state=zptr2array1d(vec,self.shape1))
-        cdef complex[:] data = objdata.data
-        cdef int[:] ind = objdata.indices
-        cdef int[:] ptr = objdata.indptr
-        cdef complex[::1] y = np.zeros(self.shape0, dtype=complex)
-        spmvpy(&data[0], &ind[0], &ptr[0], vec, 1., &y[0], self.shape0)
-        cdef int row
-        cdef complex dot = 0
-        for row from 0 <= row < self.shape0:
-            dot += conj(vec[row])*y[row]
-        return dot
-
-    cdef complex _expect_super(self, double t, complex* rho):
-        ""tr( self_L * rho * self_R )""
-        objdata = self.base(t, data=True, state=zptr2array1d(rho, self.shape1))
-        cdef complex[:] data = objdata.data
-        cdef int[:] ind = objdata.indices
-        cdef int[:] ptr = objdata.indptr
-
-        cdef int row
-        cdef int jj, row_start, row_end
-        cdef int num_rows = self.shape0
-        cdef int n = <int>libc.math.sqrt(num_rows)
-        cdef complex dot = 0.0
-
-        for row from 0 <= row < num_rows by n+1:
-            row_start = ptr[row]
-            row_end = ptr[row+1]
-            for jj from row_start <= jj < row_end:
-                dot += data[jj] * rho[ind[jj]]
-
-        return dot
-
-    cdef complex _overlapse(self, double t, complex* oper):
-        "tr( self * oper )""
-        objdata = self.base(t, data=True,
-                            state=zptr2array2d(oper, self.shape2, self.shape1))
-        cdef complex[:] data = objdata.data
-        cdef int[:] ind = objdata.indices
-        cdef int[:] ptr = objdata.indptr
-
-        cdef int row
-        cdef int jj, row_start, row_end
-        cdef int num_rows = self.shape0
-        cdef complex tr = 0.0
-
-        for row in range(num_rows):
-            row_start = ptr[row]
-            row_end = ptr[row+1]
-            for jj from row_start <= jj < row_end:
-                tr += data[jj]*oper[num_rows*ind[jj] + row]
-        return tr
-    """

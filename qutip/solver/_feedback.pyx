@@ -1,6 +1,7 @@
 #cython: language_level=3
 from qutip import Qobj, spre
 from qutip.core import data
+from qutip.core.data.mul import mul_inplace, mul
 from qutip.core cimport data as _data
 
 cdef class Feedback:
@@ -12,7 +13,8 @@ cdef class Feedback:
 
 
 cdef class QobjFeedback(Feedback):
-    def __init__(self, key, state):
+    def __init__(self, key, state, norm):
+        self.norm = norm
         self.key = key
         self.dims = state.dims
         self.type = state.type
@@ -20,10 +22,16 @@ cdef class QobjFeedback(Feedback):
         self.isherm = state.isherm
         self.isunitary = state.isunitary
         self.shape = state.shape
+        self.issuper = state.issuper
 
     cdef object _call(self, double t, _data.Data state):
         cdef _data.Data matrix = data.reshape(state,
                                               self.shape[0], self.shape[1])
+        if self.norm:
+            if self.issuper:
+                mul_inplace(matrix, 1 / data.norm.trace(matrix))
+            else:
+                mul_inplace(matrix, 1 / data.norm.l2(matrix))
         return Qobj(arg=matrix, dims=self.dims,
                     type=self.type, copy=False,
                     superrep=self.superrep, isherm=self.isherm,
@@ -31,8 +39,9 @@ cdef class QobjFeedback(Feedback):
 
 
 cdef class ExpectFeedback(Feedback):
-    def __init__(self, key, op, issuper):
+    def __init__(self, key, op, issuper, norm):
         self.key = key
+        self.norm = norm
         if issuper:
             self.op = spre(op).data
         else:
@@ -40,6 +49,11 @@ cdef class ExpectFeedback(Feedback):
         self.issuper = issuper
 
     cdef object _call(self, double t, _data.Data state):
+        if self.norm:
+            if self.issuper:
+                state = mul(state, 1 / data.norm.trace(state))
+            else:
+                state = mul(state, 1 / data.norm.l2(state))
         if self.issuper:
             return data.expect_super(self.op, state)
         return data.expect(self.op, state)

@@ -98,8 +98,8 @@ class QobjEvoBase:
         with the given vector state.
         """
         # TODO: mostly used in test to compare with the cqobjevo version.
-        # __mul__ sufficient? remove?
-        # Still used in mcsolve, remove later
+        # Still used in mcsolve,
+        # To remove later
         return self.mul(t, vec)
 
     def mul(self, t, mat):
@@ -302,6 +302,9 @@ class QobjEvo(QobjEvoBase):
             no check) and state psi.
         Return only the real part if herm.
 
+    to(data_type):
+        transform all component to a common data_type.
+
     """
     def __init__(self, Q_object=[], args={}, copy=True,
                  tlist=None):
@@ -420,6 +423,7 @@ class QobjEvo(QobjEvoBase):
         return (len(self.ops) if self.dummy_cte else len(self.ops) + 1)
 
     def copy(self):
+        """ Return a copy of this `QobjEvo` """
         new = QobjEvo(self.cte.copy())
         new.const = self.const
         new.args = self.args.copy()
@@ -447,7 +451,11 @@ class QobjEvo(QobjEvoBase):
 
     def arguments(self, new_args):
         """
-        Update args.
+        Update the arguments.
+
+        Returns
+        -------
+        None
         """
         if not isinstance(new_args, dict):
             raise TypeError("The new args must be in a dict")
@@ -461,6 +469,16 @@ class QobjEvo(QobjEvoBase):
         self.arguments(args)
 
     def to_list(self):
+        """
+        Get back the list format contructing this `QobjEvo`.
+
+        `QobjEvo(op.list())` give a copy of op.
+
+        Returns
+        -------
+        list
+            A list of all components of this `QobjEvo`
+        """
         list_qobj = []
         if not self.dummy_cte:
             list_qobj.append(self.cte)
@@ -648,8 +666,7 @@ class QobjEvo(QobjEvoBase):
 
     # Transformations
     def trans(self):
-        """ Transpose of the quantum object
-        """
+        """ Transpose of the quantum object """
         res = self.copy()
         res.cte = res.cte.trans()
         for op in res.ops:
@@ -658,8 +675,7 @@ class QobjEvo(QobjEvoBase):
         return res
 
     def conj(self):
-        """ Conjugate of the quantum object
-        """
+        """ Conjugate of the quantum object """
         res = self.copy()
         res.cte = res.cte.conj()
         res.ops = [EvoElement(op.qobj.conj(), op.coeff.conj())
@@ -668,8 +684,7 @@ class QobjEvo(QobjEvoBase):
         return res
 
     def dag(self):
-        """ Hermitian adjoint of the quantum object
-        """
+        """ Hermitian adjoint of the quantum object """
         res = self.copy()
         res.cte = res.cte.dag()
         res.ops = [EvoElement(op.qobj.dag(), op.coeff.conj())
@@ -678,7 +693,7 @@ class QobjEvo(QobjEvoBase):
         return res
 
     def _cdc(self):
-        """return a.dag * a """
+        """ return a.dag * a """
         if not self.num_obj == 1:
             res = self.dag()
             res *= self
@@ -691,6 +706,7 @@ class QobjEvo(QobjEvoBase):
         return res
 
     def _shift(self):
+        """ Add a shift in the time `t = t + _t0`. """
         self.args.update({"_t0": 0})
         self.ops = [EvoElement(op.qobj, op.coeff._shift()) for op in self.ops]
         self._compile()
@@ -717,6 +733,20 @@ class QobjEvo(QobjEvoBase):
     def apply(self, function, *args, **kw_args):
         """
         Apply function to each Qobj contribution.
+
+        Example:
+        `QobjEvo([sigmax(),f]).apply(spre)` -> QobjEvo([spre(sigmax()),f])
+
+        Returns
+        -------
+        :class:`.QobjEvo`
+            Modified object
+
+        Notes
+        -----
+        Does not modify the coefficients, thus `apply(conj)` would not give the
+        the conjugate of the QobjEvo. Also it's only valid for linear
+        transformations.
         """
         res = self.copy()
         cte_res = function(res.cte, *args, **kw_args)
@@ -784,7 +814,17 @@ class QobjEvo(QobjEvoBase):
 
     def compress(self):
         """
-        Find redundant contribution and merge them
+        Look for redundance in the QobjEvo components dans merge them to create
+        a more simple one.
+
+        Example:
+        `[[sigmax(), "t"], [sigmay(), "t"]]` -> `[[sigmax() + sigmay(), "t"]]`
+
+        The `QobjEvo` is transformed inplace.
+
+        Returns
+        -------
+        None
         """
         self.tidyup()
         sets, fsets = self._compress_make_set()
@@ -809,3 +849,33 @@ class QobjEvo(QobjEvoBase):
         elif N_fsets < num_ops:
             self._compress_merge_func(fsets)
         self._compile()
+
+    def to(self, data_type):
+        """
+        Convert the underlying data store of all component into the desired
+        storage representation.
+
+        The different storage representations available are the "data-layer
+        types".  By default, these are `qutip.data.Dense` and `qutip.data.CSR`,
+        which respectively construct a dense matrix store and a compressed
+        sparse row one.
+
+        The `QobjEvo` is transformed inplace.
+
+        Arguments
+        ---------
+        data_type : type
+            The data-layer type that the data of this `Qobj` should be
+            converted to.
+
+        Returns
+        -------
+        None
+        """
+        try:
+            self.cte = self.cte.to(data_type)
+        except ValueError:
+            raise ValueError("Unknown conversion type: " + str(data_type))
+        for op in self.ops:
+            op.qobj = op.qobj.to(data_type)
+        res._compile()

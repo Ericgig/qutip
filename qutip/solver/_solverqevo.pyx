@@ -13,8 +13,17 @@ from qutip.solver._feedback cimport *
 cdef class SolverQEvo:
     def __init__(self, base, options, dict args, dict feedback):
         self.base = base.compiled_qobjevo
-        self.set_feedback(feedback, args, base.cte.issuper)
+        self.set_feedback(feedback, args, base.cte.issuper,
+                          options['feedback_normalize'])
         self.collapse = []
+
+    def jac_np_vec(self, t, vec):
+        return self.jac_data(t).as_array()
+
+    cdef _data.Data jac_data(self, double t):
+        if self.has_dynamic_args:
+            raise NotImplementedError("jacobian not available with feedback")
+        return self.base.call(t, data=True)
 
     def mul_np_vec(self, t, vec):
         cdef int i, row, col
@@ -31,15 +40,17 @@ cdef class SolverQEvo:
             self.apply_feedback(t, vec)
         self.base.matmul(t, vec, out)
 
-    def set_feedback(self, dict feedback, dict args, bint issuper):
+    def set_feedback(self, dict feedback, dict args, bint issuper, bint norm):
         # Move elsewhere and op should be a dimensions object when available
         self.args = args
         self.dynamic_arguments = []
         for key, val in feedback.items():
             if val in [Qobj, "Qobj", "qobj", "state"]:
-                self.dynamic_arguments.append(QobjFeedback(key, args[key]))
+                self.dynamic_arguments.append(QobjFeedback(key, args[key],
+                                                           norm))
             elif isinstance(val, Qobj):
-                self.dynamic_arguments.append(ExpectFeedback(key, val, issuper))
+                self.dynamic_arguments.append(ExpectFeedback(key, val,
+                                                             issuper, norm))
             elif val in ["collapse"]:
                 if not isinstance(args[key], list):
                     args[key] = []

@@ -49,6 +49,7 @@ from qutip.solver.ode.wrapper import QtOdeFuncWrapperSolverQEvo
 
 all_ode_method = ['adams', 'bdf', 'dop853', 'vern7', 'vern9']
 
+
 def get_evolver(system, options, args, feedback_args):
     if options['method'] in ['adams','bdf']:
         return EvolverScipyZvode(system, options, args, feedback_args)
@@ -65,7 +66,6 @@ class Evolver:
     """ A wrapper around ODE solvers.
     Ensure a common interface for Solver usage.
     Take and return states as :class:`qutip.core.data.Data`.
-
 
     Methods
     -------
@@ -232,9 +232,9 @@ class EvolverVern(Evolver):
     # Calculate the required expectation values or invoke callback
     # function at each time step.
     #
-    # Use scipy's Ode, with dop853 solver
+    # Use verner method implimented in cython
     #
-    name = "qutip_vern7"
+    name = "qutip_"
 
     def set(self, state0, t0, options):
         self.options = options
@@ -246,6 +246,7 @@ class EvolverVern(Evolver):
                    for key in options_keys
                    if key in options}
         ode = vern7 if options.method == 'vern7' else vern9
+        self.name += options.method
         self._ode_solver = ode(func, **options)
         self.set_state(state0, t0)
 
