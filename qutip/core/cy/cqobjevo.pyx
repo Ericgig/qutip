@@ -67,18 +67,18 @@ cdef extern from "<complex>" namespace "std" nogil:
 # Worth it?
 
 
-cdef Data cy_matmul(Data left, state_type right):
+cdef Data cy_matmul(Data left, Data right):
     cdef Data out
-    if state_type is CSR:
+    if isinstance(right, CSR):
         if isinstance(left, CSR):
             out = matmul_csr(left, right)
         else:
             out = _data.matmul(left, right)
-    elif state_type is Dense:
+    elif isinstance(right, Dense):
         if isinstance(left, CSR):
-            out = matmul_dense(left, right)
-        elif isinstance(left, Dense):
             out = matmul_csr_dense_dense(left, right)
+        elif isinstance(left, Dense):
+            out = matmul_dense(left, right)
         else:
             out = _data.matmul(left, right)
     else:
@@ -86,33 +86,37 @@ cdef Data cy_matmul(Data left, state_type right):
     return out
 
 
-cdef Data cy_matmul_inplace(Data left, state_type right,
-                            double complex scale, state_type out):
-    if state_type is CSR:
+cdef Data cy_matmul_inplace(Data left, Data right,
+                            double complex scale, Data out):
+    if isinstance(right, CSR):
         if isinstance(left, CSR):
             out = matmul_csr(left, right, scale)
         else:
             out = _data.matmul(left, right, scale)
-    elif state_type is Dense:
+    elif isinstance(right, Dense) and isinstance(out, Dense):
         if isinstance(left, CSR):
-            matmul_dense(left, right, scale, out)
-        elif isinstance(left, Dense):
+            #print("matmul_csr_dense_dense")
             matmul_csr_dense_dense(left, right, scale, out)
+        elif isinstance(left, Dense):
+            #print("matmul_dense")
+            matmul_dense(left, right, scale, out)
         else:
+            #print("_data.matmul Dense")
             out = _data.matmul(left, right, scale)
     else:
+        #print("_data.matmul")
         out = _data.matmul(left, right, scale)
     return out
 
 
-cdef Data cy_add(Data left, state_type right, double complex scale):
+cdef Data cy_add(Data left, Data right, double complex scale):
     cdef Data out
-    if state_type is CSR:
+    if isinstance(right, CSR):
         if isinstance(left, CSR):
             out = add_csr(left, right, scale)
         else:
             out = _data.add(left, right, scale)
-    elif state_type is Dense:
+    elif isinstance(right, Dense):
         if isinstance(left, Dense):
             out = iadd_dense(left, right, scale)
         else:
@@ -122,13 +126,14 @@ cdef Data cy_add(Data left, state_type right, double complex scale):
     return out
 
 
-cdef double complex cy_expect(Data left, state_type right):
-    if state_type is CSR:
+cdef double complex cy_expect(Data left, Data right):
+    cdef double complex out
+    if isinstance(right, CSR):
         if isinstance(left, CSR):
             out = expect_csr(left, right)
         else:
             out = _data.expect(left, right)
-    elif state_type is Dense:
+    elif isinstance(right, Dense):
         if isinstance(left, CSR):
             out = expect_csr_dense(left, right)
         elif isinstance(left, Dense):
@@ -140,17 +145,18 @@ cdef double complex cy_expect(Data left, state_type right):
     return out
 
 
-cdef double complex cy_expect_super(Data left, state_type right):
+cdef double complex cy_expect_super(Data left, Data right):
     cdef size_t nrow
-    if state_type is CSR:
+    cdef double complex out
+    if isinstance(right, CSR):
         right = column_stack_csr(right)
         if isinstance(left, CSR):
             out = expect_super_csr(left, right)
         else:
             out = _data.expect_super(left, right)
-    elif state_type is Dense:
+    elif isinstance(right, Dense):
         nrow = right.shape[0]
-        right = column_stack_csr(right)
+        right = column_stack_dense(right, inplace=True)
         if isinstance(left, CSR):
             out = expect_super_csr_dense(left, right)
         elif isinstance(left, Dense):
@@ -232,7 +238,7 @@ cdef class CQobjEvo:
             self.coefficients[i] = coeff._call(t)
         return
 
-    cpdef Data matmul(self, double t, state_type matrix, state_type out=None):
+    cpdef Data matmul(self, double t, Data matrix, Data out=None):
         cdef size_t i
         self._factor(t)
         if out is None:
@@ -244,7 +250,7 @@ cdef class CQobjEvo:
                                     self.coefficients[i], out)
         return out
 
-    cpdef double complex expect(self, double t, state_type matrix) except *:
+    cpdef double complex expect(self, double t, Data matrix) except *:
         """
         Expectation is defined as `matrix.adjoint() @ self @ matrix` if
         `matrix` is a vector, or `matrix` is an operator and `self` is a
@@ -279,7 +285,7 @@ cdef class CQobjFunc(CQobjEvo):
     def call(self, double t, int data=0):
         return self.base(t, data=data)
 
-    cpdef Data matmul(self, double t, state_type matrix, state_type out=None):
+    cpdef Data matmul(self, double t, Data matrix, Data out=None):
         # TODO: like cQobjEvo, only work for CSR x Dense...
         cdef Data objdata = self.base(t, data=True)
         if out is None:
@@ -288,7 +294,7 @@ cdef class CQobjFunc(CQobjEvo):
             out = cy_matmul_inplace(objdata, matrix, 1, out)
         return out
 
-    cpdef double complex expect(self, double t, state_type matrix) except *:
+    cpdef double complex expect(self, double t, Data matrix) except *:
         """
         Expectation is defined as `matrix.adjoint() @ self @ matrix` if
         `matrix` is a vector, or `matrix` is an operator and `self` is a

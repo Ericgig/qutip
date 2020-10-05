@@ -122,7 +122,7 @@ class Solver:
             self._evolver.update_args(args)
             self._evolver.set(self._state, self._t, self.options)
         self._state = self._evolver.step(t)
-        self.t = t
+        self._t = t
         return self._restore_state(self._state.copy())
 
     def _driver_step(self, tlist, state0):
@@ -133,7 +133,7 @@ class Solver:
 
         self._evolver.set(state0, tlist[0], self.options)
         res = Result(self.e_ops, self.options.results, self._super)
-        res.add(tlist[0], self.state_qobj)
+        res.add(tlist[0], self._state_qobj)
 
         progress_bar.start(len(tlist)-1, **self.options['progress_kwargs'])
         for t, state in self._evolver.run(tlist):

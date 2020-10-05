@@ -22,7 +22,7 @@ cdef class QobjFeedback(Feedback):
         self.isherm = state.isherm
         self.isunitary = state.isunitary
         self.shape = state.shape
-        self.issuper = state.issuper
+        self.issuper = not state.isket
 
     cdef object _call(self, double t, _data.Data state):
         cdef _data.Data matrix = data.reshape(state,

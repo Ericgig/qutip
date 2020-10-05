@@ -31,14 +31,15 @@ cdef class SolverQEvo:
         _data.column_unstack_dense(state, self.base.shape[1], inplace=True)
         cdef _data.Dense out = _data.dense.zeros(state.shape[0],
                                 state.shape[1], state.fortran)
-        self.mul_data(t, state, out)
+        out = self.mul_data(t, state, out)
         _data.column_stack_dense(out, inplace=True)
         return out.as_ndarray().ravel()
 
-    cdef void mul_data(self, double t, _data.Data vec, _data.Data out):
+    cdef _data.Data mul_data(self, double t, _data.Data vec, _data.Data out):
         if self.has_dynamic_args:
             self.apply_feedback(t, vec)
-        self.base.matmul(t, vec, out)
+        out = self.base.matmul(t, vec, out)
+        return out
 
     def set_feedback(self, dict feedback, dict args, bint issuper, bint norm):
         # Move elsewhere and op should be a dimensions object when available

@@ -64,5 +64,5 @@ cdef class CQobjEvo:
     cdef dict args
     cdef object op
 
-    cpdef Data matmul(self, double t, state_type matrix, state_type out=*)
-    cpdef double complex expect(self, double t, state_type matrix) except *
+    cpdef Data matmul(self, double t, Data matrix, Data out=*)
+    cpdef double complex expect(self, double t, Data matrix) except *

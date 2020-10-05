@@ -163,8 +163,8 @@ class TestQobjevo:
     tlistlog = np.logspace(-3, 1, 10001)
     args = {'w1': 1, "w2": 2}
     cte_qobj = rand_herm(N)
-    real_qobj = Qobj(np.random.rand(N, N))
-    cplx_qobj = rand_herm(N)
+    real_qobj = Qobj(np.random.rand(N, N)).to(_data.Dense)
+    cplx_qobj = rand_herm(N).to(_data.CSR)
     real_coeff = Base_coeff(_real, "sin(t*w1)")
     cplx_coeff = Base_coeff(_cplx, "exp(1j*t*w2)")
     qobjevos = {"qobj": rand_herm(N), "scalar":np.random.rand()}
@@ -444,19 +444,26 @@ class TestQobjevo:
         N = self.N
         mat = np.random.rand(N, N) + 1 + 1j * np.random.rand(N, N)
         matF = np.asfortranarray(mat)
+        matDense = Qobj(mat).to(_data.Dense)
+        matCSR = Qobj(mat).to(_data.CSR)
         op = self.qobjevos[form]
         Qo1 = op(t)
         assert_allclose(Qo1.full() @ mat, op.mul(t, mat), atol=1e-14)
         assert_allclose(Qo1.full() @ matF, op.mul(t, matF), atol=1e-14)
+        assert_allclose(Qo1.full() @ mat, op.mul(t, matDense), atol=1e-14)
+        assert_allclose(Qo1.full() @ mat, op.mul(t, matCSR), atol=1e-14)
 
     def test_expect_psi(self, form):
         "QobjEvo expect psi"
         t = self._rand_t()
         N = self.N
         vec = _data.dense.fast_from_numpy(np.arange(N)*.5 + .5j)
+        csr = _data.to(_data.CSR, vec)
         op = self.qobjevos[form]
         Qo1 = op(t)
         assert_allclose(_data.expect(Qo1.data, vec), op.expect(t, vec),
+                        atol=1e-14)
+        assert_allclose(_data.expect(Qo1.data, csr), op.expect(t, vec),
                         atol=1e-14)
 
     def test_expect_rho(self, form):

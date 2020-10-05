@@ -34,7 +34,7 @@
 This module provides solvers for
 """
 __all__ = ['EvolverScipyZvode', 'EvolverScipyDop853',
-           'EvolverVern7', 'get_evolver']
+           'EvolverVern', 'get_evolver']
 
 
 import numpy as np
@@ -155,10 +155,10 @@ class EvolverScipyZvode(Evolver):
         r = ode(self.system.mul_np_vec)
         options_keys = ['atol', 'rtol', 'nsteps', 'method', 'order',
                         'first_step', 'max_step', 'min_step']
-        options = {key: options[key]
-                   for key in options_keys
-                   if key in options}
-        r.set_integrator('zvode', **options)
+        opt = {key: options[key]
+               for key in options_keys
+               if key in options}
+        r.set_integrator('zvode', **opt)
         self._ode_solver = r
 
         self.set_state(state0, t0)
@@ -196,10 +196,10 @@ class EvolverScipyDop853(Evolver):
         r = ode(self.funcwithfloat)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
                         'ifactor', 'dfactor', 'beta']
-        options = {key: options[key]
-                   for key in options_keys
-                   if key in options}
-        r.set_integrator('dop853', **options)
+        opt = {key: options[key]
+               for key in options_keys
+               if key in options}
+        r.set_integrator('dop853', **opt)
         self._ode_solver = r
         self.set_state(state0, t0)
 
@@ -242,12 +242,12 @@ class EvolverVern(Evolver):
         func = QtOdeFuncWrapperSolverQEvo(self.system)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
                         'min_step', 'interpolate']
-        options = {key: options[key]
-                   for key in options_keys
-                   if key in options}
-        ode = vern7 if options.method == 'vern7' else vern9
-        self.name += options.method
-        self._ode_solver = ode(func, **options)
+        opt = {key: options[key]
+               for key in options_keys
+               if key in options}
+        ode = vern7 if options['method'] == 'vern7' else vern9
+        self.name += options['method']
+        self._ode_solver = ode(func, **opt)
         self.set_state(state0, t0)
 
     def get_state(self):
