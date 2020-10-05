@@ -212,11 +212,9 @@ cy_exts = {
     ],
     'solver.ode': [
         'wrapper',
-        'verner7robust',
         'verner7efficient',
-        'verner7',
+        'verner9efficient',
         'explicit_rk',
-        'verner7efficientrk',
     ],
     'solver.nonmarkov': [
         '_heom',

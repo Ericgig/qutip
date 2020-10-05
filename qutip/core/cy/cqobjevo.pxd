@@ -37,6 +37,13 @@ cimport numpy as cnp
 from qutip.core.data.base cimport idxint
 from qutip.core.data cimport CSR, Dense, Data
 
+
+ctypedef fused state_type:
+    CSR
+    Dense
+    Data
+
+
 cdef class CQobjEvo:
     cdef readonly (idxint, idxint) shape
     cdef readonly object dims
@@ -57,5 +64,5 @@ cdef class CQobjEvo:
     cdef dict args
     cdef object op
 
-    cpdef Data matmul(self, double t, Data matrix, Data out=*)
-    cpdef double complex expect(self, double t, Data matrix) except *
+    cpdef Data matmul(self, double t, state_type matrix, state_type out=*)
+    cpdef double complex expect(self, double t, state_type matrix) except *

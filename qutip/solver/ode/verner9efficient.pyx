@@ -46,7 +46,7 @@ cdef class vern9(Explicit_RungeKutta):
         self._y_temp.inplace_add((<QtOdeData> self.k[3]), dt * self.a[4][3])
         self.f.call((<QtOdeData> self.k[4]), t + self.c[4]*dt, self._y_temp)
 
-        for step range(5, 7):
+        for step in range(5, 7):
             self._y_temp.copy(self._y_prev)
             self._y_temp.inplace_add((<QtOdeData> self.k[0]),
                                      dt * self.a[step][0])
@@ -57,7 +57,7 @@ cdef class vern9(Explicit_RungeKutta):
                         t + self.c[step]*dt,
                         self._y_temp)
 
-        for step range(7, 14):
+        for step in range(7, 14):
             self._y_temp.copy(self._y_prev)
             self._y_temp.inplace_add((<QtOdeData> self.k[0]),
                                      dt * self.a[step][0])

@@ -20,7 +20,7 @@ cdef extern from *:
     void PyDataMem_FREE(void *ptr)
 
 __all__ = [
-    'add', 'add_csr', 'add_dense',
+    'add', 'add_csr', 'add_dense', 'iadd_dense',
     'sub', 'sub_csr', 'sub_dense',
 ]
 
@@ -201,6 +201,21 @@ cpdef Dense add_dense(Dense left, Dense right, double complex scale=1):
         for idx in range(dim2):
             blas.zaxpy(&dim1, &scale, right.data + idx, &dim2, out.data + idx*dim1, &_ONE)
     return out
+
+cpdef Dense iadd_dense(Dense left, Dense right, double complex scale=1):
+    _check_shape(left, right)
+    cdef int size = left.shape[0] * left.shape[1]
+    cdef int dim1, dim2
+    cdef size_t nrows=left.shape[0], ncols=left.shape[1], idx
+    dim1, dim2 = (nrows, ncols) if left.fortran else (ncols, nrows)
+    with nogil:
+        if not (left.fortran ^ right.fortran):
+            blas.zaxpy(&size, &scale, right.data, &_ONE, left.data, &_ONE)
+        else:
+            for idx in range(dim2):
+                blas.zaxpy(&dim1, &scale, right.data + idx, &dim2,
+                           left.data + idx*dim1, &_ONE)
+    return left
 
 cpdef CSR sub_csr(CSR left, CSR right):
     return add_csr(left, right, -1)

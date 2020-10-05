@@ -289,7 +289,7 @@ class EvolverDiag(Evolver):
     def step(self, t):
         """ Evolve to t, must be `set` before. """
         dt = self._t - t
-        if self.dt != dt
+        if self.dt != dt:
             self.expH = np.exp(self.diag * dt)
             self.dt = dt
         self._y *= self.expH
@@ -299,7 +299,7 @@ class EvolverDiag(Evolver):
     def run(self, tlist):
         """ Yield (t, state(t)) for t in tlist, must be `set` before. """
         for t in tlist[1:]:
-    inplace_add        state = self.step(t)
+            state = self.step(t)
             yield t, state
 
     def get_state(self):

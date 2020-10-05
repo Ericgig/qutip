@@ -263,7 +263,7 @@ cdef class CyMcOde:
         cdef CQobjEvo cobj
         for ii in range(self.num_ops):
             cobj = <CQobjEvo> self.n_ops[ii].compiled_qobjevo
-            e = cobj.expect(t, _data.dense.fast_from_numpy(y.base)).real
+            e = cobj.expect(t, <Dense> _data.dense.fast_from_numpy(y.base)).real
             self.n_dp[ii] = e
             sum_ += e
         rand *= sum_
@@ -282,7 +282,7 @@ cdef class CyMcOde:
         cdef CQobjEvo cobj
         cdef Dense state
         cobj = <CQobjEvo> self.c_ops[j].compiled_qobjevo
-        state = cobj.matmul(t, _data.dense.fast_from_numpy(y.base))
+        state = cobj.matmul(t, <Dense> _data.dense.fast_from_numpy(y.base))
         state /= l2_dense(state)
         return state.as_ndarray()[:, 0]
 

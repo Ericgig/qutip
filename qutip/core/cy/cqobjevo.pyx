@@ -45,15 +45,15 @@ from ..qobj import Qobj
 from .. import data as _data
 
 from qutip.core.data cimport CSR, Dense, dense
-from qutip.core.data.add cimport add_csr
-from qutip.core.data.add cimport (matmul_csr, matmul_csr_dense_dense,
-                                  matmul_dense)
+from qutip.core.data.add cimport add_csr, iadd_dense
+from qutip.core.data.matmul cimport (matmul_csr, matmul_csr_dense_dense,
+                                     matmul_dense)
 # TODO: handle dispatch properly.  We import rather than cimport because we
 # have to call with Python semantics.
-from qutip.core.data.expect import (
+from qutip.core.data.expect cimport (
     expect_csr, expect_super_csr, expect_csr_dense, expect_super_csr_dense,
+    expect_dense_dense, expect_super_dense_dense,
 )
-from qutip.core.data.matmul cimport matmul_csr_dense_dense
 from qutip.core.data.reshape cimport (column_stack_csr, column_stack_dense,
                                       column_unstack_dense)
 from qutip.core.cy.coefficient cimport Coefficient
@@ -63,39 +63,114 @@ cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
 
 
-# TODO: CQobjEvo use a lot of python dispatcher function.
-# time and use cython function where it's better.
+# TODO: isintance in cython can be made python?
+# Worth it?
 
-ctypedef fused base_type:
-    CRS
-    Dense
-    Data
 
-ctypedef fused state_type:
-    CRS
-    Dense
-    Data
+cdef Data cy_matmul(Data left, state_type right):
+    cdef Data out
+    if state_type is CSR:
+        if isinstance(left, CSR):
+            out = matmul_csr(left, right)
+        else:
+            out = _data.matmul(left, right)
+    elif state_type is Dense:
+        if isinstance(left, CSR):
+            out = matmul_dense(left, right)
+        elif isinstance(left, Dense):
+            out = matmul_csr_dense_dense(left, right)
+        else:
+            out = _data.matmul(left, right)
+    else:
+        out = _data.matmul(left, right)
+    return out
 
-cdef matmul_inplace(base_type left, state_type right,
-                    double complex scale, state_type out):
-    if base_type is CRS and state_type is CRS:
-        matmul_csr(left, right, scale, out)
-    elif base_type is CRS and state_type is Dense:
-        matmul_dense(left, right, scale, out)
-    elif base_type is Dense and state_type is Dense:
-        matmul_csr_dense_dense(left, right, scale, out)
+
+cdef Data cy_matmul_inplace(Data left, state_type right,
+                            double complex scale, state_type out):
+    if state_type is CSR:
+        if isinstance(left, CSR):
+            out = matmul_csr(left, right, scale)
+        else:
+            out = _data.matmul(left, right, scale)
+    elif state_type is Dense:
+        if isinstance(left, CSR):
+            matmul_dense(left, right, scale, out)
+        elif isinstance(left, Dense):
+            matmul_csr_dense_dense(left, right, scale, out)
+        else:
+            out = _data.matmul(left, right, scale)
     else:
         out = _data.matmul(left, right, scale)
+    return out
+
+
+cdef Data cy_add(Data left, state_type right, double complex scale):
+    cdef Data out
+    if state_type is CSR:
+        if isinstance(left, CSR):
+            out = add_csr(left, right, scale)
+        else:
+            out = _data.add(left, right, scale)
+    elif state_type is Dense:
+        if isinstance(left, Dense):
+            out = iadd_dense(left, right, scale)
+        else:
+            out = _data.add(left, right, scale)
+    else:
+        out = _data.add(left, right, scale)
+    return out
+
+
+cdef double complex cy_expect(Data left, state_type right):
+    if state_type is CSR:
+        if isinstance(left, CSR):
+            out = expect_csr(left, right)
+        else:
+            out = _data.expect(left, right)
+    elif state_type is Dense:
+        if isinstance(left, CSR):
+            out = expect_csr_dense(left, right)
+        elif isinstance(left, Dense):
+            out = expect_dense_dense(left, right)
+        else:
+            out = _data.expect(left, right)
+    else:
+        out = _data.expect(left, right)
+    return out
+
+
+cdef double complex cy_expect_super(Data left, state_type right):
+    cdef size_t nrow
+    if state_type is CSR:
+        right = column_stack_csr(right)
+        if isinstance(left, CSR):
+            out = expect_super_csr(left, right)
+        else:
+            out = _data.expect_super(left, right)
+    elif state_type is Dense:
+        nrow = right.shape[0]
+        right = column_stack_csr(right)
+        if isinstance(left, CSR):
+            out = expect_super_csr_dense(left, right)
+        elif isinstance(left, Dense):
+            out = expect_super_dense_dense(left, right)
+        else:
+            out = _data.expect_super(left, right)
+        column_unstack_dense(right, nrow, inplace=True)
+    else:
+        out = _data.expect_super(left, right)
+    return out
 
 
 cdef class CQobjEvo:
     """
-    Dense matmul(double t, Dense matrix, Dense out=None)
+    Data matmul(double t, Data matrix, Data out=None)
       Get the matrix multiplication of self with matrix and put the result in
       `out`, if supplied.  Always returns the object it stored the output in
       (even if it was passed).
 
-    expect(double t, CSR matrix)
+    expect(double t, Data matrix)
       Get the expectation value at a time `t`.
       return expectation value, knows to use the super version or not.
 
@@ -143,7 +218,7 @@ cdef class CQobjEvo:
                 + " but expected " + str(self.n_ops)
             )
         for i in range(len(self.ops)):
-            out = add_csr(out, self.ops[i], scale=coefficients[i])
+            out = cy_add(out, <Data> self.ops[i], scale=coefficients[i])
         if data:
             return out
         return Qobj(out, dims=self.dims, type=self.type,
@@ -157,37 +232,36 @@ cdef class CQobjEvo:
             self.coefficients[i] = coeff._call(t)
         return
 
-    cpdef Dense matmul(self, double t, Data matrix, Data out=None):
+    cpdef Data matmul(self, double t, state_type matrix, state_type out=None):
         cdef size_t i
         self._factor(t)
         if out is None:
-            out = _data.matmul(self.constant, matrix)
+            out = cy_matmul(self.constant, matrix)
         else:
-            matmul_inplace(self.constant, matrix, 1, out)
+            out = cy_matmul_inplace(self.constant, matrix, 1, out)
         for i in range(self.n_ops):
-            matmul_inplace(self.ops[i], matrix,
-                           self.coefficients[i], out)
+            out = cy_matmul_inplace(<Data> self.ops[i], matrix,
+                                    self.coefficients[i], out)
         return out
 
-    cpdef double complex expect(self, double t, Data matrix) except *:
+    cpdef double complex expect(self, double t, state_type matrix) except *:
         """
         Expectation is defined as `matrix.adjoint() @ self @ matrix` if
         `matrix` is a vector, or `matrix` is an operator and `self` is a
         superoperator.  If `matrix` is an operator and `self` is an operator,
         then expectation is `trace(self @ matrix)`.
         """
-        if self.issuper:
-            matrix = _data.column_stack(matrix)
-            _expect = _data.expect_super
-        else:
-            _expect = _data.expect
-        self._factor(t)
-        # end shim
         cdef size_t i
         cdef double complex out
-        out = _expect(self.constant, matrix)
-        for i in range(self.n_ops):
-            out += self.coefficients[i] * _expect(self.ops[i], matrix)
+        self._factor(t)
+        if self.issuper:
+            out = cy_expect_super(self.constant, matrix)
+            for i in range(self.n_ops):
+                out += self.coefficients[i] * cy_expect_super(<Data> self.ops[i], matrix)
+        else:
+            out = cy_expect(self.constant, matrix)
+            for i in range(self.n_ops):
+                out += self.coefficients[i] * cy_expect(<Data> self.ops[i], matrix)
         return out
 
 
@@ -205,16 +279,16 @@ cdef class CQobjFunc(CQobjEvo):
     def call(self, double t, int data=0):
         return self.base(t, data=data)
 
-    cpdef Dense matmul(self, double t, Data matrix, Data out=None):
-        # TODO: like cQobjEvo, only work for CRS x Dense...
-        objdata = self.base(t, data=True)
+    cpdef Data matmul(self, double t, state_type matrix, state_type out=None):
+        # TODO: like cQobjEvo, only work for CSR x Dense...
+        cdef Data objdata = self.base(t, data=True)
         if out is None:
-            out = _data.matmul(objdata, matrix)
+            out = cy_matmul(objdata, matrix)
         else:
-            matmul_inplace(objdata, matrix, 1, out)
+            out = cy_matmul_inplace(objdata, matrix, 1, out)
         return out
 
-    cpdef double complex expect(self, double t, Data matrix) except *:
+    cpdef double complex expect(self, double t, state_type matrix) except *:
         """
         Expectation is defined as `matrix.adjoint() @ self @ matrix` if
         `matrix` is a vector, or `matrix` is an operator and `self` is a
@@ -223,12 +297,9 @@ cdef class CQobjFunc(CQobjEvo):
         """
         cdef double complex out
         cdef int nrow
-        objdata = self.base(t, data=True)
+        cdef Data objdata = self.base(t, data=True)
         if self.issuper:
-            matrix = _data.column_stack(matrix)
-            out = _data.expect_super(objdata, matrix)
+            out = cy_expect_super(objdata, matrix)
         else:
-            _expect = expect_csr if isinstance(matrix, CSR) else expect_csr_dense
-            out = _expect(objdata, matrix)
-        # end shim
+            out = cy_expect(objdata, matrix)
         return out

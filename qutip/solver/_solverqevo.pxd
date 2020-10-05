@@ -12,5 +12,6 @@ cdef class SolverQEvo:
     cdef dict args
     cdef list collapse
     cdef void mul_data(self, double t, _data.Data vec, _data.Data out)
+    cdef _data.Data jac_data(self, double t)
     cdef void apply_feedback(self, double t, _data.Data matrix) except *
     cpdef void arguments(self, dict args)
