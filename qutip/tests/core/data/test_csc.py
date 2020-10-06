@@ -57,6 +57,7 @@ def data_csc(shape, density, sorted_):
     return conftest.random_csc(shape, density, sorted_)
 
 
+
 class TestClassMethods:
     def test_init_from_tuple(self, scipy_csc):
         """
@@ -197,6 +198,14 @@ class TestClassMethods:
         assert isinstance(data_csc.as_scipy(), scipy.sparse.csc_matrix)
         assert (data_csc.as_scipy() - scipy_csc).nnz == 0
 
+    def test_as_scipy_of_uninitialised_is_empty(self, shape, density):
+        nnz = int(shape[0] * shape[1] * density) or 1
+        base = csc.empty(shape[0], shape[1], nnz)
+        sci = base.as_scipy()
+        assert sci.nnz == 0
+        assert len(sci.data) == 0
+        assert len(sci.indices) == 0
+
     def test_to_array_is_correct_result(self, data_csc):
         test_array = data_csc.to_array()
         assert isinstance(test_array, np.ndarray)
@@ -204,17 +213,35 @@ class TestClassMethods:
         # mathematics, so they should be _identical_.
         assert np.all(test_array == data_csc.as_scipy().toarray())
 
+    def test_sorted_indices(self, data_csc):
+        # Some matrices _cannot_ be unsorted (e.g. if they have only one entry
+        # per row), so we add in this additional assertion message just to help
+        # out.
+        message = (
+            "Sort on {}sorted indices failed."
+            .format("" if data_csc.as_scipy().has_sorted_indices else "un")
+        )
+        # We test on a copy because scipy attempts to cache
+        # `has_sorted_indices`, but since it's a view, it has no idea what
+        # we've done to the indices behind the scenes and typically would not
+        # notice the change.  The copy will return a difference scipy matrix,
+        # so the cache will not be built.
+        copy = data_csc.copy()
+        copy.sort_indices()
+        assert copy.as_scipy().has_sorted_indices, message
+
 
 class TestFactoryMethods:
     def test_empty(self, shape, density):
         nnz = int(shape[0] * shape[1] * density) or 1
         base = csc.empty(shape[0], shape[1], nnz)
-        sci = base.as_scipy()
+        sci = base.as_scipy(full=True)
         assert isinstance(base, data.CSC)
+        assert isinstance(sci, scipy.sparse.csc_matrix)
         assert base.shape == shape
         assert sci.data.shape == (nnz,)
         assert sci.indices.shape == (nnz,)
-        assert sci.indptr.shape == (shape[1] + 1,)
+        assert sci.indptr.shape == (shape[0] + 1,)
 
     def test_zeros(self, shape):
         base = csc.zeros(shape[0], shape[1])
@@ -222,7 +249,7 @@ class TestFactoryMethods:
         assert isinstance(base, data.CSC)
         assert base.shape == shape
         assert sci.nnz == 0
-        assert sci.indptr.shape == (shape[1] + 1,)
+        assert sci.indptr.shape == (shape[0] + 1,)
 
     @pytest.mark.parametrize('dimension', [1, 5, 100])
     @pytest.mark.parametrize(
@@ -243,19 +270,3 @@ class TestFactoryMethods:
         assert base.shape == (dimension, dimension)
         assert sci.nnz == dimension
         assert (sci - scipy_test).nnz == 0
-
-
-def test_sorted_indices(data_csc):
-    # Some matrices _cannot_ be unsorted (e.g. if they have only one entry per
-    # row), so we add in this additional assertion message just to help out.
-    message = (
-        "Sort on {}sorted indices failed."
-        .format("" if data_csc.as_scipy().has_sorted_indices else "un")
-    )
-    # We test on a copy because scipy attempts to cache `has_sorted_indices`,
-    # but since it's a view, it has no idea what we've done to the indices
-    # behind the scenes and typically would not notice the change.  The copy
-    # will return a difference scipy matrix, so the cache will not be built.
-    copy = data_csc.copy()
-    csc.sort_indices(copy)
-    assert copy.as_scipy().has_sorted_indices, message

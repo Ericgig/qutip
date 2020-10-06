@@ -59,8 +59,7 @@ def random_scipy_csc(shape, density, sorted_):
         shuffle_indices_scipy_csr(sci)
     return sci.tocsc()
 
-
-def random_numpy_dense(shape, fortran=False):
+def random_numpy_dense(shape, fortran):
     """Generate a random numpy dense matrix with the given shape."""
     out = np.random.rand(*shape) + 1j*np.random.rand(*shape)
     if fortran:
