@@ -305,13 +305,13 @@ def testMESolveDecayFeedback(method):
     "mesolve: state feedback"
     #
     tol = 1e-3
-    options = SolverOptions(method=method)
+    options = SolverOptions(method=method, nsteps=10000)
     def f(t, args):
         return np.sqrt(args["state"][2,2])
 
     H = qeye(3)
     b12 = basis(3, 1) * basis(3, 2).dag()
-    res = mesolve(H, basis(3, 2), tlist=np.linspace(0, 10, 21),
+    res = mesolve(H, basis(3, 2), tlist=np.linspace(0, 10, 51),
                   c_ops=[[destroy(3), f], b12],
                   e_ops=[num(3), ket2dm(basis(3, 2))],
                   options=options,
@@ -323,7 +323,7 @@ def testMESolveDecayFeedback(method):
     def f(t, args):
         return np.sqrt(args["e"])
 
-    res = mesolve(H, basis(3, 1), tlist=np.linspace(0, 10, 11),
+    res = mesolve(H, basis(3, 1), tlist=np.linspace(0, 10, 51),
                   c_ops=[[destroy(3), f], b12],
                   e_ops=[num(3), ket2dm(basis(3, 2))],
                   options=options,

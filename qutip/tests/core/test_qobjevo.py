@@ -450,8 +450,8 @@ class TestQobjevo:
         Qo1 = op(t)
         assert_allclose(Qo1.full() @ mat, op.mul(t, mat), atol=1e-14)
         assert_allclose(Qo1.full() @ matF, op.mul(t, matF), atol=1e-14)
-        assert_allclose(Qo1.full() @ mat, op.mul(t, matDense), atol=1e-14)
-        assert_allclose(Qo1.full() @ mat, op.mul(t, matCSR), atol=1e-14)
+        assert_allclose(Qo1.full() @ mat, op.mul(t, matDense).full(), atol=1e-14)
+        assert_allclose(Qo1.full() @ mat, op.mul(t, matCSR).full(), atol=1e-14)
 
     def test_expect_psi(self, form):
         "QobjEvo expect psi"

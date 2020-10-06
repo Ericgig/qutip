@@ -44,7 +44,7 @@ cnp.import_array()
 from ..qobj import Qobj
 from .. import data as _data
 
-from qutip.core.data cimport CSR, Dense, dense
+from qutip.core.data cimport CSR, Dense, Data
 from qutip.core.data.add cimport add_csr, iadd_dense
 from qutip.core.data.matmul cimport (matmul_csr, matmul_csr_dense_dense,
                                      matmul_dense)
@@ -213,7 +213,7 @@ cdef class CQobjEvo:
             self.coeff[i] = vary.coeff
 
     def call(self, double t, object coefficients=None, bint data=False):
-        cdef CSR out = self.constant.copy()
+        cdef Data out = self.constant.copy()
         cdef Py_ssize_t i
         if coefficients is None:
             self._factor(t)

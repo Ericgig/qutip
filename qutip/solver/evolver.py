@@ -34,7 +34,7 @@
 This module provides solvers for
 """
 __all__ = ['EvolverScipyZvode', 'EvolverScipyDop853',
-           'EvolverVern', 'get_evolver']
+           'EvolverVern', 'EvolverDiag', 'get_evolver']
 
 
 import numpy as np

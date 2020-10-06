@@ -306,8 +306,9 @@ class QobjEvo(QobjEvoBase):
         transform all component to a common data_type.
 
     """
-    def __init__(self, Q_object=[], args={}, copy=True,
-                 tlist=None):
+    # TODO: remove e_ops, state0 when no longer needed
+    def __init__(self, Q_object=[], args={}, copy=True, tlist=None,
+                 state0=None, e_ops=None):
         if isinstance(Q_object, QobjEvo):
             from .qobjevofunc import QobjEvoFunc
             if isinstance(Q_object, QobjEvoFunc):
