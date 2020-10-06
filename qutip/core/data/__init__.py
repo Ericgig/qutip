@@ -1,6 +1,6 @@
 # First-class type imports
 
-from . import dense, csr
+from . import dense, csr, csc
 from .dense import Dense
 from .csr import CSR
 from .csc import CSC
@@ -34,6 +34,10 @@ from .convert import to, create
 to.add_conversions([
     (Dense, CSR, dense.from_csr, 1),
     (CSR, Dense, csr.from_dense, 1.4),
+    (CSC, Dense, csc.from_dense, 1.4),
+    (CSC, CSR, csc.from_csr, 1.0),
+    (CSR, CSC, csc.to_csr, 1.0),
+    (Dense, CSC, csc.to_dense, 1.0),
 ])
 
 from .dispatch import Dispatcher

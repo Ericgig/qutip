@@ -41,8 +41,14 @@ cpdef double complex trace_dense(Dense matrix) nogil except *:
 
 cpdef double complex trace_csc(CSC matrix) nogil except *:
     _check_shape(matrix)
-    cdef CSR transposed = csc.as_tr_csr(matrix, False)
-    return trace_csr(transposed)
+    cdef size_t col, ptr
+    cdef double complex trace = 0
+    for col in range(matrix.shape[1]):
+        for ptr in range(matrix.col_index[col], matrix.col_index[col + 1]):
+            if matrix.row_index[ptr] == col:
+                trace += matrix.data[ptr]
+                break
+    return trace
 
 
 from .dispatch import Dispatcher as _Dispatcher

@@ -152,7 +152,7 @@ adjoint.__doc__ = """Hermitian adjoint (matrix conjugate transpose)."""
 adjoint.add_specialisations([
     (Dense, Dense, adjoint_dense),
     (CSR, CSR, adjoint_csr),
-    (CSR, CSR, adjoint_csc),
+    (CSC, CSC, adjoint_csc),
 ], _defer=True)
 
 transpose = _Dispatcher(
@@ -169,8 +169,6 @@ transpose.add_specialisations([
     (Dense, Dense, transpose_dense),
     (CSR, CSR, transpose_csr),
     (CSC, CSC, transpose_csc),
-    (CSR, CSC, csc.as_tr_csr),
-    (CSC, CSR, csc.from_tr_csr),
 ], _defer=True)
 
 conj = _Dispatcher(

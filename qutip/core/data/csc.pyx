@@ -8,14 +8,15 @@ import warnings
 
 import numpy as np
 cimport numpy as cnp
+import scipy.sparse
 from scipy.sparse import csc_matrix as scipy_csc_matrix
 from scipy.sparse.data import _data_matrix as scipy_data_matrix
 
 from qutip.core.data cimport base
 from qutip.core.data.csr cimport CSR
 from qutip.core.data.dense cimport Dense
-from qutip.core.data.csr cimport nnz as csrnnz
-from .base import idxint_dtype
+from qutip.core.data cimport csr
+from qutip.core.data.base import idxint_dtype
 from qutip.core.data.adjoint cimport (adjoint_csc, transpose_csc, conj_csc,
                                       transpose_csr)
 from qutip.core.data.trace cimport trace_csc
@@ -24,7 +25,9 @@ cnp.import_array()
 
 cdef extern from *:
     void PyArray_ENABLEFLAGS(cnp.ndarray arr, int flags)
+    void PyArray_CLEARFLAGS(cnp.ndarray arr, int flags)
     void *PyDataMem_NEW(size_t size)
+    void *PyDataMem_NEW_ZEROED(size_t size, size_t elsize)
     void PyDataMem_FREE(void *ptr)
 
 __all__ = ['CSC']
@@ -105,7 +108,7 @@ cdef class CSC(base.Data):
             # smallest matrix which can hold all these values by iterating
             # through the columns.  This is slow and probably inaccurate, since
             # there could be columns containing zero (hence the warning).
-            self.shape[1] = self.col_index.shape[0] - 1
+            self.shape[1] = cnp.PyArray_DIMS(col_index)[0] - 1
             row = 1
             for ptr in range(self.size):
                 row = self.row_index[ptr] if self.row_index[ptr] > row else row
@@ -162,7 +165,7 @@ cdef class CSC(base.Data):
                 buffer[self.row_index[ptr], col] = self.data[ptr]
         return out
 
-    cpdef object as_scipy(self):
+    cpdef object as_scipy(self, bint full=False):
         """
         Get a view onto this object as a `scipy.sparse.csc_matrix`.  The
         underlying data structures are exposed, such that modifications to the
@@ -229,13 +232,13 @@ cdef class CSC(base.Data):
     cpdef double complex trace(self):
         return trace_csc(self)
 
-    cpdef CSR adjoint(self):
+    cpdef CSC adjoint(self):
         return adjoint_csc(self)
 
-    cpdef CSR conj(self):
+    cpdef CSC conj(self):
         return conj_csc(self)
 
-    cpdef CSR transpose(self):
+    cpdef CSC transpose(self):
         return transpose_csc(self)
 
 
@@ -343,9 +346,9 @@ cpdef CSC fast_from_scipy(object sci):
     return out
 
 
-cpdef CSC from_CSR(CSR matrix):
+cpdef CSC from_csr(CSR matrix):
     """Transform a CSR to CSC."""
-    cdef CRS transposed = transpose_csr(matrix)
+    cdef CSR transposed = transpose_csr(matrix)
     return from_tr_csr(transposed, False)
 
 
@@ -358,7 +361,7 @@ cpdef CSC from_dense(Dense matrix):
     col_stride = matrix.shape[0] if matrix.fortran else 1
     out.col_index[0] = 0
     for col in range(matrix.shape[1]):
-    ptr_in = col_stride * col
+        ptr_in = col_stride * col
         for row in range(matrix.shape[0]):
             if matrix.data[ptr_in] != 0:
                 out.data[ptr_out] = matrix.data[ptr_in]
@@ -369,9 +372,9 @@ cpdef CSC from_dense(Dense matrix):
     return out
 
 
-cpdef CRS as_tr_csr(CSC matrix, bint copy=True):
+cpdef CSR as_tr_csr(CSC matrix, bint copy=True):
     """ Return a CSR which is the transposed to this CSC.
-    If copy is False, this CRS is a view on the CSC with no data ownership.
+    If copy is False, this CSR is a view on the CSC with no data ownership.
     """
     cdef CSR out = CSR.__new__(CSR)
     out.data = matrix.data
@@ -386,16 +389,16 @@ cpdef CRS as_tr_csr(CSC matrix, bint copy=True):
         return out
 
 
-cpdef CSC from_tr_csr(CRS matrix, bint copy=True):
-    """ Return a CSC which is the transposed to this CRS.
-    If copy is False, steal data ownership from the CRS.
+cpdef CSC from_tr_csr(CSR matrix, bint copy=True):
+    """ Return a CSC which is the transposed to this CSR.
+    If copy is False, steal data ownership from the CSR.
     """
     cdef CSC out = CSC.__new__(CSC)
     out.data = matrix.data
     out.col_index = matrix.row_index
     out.row_index = matrix.col_index
     out.size = matrix.size
-    out.shape = (self.shape[1], self.shape[0])
+    out.shape = (matrix.shape[1], matrix.shape[0])
     if copy:
         out._deallocate = False
         return out.copy()
@@ -406,11 +409,11 @@ cpdef CSC from_tr_csr(CRS matrix, bint copy=True):
 
 
 cpdef CSR to_csr(CSC matrix):
-    cdef CRS transposed = as_tr_csr(matrix, False)
+    cdef CSR transposed = as_tr_csr(matrix, False)
     return transpose_csr(transposed)
 
 
-cpdef Dense to_Dense(CSC matrix, bint fortran=False):
+cpdef Dense to_dense(CSC matrix, bint fortran=False):
     cdef Dense out = Dense.__new__(Dense)
     out.shape = matrix.shape
     out.data = (

@@ -23,7 +23,6 @@ cdef class CSC(base.Data):
     cpdef CSC transpose(CSC self)
 
 cpdef CSC copy_structure(CSC matrix)
-cpdef void sort_indices(CSC matrix) nogil
 cpdef CSC sorted(CSC matrix)
 cpdef base.idxint nnz(CSC matrix) nogil
 cpdef CSC empty(base.idxint rows, base.idxint cols, base.idxint size)
@@ -32,9 +31,9 @@ cpdef CSC zeros(base.idxint rows, base.idxint cols)
 cpdef CSC identity(base.idxint dimension, double complex scale=*)
 
 cpdef CSC fast_from_scipy(object sci)
-cpdef CSC from_CSR(CSR matrix)
+cpdef CSC from_csr(CSR matrix)
 cpdef CSC from_dense(Dense matrix)
 cpdef CSR as_tr_csr(CSC matrix, bint copy=*)
 cpdef CSC from_tr_csr(CSR matrix, bint copy=*)
 cpdef CSR to_csr(CSC matrix)
-cpdef Dense to_Dense(CSC matrix)
+cpdef Dense to_dense(CSC matrix)
