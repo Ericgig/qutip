@@ -76,7 +76,7 @@ def test_analytical_evolution():
     device = DispersiveCavityQED(n_qubits, correct_global_phase=True)
     operators = device.run_state(init_state=state, qc=circuit, analytical=True)
     result = gate_sequence_product(operators)
-    assert abs(qutip.metrics.fidelity(result, ideal) - 1) < _tol
+    assert abs(qutip.fidelity(result, ideal) - 1) < _tol
 
 
 @pytest.mark.skipif("platform.system() == 'Darwin'")
@@ -95,7 +95,7 @@ def test_numerical_evolution():
     state.dims = [[2]*n_qubits, [1]*n_qubits]
     target = gate_sequence_product([state] + circuit.propagators())
     extra = qutip.basis(10, 0)
-    options = qutip.Options(store_final_state=True, nsteps=50_000)
+    options = qutip.SolverOptions(store_final_state=True, nsteps=50_000)
     result = device.run_state(init_state=qutip.tensor(extra, state),
                               analytical=False,
                               options=options)

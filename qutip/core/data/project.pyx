@@ -10,6 +10,10 @@ from qutip.core.data.csr cimport CSR
 cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
 
+__all__ = [
+    'project', 'project_csr',
+]
+
 
 cdef void _project_ket_csr(CSR ket, CSR out) nogil:
     """
@@ -43,7 +47,8 @@ cdef void _project_bra_csr(CSR bra, CSR out) nogil:
     # O(nnz log(nnz)) and the projection is O(nnz^2).  Also, much better to
     # sort now than later while there are fewer entries.  No need to sort when
     # projecting a ket because all the col_index values are 0.
-    csr.sort_indices(bra)
+    with gil:
+        bra.sort_indices()
     out.row_index[0] = cur
     for ptr_bra in range(nnz_in):
         # Handle all zero rows between the last non-zero entry and this one.
@@ -83,3 +88,32 @@ cpdef CSR project_csr(CSR state):
         _project_bra_csr(state, out)
         return out
     raise TypeError("state must be a ket or a bra.")
+
+
+from .dispatch import Dispatcher as _Dispatcher
+import inspect as _inspect
+
+project = _Dispatcher(
+    _inspect.Signature([
+        _inspect.Parameter('state', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    ]),
+    name='project',
+    module=__name__,
+    inputs=('state',),
+    out=True,
+)
+project.__doc__ =\
+    """
+    Get the projector of a state with itself.  Mathematically, if passed an
+    object `|a>` or `<a|`, then return the matrix `|a><a|`.
+
+    Arguments
+    ---------
+    state : Data
+        The input state bra- or ket-like vector.
+    """
+project.add_specialisations([
+    (CSR, CSR, project_csr),
+], _defer=True)
+
+del _inspect, _Dispatcher
