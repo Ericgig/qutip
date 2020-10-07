@@ -16,38 +16,66 @@ from qutip.core.data.base cimport idxint
 from qutip.core.data.dense cimport Dense
 from qutip.core.data.csr cimport CSR
 from qutip.core.data.csc cimport CSC
+from qutip.core.data cimport dense, csr, csc
 
 cnp.import_array()
 
 
-cpdef void mv_ahs_csr(CSR matrix,
-                 double complex[:] vec,
-                 double complex[:] out,
-                 idxint[:] rows):
+cdef void _check_shape(Data left, Data right, Data out=None) nogil except *:
+    if left.shape[1] != right.shape[0]:
+        raise ValueError(
+            "incompatible matrix shapes "
+            + str(left.shape)
+            + " and "
+            + str(right.shape)
+        )
+    if right.shape[1] != 1:
+        raise ValueError(
+            "left matrix must be a have a shape = [N,1]"
+        )
+    if (
+        out is not None
+        and out.shape[0] != left.shape[0]
+        and out.shape[1] != right.shape[1]
+    ):
+        raise ValueError(
+            "incompatible output shape, got "
+            + str(out.shape)
+            + " but needed "
+            + str((left.shape[0], right.shape[1]))
+        )
+
+
+cpdef Dense matmul_trunc_ket_csr_dense(CSR left, Dense right, idxint[:] used_idx,
+                                       double complex a=1, Dense out=None):
     """
     Perform the operation
-        ``out := a * (matrix @ vector) + out``
+        ``out := a * (left @ right) + out``
 
     Matrix-vector product between a CSR matrix and a pointer to a contiguous
     array of double complex, adding to and storing the result in `out`.
     Only sums on the rows listed in the rows array
     """
-    cdef idxint row, jj, ii, row_start, row_end
-    cdef complex dot
-    for ii in range(len(rows)):
-        row = rows[ii]
+    _check_shape(left, right, out)
+    cdef idxint row, col_idx, row_idx, row_start, row_end
+    cdef double complex dot
+
+    if out is None:
+        out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+
+    for row_idx in range(len(used_idx)):
+        row = used_idx[row_idx]
         dot = 0
-        row_start = matrix.row_index[row]
-        row_end = matrix.row_index[row+1]
-        for jj in range(row_start, row_end):
-            dot += matrix.data[jj]*vec[matrix.col_index[jj]]
-        out[row] += dot
+        row_start = left.row_index[row]
+        row_end = left.row_index[row+1]
+        for col_idx in range(row_start, row_end):
+            dot += left.data[col_idx] * right.data[left.col_index[col_idx]]
+        out.data[row] += a * dot
+    return out
 
 
-cpdef void mv_ahs_csr_dm(CSR matrix,
-                   double complex[:] vec,
-                   double complex[:] out,
-                   idxint[:] rows):
+cpdef Dense matmul_trunc_dm_csr_dense(CSR left, Dense right, idxint[:] used_idx,
+                                       double complex a=1, Dense out=None):
     """
     Perform the operation
         ``out := a * (matrix @ vector) + out``
@@ -57,41 +85,231 @@ cpdef void mv_ahs_csr_dm(CSR matrix,
     Both out and vector are 1D representation of hermitian matrix.
     Only sums on the rows listed in the rows array.
     """
-    cdef idxint row, row_t, ii, jj, kk, row_start, row_end,
-    cdef idxint N = int(sqrt(len(vec)))
+    _check_shape(left, right, out)
+    cdef idxint row, row_t, row_i, row_j, idx_len = len(used_idx)
+    cdef idxint col_idx, row_start, row_end,
+    cdef idxint N = int(sqrt(left.shape[1]))
     cdef complex dot
-    for ii in range(len(rows)):
-        row = rows[ii]
-        row_t = (row // N) + (row % N) * N
-        dot = 0
-        row_start = matrix.row_index[row]
-        row_end = matrix.row_index[row+1]
-        for jj in range(row_start, row_end):
-            dot += matrix.data[jj] * vec[matrix.col_index[jj]]
-        out[row] += dot
-        if row != row_t:
-            out[row_t] += conj(dot)
+
+    if out is None:
+        out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+
+    for row_i in range(idx_len):
+        for row_j in range(row_i, idx_len):
+            row = used_idx[row_i] * N + used_idx[row_j]
+            row_t = (row // N) + (row % N) * N
+            dot = 0
+            row_start = left.row_index[row]
+            row_end = left.row_index[row+1]
+            for col_idx in range(row_start, row_end):
+                dot += left.data[col_idx] * right.data[left.col_index[col_idx]]
+            out.data[row] += a * dot
+            if row != row_t:
+                out.data[row_t] += conj(a * dot)
+    return out
 
 
-cpdef void mv_ahs_csc(CSC matrix,
-                 double complex[:] vec,
-                 double complex[:] out,
-                 idxint[:] cols):
+
+cpdef Dense matmul_trunc_ket_csc_dense(CSC left, Dense right, idxint[:] used_idx,
+                                       double complex a=1, Dense out=None):
+    """
+    Perform the operation
+        ``out := a * (left @ right) + out``
+
+    Matrix-vector product between a CSR matrix and a pointer to a contiguous
+    array of double complex, adding to and storing the result in `out`.
+    Only sums on the rows listed in the rows array
+    """
+    _check_shape(left, right, out)
+    cdef idxint col, col_idx, row_idx, col_start, col_end
+
+    if out is None:
+        out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+
+    for col_idx in range(len(used_idx)):
+        col = used_idx[col_idx]
+        col_start = left.col_index[col]
+        col_end = left.col_index[col+1]
+        for row_idx in range(col_start, col_end):
+            out.data[left.row_index[row_idx]] += a * left.data[row_idx] * right.data[col]
+    return out
+
+
+cpdef Dense matmul_trunc_dm_csc_dense(CSC left, Dense right, idxint[:] used_idx,
+                                     double complex a=1, Dense out=None):
     """
     Perform the operation
         ``out := a * (matrix @ vector) + out``
 
-    Matrix-vector product between a CSC matrix and a pointer to a contiguous
+    Matrix-vector product between a CSR matrix and a pointer to a contiguous
     array of double complex, adding to and storing the result in `out`.
-    Only sums on the cols listed in the cols array
+    Both out and vector are 1D representation of hermitian matrix.
+    Only sums on the rows listed in the rows array.
     """
-    cdef idxint col, ii, jj, col_start, col_end
-    for ii in range(len(cols)):
-        col = cols[ii]
-        col_start = matrix.col_index[col]
-        col_end = matrix.col_index[col+1]
-        for jj in range(col_start, col_end):
-            out[matrix.row_index[jj]] += matrix.data[jj]*vec[col]
+    _check_shape(left, right, out)
+    cdef idxint row, idx_len = len(used_idx)
+    cdef idxint col, col_t, col_i, col_j, col_idx, row_start, row_end,
+    cdef idxint N = int(sqrt(left.shape[1]))
+
+    if out is None:
+        out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+
+    for col_i in range(idx_len):
+        for col_j in range(idx_len):
+            col = used_idx[col_i] * N + used_idx[col_j]
+            col_t = (col // N) + (col % N) * N
+            col_start = left.col_index[col]
+            col_end = left.col_index[col+1]
+            for col_idx in range(col_start, col_end):
+                out.data[left.row_index[col_idx]] += a * left.data[col_idx] * right.data[col] #\
+                                                   #* 1 if col == col_t else 2
+    return out
+
+
+cpdef Dense matmul_trunc_ket_dense(Dense left, Dense right, idxint[:] used_idx,
+                                   double complex a=1, Dense out=None):
+    """
+    Perform the operation
+        ``out := a * (left @ right) + out``
+
+    Matrix-vector product between a CSR matrix and a pointer to a contiguous
+    array of double complex, adding to and storing the result in `out`.
+    Only sums on the rows listed in the rows array
+    """
+    _check_shape(left, right, out)
+    cdef idxint col, row, row_stride, col_stride, idx_len = len(used_idx)
+    cdef idxint
+
+    if out is None:
+        out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+
+    row_stride = 1 if left.fortran else left.shape[1]
+    col_stride = left.shape[0] if left.fortran else 1
+
+    for col_idx in range(idx_len):
+        for row_idx in range(idx_len):
+            row = used_idx[row_idx]
+            col = used_idx[col_idx]
+            out.data[row] += a * left.data[row * row_stride + col * col_stride] * right.data[col]
+
+    return out
+
+
+cpdef Dense matmul_trunc_dm_dense(Dense left, Dense right, idxint[:] used_idx,
+                                  double complex a=1, Dense out=None):
+    """
+    Perform the operation
+        ``out := a * (matrix @ vector) + out``
+
+    Matrix-vector product between a CSR matrix and a pointer to a contiguous
+    array of double complex, adding to and storing the result in `out`.
+    Both out and vector are 1D representation of hermitian matrix.
+    Only sums on the rows listed in the rows array.
+    """
+    _check_shape(left, right, out)
+    cdef idxint row, row_i, row_j, row_stride, idx_len = len(used_idx)
+    cdef idxint col, row_t, col_i, col_j, col_stride
+    cdef idxint N = int(sqrt(left.shape[1]))
+
+    if out is None:
+        out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+
+    row_stride = 1 if left.fortran else left.shape[1]
+    col_stride = left.shape[0] if left.fortran else 1
+
+    for row_i in range(idx_len):
+        for row_j in range(row_i, idx_len):
+            row = used_idx[row_i] * N + used_idx[row_j]
+            row_t = (row // N) + (row % N) * N
+            for col_i in range(idx_len):
+                for col_j in range(idx_len):
+                    col = used_idx[col_i] * N + used_idx[col_j]
+                    out.data[row] += a * left.data[row * row_stride + col * col_stride] * right.data[col]
+            if row_t != row:
+                out.data[row_t] = conj(out.data[row])
+    return out
+
+
+cpdef Dense matmul_trunc_dm_dense2(Dense left, Dense right, idxint[::1] used_idx,
+                                  double complex a=1, Dense out=None):
+    """
+    Perform the operation
+        ``out := a * (matrix @ vector) + out``
+
+    Matrix-vector product between a CSR matrix and a pointer to a contiguous
+    array of double complex, adding to and storing the result in `out`.
+    Both out and vector are 1D representation of hermitian matrix.
+    Only sums on the rows listed in the rows array.
+    """
+    _check_shape(left, right, out)
+    cdef idxint row, row_i, row_j, row_stride
+    cdef idxint col, row_t, col_i, col_j, col_stride
+    cdef idxint N = int(sqrt(left.shape[1]))
+
+    if out is None:
+        out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+
+    row_stride = 1 if left.fortran else left.shape[1]
+    col_stride = left.shape[0] if left.fortran else 1
+
+    for row_i in range(used_idx[0], used_idx[1]):
+        for row_j in range(row_i, used_idx[1]):
+            row = row_i * N + row_j
+            row_t = (row // N) + (row % N) * N
+            for col_i in range(used_idx[0], used_idx[1]):
+                for col_j in range(used_idx[0], used_idx[1]):
+                    col = col_i * N + col_j
+                    out.data[row] += a * left.data[row * row_stride + col * col_stride] * right.data[col]
+            if row_t != row:
+                out.data[row_t] = conj(out.data[row])
+    return out
+
+
+cpdef Dense matmul_trunc_dm_dense3(Dense left, Dense right, idxint[::1] used_idx,
+                                  double complex a=1, Dense out=None):
+    """
+    Perform the operation
+        ``out := a * (matrix @ vector) + out``
+
+    Matrix-vector product between a CSR matrix and a pointer to a contiguous
+    array of double complex, adding to and storing the result in `out`.
+    Both out and vector are 1D representation of hermitian matrix.
+    Only sums on the rows listed in the rows array.
+    """
+    _check_shape(left, right, out)
+    cdef idxint row, row_i, row_j, row_stride
+    cdef idxint col, row_t, col_i, col_j, col_stride
+    cdef idxint N = int(sqrt(left.shape[1]))
+
+    if out is None:
+        out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+
+    row_stride = 1 if left.fortran else left.shape[1]
+    col_stride = left.shape[0] if left.fortran else 1
+
+    if left.fortran:
+        for col_i in range(used_idx[0], used_idx[1]):
+            for col_j in range(used_idx[0], used_idx[1]):
+                for row_i in range(used_idx[0], used_idx[1]):
+                    for row_j in range(row_i, used_idx[1]):
+                        col = col_i * N + col_j
+                        row = row_i * N + row_j
+                        row_t = (row // N) + (row % N) * N
+                        out.data[row] += a * left.data[row + col * col_stride] * right.data[col]
+                        if row_t != row:
+                            out.data[row_t] = conj(out.data[row])
+    else:
+        for row_i in range(used_idx[0], used_idx[1]):
+            for row_j in range(row_i, used_idx[1]):
+                row = row_i * N + row_j
+                row_t = (row // N) + (row % N) * N
+                for col_i in range(used_idx[0], used_idx[1]):
+                    for col_j in range(used_idx[0], used_idx[1]):
+                        col = col_i * N + col_j
+                        out.data[row] += a * left.data[row * row_stride + col] * right.data[col]
+                if row_t != row:
+                    out.data[row_t] = conj(out.data[row])
+    return out
 
 
 cpdef void mv_pseudo_ahs_csc(CSC matrix,
