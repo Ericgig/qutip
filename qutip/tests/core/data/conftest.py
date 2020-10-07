@@ -44,6 +44,21 @@ def random_scipy_csr(shape, density, sorted_):
     return sci
 
 
+def random_scipy_csc(shape, density, sorted_):
+    """
+    Generate a random scipy CSC matrix with the given shape, nnz density, and
+    with indices that are either sorted or unsorted.  The nnz elements will
+    always be at least one.
+    """
+    nnz = int(shape[0] * shape[1] * density) or 1
+    data = np.random.rand(nnz) + 1j*np.random.rand(nnz)
+    rows = np.random.choice(np.arange(shape[0]), nnz)
+    cols = np.random.choice(np.arange(shape[1]), nnz)
+    sci = scipy.sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
+    if not sorted_:
+        shuffle_indices_scipy_csr(sci)
+    return sci.tocsc()
+
 def random_numpy_dense(shape, fortran):
     """Generate a random numpy dense matrix with the given shape."""
     out = np.random.rand(*shape) + 1j*np.random.rand(*shape)
@@ -59,6 +74,15 @@ def random_csr(shape, density, sorted_):
     always be at least one (use data.csr.zeros otherwise).
     """
     return qutip.core.data.CSR(random_scipy_csr(shape, density, sorted_))
+
+
+def random_csc(shape, density, sorted_):
+    """
+    Generate a random qutip CSC matrix with the given shape, nnz density, and
+    with indices that are either sorted or unsorted.  The nnz elements will
+    always be at least one (use data.csc.zeros otherwise).
+    """
+    return qutip.core.data.CSC(random_scipy_csc(shape, density, sorted_))
 
 
 def random_dense(shape, fortran):
