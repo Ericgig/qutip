@@ -9,5 +9,8 @@ cpdef double complex expect_super_csr(CSR op, CSR state) nogil except *
 cpdef double complex expect_csr_dense(CSR op, Dense state) nogil except *
 cpdef double complex expect_super_csr_dense(CSR op, Dense state) nogil except *
 
+cpdef double complex expect_csc_dense(CSC op, Dense state) nogil except *
+cpdef double complex expect_super_csc_dense(CSC op, Dense state) nogil except *
+
 cpdef double complex expect_dense_dense(Dense op, Dense state) nogil except *
 cpdef double complex expect_super_dense_dense(Dense op, Dense state) nogil except *

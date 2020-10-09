@@ -1,11 +1,11 @@
 #cython: language_level=3
 #cython: boundscheck=False, wrapround=False, initializedcheck=False
 
-from qutip.core.data cimport idxint, csr, CSR, dense, Dense
+from qutip.core.data cimport idxint, csr, CSR, dense, Dense, csc, CSC
 
 __all__ = [
-    'mul', 'mul_csr', 'mul_dense',
-    'neg', 'neg_csr', 'neg_dense',
+    'mul', 'mul_csr', 'mul_dense', 'mul_csc',
+    'neg', 'neg_csr', 'neg_dense', 'neg_csc',
 ]
 
 
@@ -27,12 +27,32 @@ cpdef CSR mul_csr(CSR matrix, double complex value):
             out.data[ptr] = value * matrix.data[ptr]
     return out
 
+cpdef CSC mul_csc(CSC matrix, double complex value):
+    """Multiply this CSR `matrix` by a complex scalar `value`."""
+    if value == 0:
+        return csc.zeros(matrix.shape[0], matrix.shape[1])
+    cdef CSC out = csc.copy_structure(matrix)
+    cdef idxint ptr
+    with nogil:
+        for ptr in range(csc.nnz(matrix)):
+            out.data[ptr] = value * matrix.data[ptr]
+    return out
+
 cpdef CSR neg_csr(CSR matrix):
     """Unary negation of this CSR `matrix`.  Return a new object."""
     cdef CSR out = csr.copy_structure(matrix)
     cdef idxint ptr
     with nogil:
         for ptr in range(csr.nnz(matrix)):
+            out.data[ptr] = -matrix.data[ptr]
+    return out
+
+cpdef CSC neg_csc(CSC matrix):
+    """Unary negation of this CSR `matrix`.  Return a new object."""
+    cdef CSC out = csc.copy_structure(matrix)
+    cdef idxint ptr
+    with nogil:
+        for ptr in range(csc.nnz(matrix)):
             out.data[ptr] = -matrix.data[ptr]
     return out
 
