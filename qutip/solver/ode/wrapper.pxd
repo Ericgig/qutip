@@ -14,7 +14,7 @@ cdef class QtOdeData:
     cpdef QtOdeData empty_like(self)
     cpdef object raw(self)
     cpdef _data.Data data(self)
-
+    cpdef void set_data(self, _data.Data new)
 
 cdef class QtOdeFuncWrapper:
     cdef object f

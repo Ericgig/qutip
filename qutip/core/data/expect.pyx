@@ -12,7 +12,7 @@ cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
 
 from qutip.core.data.base cimport idxint, Data
-from qutip.core.data cimport csr, CSR, Dense
+from qutip.core.data cimport csr, csc, CSR, CSC, Dense
 
 __all__ = [
     'expect', 'expect_csr', 'expect_csr_dense', 'expect_csc_dense', 'expect_dense_dense',
@@ -200,7 +200,7 @@ cpdef double complex expect_csr_dense(CSR op, Dense state) nogil except *:
     return _expect_csr_dense_dm(op, state)
 
 
-cpdef double complex expect_csc_dense(CSC op, Dense state) nogil except *:
+cpdef double complex expect_csc_dense(CSC op, Dense state) except *:
     """
     Get the expectation value of the operator `op` over the state `state`.  The
     state can be either a ket or a density matrix.
@@ -247,7 +247,7 @@ cpdef double complex expect_super_csr_dense(CSR op, Dense state) nogil except *:
     return out
 
 
-cpdef double complex expect_super_csc_dense(CSC op, Dense state) nogil except *:
+cpdef double complex expect_super_csc_dense(CSC op, Dense state) except *:
     """
     Perform the operation `tr(op @ state)` where `op` is supplied as a
     superoperator, and `state` is a column-stacked operator.

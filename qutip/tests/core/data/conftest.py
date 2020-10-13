@@ -17,7 +17,8 @@ def shuffle_indices_scipy_csr(matrix):
     before, we just reverse it to ensure it's different.
     """
     out = matrix.copy()
-    for row in range(out.shape[0]):
+
+    for row in range(len(out.indptr) - 1):
         ptr = (out.indptr[row], out.indptr[row + 1])
         if ptr[1] - ptr[0] > 1:
             order = np.argsort(np.random.rand(ptr[1] - ptr[0]))
@@ -54,10 +55,10 @@ def random_scipy_csc(shape, density, sorted_):
     data = np.random.rand(nnz) + 1j*np.random.rand(nnz)
     rows = np.random.choice(np.arange(shape[0]), nnz)
     cols = np.random.choice(np.arange(shape[1]), nnz)
-    sci = scipy.sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
+    sci = scipy.sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsc()
     if not sorted_:
         shuffle_indices_scipy_csr(sci)
-    return sci.tocsc()
+    return sci
 
 def random_numpy_dense(shape, fortran):
     """Generate a random numpy dense matrix with the given shape."""

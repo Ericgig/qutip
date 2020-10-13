@@ -170,7 +170,9 @@ cy_exts = {
         'inner',
         'kron',
         'matmul',
-        'matmul_ahs',
+        'matmul_ahs',  #
+        'matmul_ahs2', #
+        'matmul_psp',  #
         'mul',
         'norm',
         'permute',

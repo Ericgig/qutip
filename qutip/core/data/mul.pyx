@@ -16,6 +16,13 @@ cpdef void mul_csr_inplace(CSR matrix, double complex value):
         for ptr in range(csr.nnz(matrix)):
             matrix.data[ptr] *= value
 
+cpdef void mul_csc_inplace(CSC matrix, double complex value):
+    """Multiply this CSR `matrix` by a complex scalar `value`."""
+    cdef idxint ptr
+    with nogil:
+        for ptr in range(csc.nnz(matrix)):
+            matrix.data[ptr] *= value
+
 cpdef CSR mul_csr(CSR matrix, double complex value):
     """Multiply this CSR `matrix` by a complex scalar `value`."""
     if value == 0:
@@ -100,6 +107,7 @@ mul.__doc__ =\
     """Multiply a matrix element-wise by a scalar."""
 mul.add_specialisations([
     (CSR, CSR, mul_csr),
+    (CSC, CSC, mul_csc),
     (Dense, Dense, mul_dense),
 ], _defer=True)
 
@@ -117,6 +125,7 @@ mul_inplace.__doc__ =\
     """Multiply inplace a matrix element-wise by a scalar."""
 mul_inplace.add_specialisations([
     (CSR, mul_csr_inplace),
+    (CSC, mul_csc_inplace),
     (Dense, mul_dense_inplace),
 ], _defer=True)
 
@@ -133,6 +142,7 @@ neg.__doc__ =\
     """Unary element-wise negation of a matrix."""
 neg.add_specialisations([
     (CSR, CSR, neg_csr),
+    (CSC, CSC, neg_csc),
     (Dense, Dense, neg_dense),
 ], _defer=True)
 

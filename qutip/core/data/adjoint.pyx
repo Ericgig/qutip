@@ -16,7 +16,7 @@ cdef extern from "<complex>" namespace "std" nogil:
     double complex _conj "conj"(double complex x)
 
 __all__ = [
-    'adjoint', 'adjoint_csr', 'adjoint_dense','adjoint_csc',
+    'adjoint', 'adjoint_csr', 'adjoint_dense', 'adjoint_csc',
     'conj', 'conj_csr', 'conj_dense', 'conj_csc',
     'transpose', 'transpose_csr', 'transpose_dense', 'transpose_csc',
 ]
@@ -116,7 +116,7 @@ cpdef CSC transpose_csc(CSC matrix):
     # Do 3 transpositions with transpose_csr doing the real work.
     cdef CSR transposed = csc.as_tr_csr(matrix, False)
     cdef CSR trtr = transpose_csr(transposed)
-    return csc.from_tr_csr(transposed, False)
+    return csc.from_tr_csr(trtr, False)
 
 
 cpdef CSC adjoint_csc(CSC matrix):

@@ -241,7 +241,7 @@ class TestFactoryMethods:
         assert base.shape == shape
         assert sci.data.shape == (nnz,)
         assert sci.indices.shape == (nnz,)
-        assert sci.indptr.shape == (shape[0] + 1,)
+        assert sci.indptr.shape == (shape[1] + 1,)
 
     def test_zeros(self, shape):
         base = csc.zeros(shape[0], shape[1])
@@ -249,7 +249,7 @@ class TestFactoryMethods:
         assert isinstance(base, data.CSC)
         assert base.shape == shape
         assert sci.nnz == 0
-        assert sci.indptr.shape == (shape[0] + 1,)
+        assert sci.indptr.shape == (shape[1] + 1,)
 
     @pytest.mark.parametrize('dimension', [1, 5, 100])
     @pytest.mark.parametrize(

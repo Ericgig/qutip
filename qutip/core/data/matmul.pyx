@@ -199,7 +199,7 @@ cpdef CSC matmul_csc(CSC left, CSC right, double complex scale=1, CSC out=None):
     cdef CSR out_csr = None
     if out is not None:
         out_csr = csc.as_tr_csr(out, False)
-    return csc.from_tr_csr(matmul_csr(left_csr, right_csr, scale, out_csr),
+    return csc.from_tr_csr(matmul_csr(right_csr, left_csr, scale, out_csr),
                            False)
 
 
@@ -261,9 +261,9 @@ cpdef Dense matmul_csr_dense_dense(CSR left, Dense right,
 
 cpdef Dense matmul_csc_dense_dense(CSC left, Dense right,
                                    double complex scale=1, Dense out=None):
-    cdef idxint ii, row, col, col_start, col_end
+    cdef idxint ii, ptr, col, col_start, col_end
     cdef idxint row_stride, col_stride, out_stride
-
+    _check_shape(left, right, out)
     row_stride = 1 if right.fortran else right.shape[1]
     col_stride = right.shape[0] if right.fortran else 1
     out_stride = left.shape[0] if right.fortran else 1
@@ -271,17 +271,32 @@ cpdef Dense matmul_csc_dense_dense(CSC left, Dense right,
     if out is None:
         out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
 
+    if bool(right.fortran) != bool(out.fortran):
+        msg = (
+            "out matrix is {}-ordered".format('Fortran' if out.fortran else 'C')
+            + " but input is {}-ordered".format('Fortran' if right.fortran else 'C')
+        )
+        warnings.warn(msg, dense.OrderEfficiencyWarning)
+        # Rather than making loads of copies of the same code, we just moan at
+        # the user and then transpose one of the arrays.  We prefer to have
+        # `right` in Fortran-order for cache efficiency.
+        if right.fortran:
+            tmp = out
+            out = out.reorder()
+        else:
+            right = right.reorder()
+
     for col in range(left.shape[1]):
         col_start = left.col_index[col]
         col_end = left.col_index[col+1]
-        for row in range(col_start, col_end):
-            val = scale * left.data[row]
-            idx_out = left.row_index[row] * out_stride
-            idx_r = col * col_stride
+        for ptr in range(col_start, col_end):
+            val = scale * left.data[ptr]
+            idx_out = left.row_index[ptr] * row_stride
+            idx_r = col * row_stride
             for _ in range(right.shape[1]):
-                out.data[idx_out] += val * right.data[idx_r])
-                idx_out += row_stride
-                idx_r += row_stride
+                out.data[idx_out] += val * right.data[idx_r]
+                idx_out += out_stride
+                idx_r += col_stride
     return out
 
 

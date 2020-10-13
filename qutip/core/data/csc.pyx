@@ -285,6 +285,7 @@ cpdef CSC empty(base.idxint rows, base.idxint cols, base.idxint size):
     cdef CSC out = CSC.__new__(CSC)
     cdef base.idxint col_size = cols + 1
     out.shape = (rows, cols)
+    out.size = size
     out.data =\
         <double complex *> PyDataMem_NEW(size * sizeof(double complex))
     out.row_index =\

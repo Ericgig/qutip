@@ -44,15 +44,16 @@ cnp.import_array()
 from ..qobj import Qobj
 from .. import data as _data
 
-from qutip.core.data cimport CSR, Dense, Data
+from qutip.core.data cimport CSR, Dense, CSC, Data
 from qutip.core.data.add cimport add_csr, iadd_dense
 from qutip.core.data.matmul cimport (matmul_csr, matmul_csr_dense_dense,
-                                     matmul_dense)
+                                     matmul_dense, matmul_csc_dense_dense)
 # TODO: handle dispatch properly.  We import rather than cimport because we
 # have to call with Python semantics.
 from qutip.core.data.expect cimport (
     expect_csr, expect_super_csr, expect_csr_dense, expect_super_csr_dense,
-    expect_dense_dense, expect_super_dense_dense,
+    expect_dense_dense, expect_super_dense_dense, expect_super_csc_dense,
+    expect_csc_dense
 )
 from qutip.core.data.reshape cimport (column_stack_csr, column_stack_dense,
                                       column_unstack_dense)
@@ -93,7 +94,7 @@ cdef double complex cy_expect(Data left, Dense right, TYPE layer_type):
     if layer_type == CSR_TYPE:
         out = expect_csr_dense(left, right)
     elif layer_type == Dense_TYPE:
-        out = expect_dense(left, right)
+        out = expect_dense_dense(left, right)
     elif layer_type == CSC_TYPE:
         out = expect_csc_dense(left, right)
     else:
@@ -108,7 +109,7 @@ cdef double complex cy_expect_super(Data left, Dense right, TYPE layer_type):
     if layer_type == CSR_TYPE:
         out = expect_super_csr_dense(left, right)
     elif layer_type == Dense_TYPE:
-        out = expect_super_dense(left, right)
+        out = expect_super_dense_dense(left, right)
     elif layer_type == CSC_TYPE:
         out = expect_super_csc_dense(left, right)
     else:
@@ -118,12 +119,12 @@ cdef double complex cy_expect_super(Data left, Dense right, TYPE layer_type):
 
 
 def count_types(data_obj, types):
-    if isinstance(constant.data, CSR):
-        type[0] += 1
-    elif isinstance(constant.data, Dense):
-        type[1] += 1
-    elif isinstance(constant.data, CSC):
-        type[2] += 1
+    if isinstance(data_obj, CSR):
+        types[0] += 1
+    elif isinstance(data_obj, Dense):
+        types[1] += 1
+    elif isinstance(data_obj, CSC):
+        types[2] += 1
 
 
 def set_types(types):
@@ -213,7 +214,7 @@ cdef class CQobjEvo:
 
     cpdef Data matmul(self, double t, Data matrix):
         cdef size_t i
-        if isintance(matrix, Dense):
+        if isinstance(matrix, Dense):
             return self.matmul_dense(t, matrix)
         self._factor(t)
         out = _data.matmul(self.constant, matrix)
@@ -231,9 +232,9 @@ cdef class CQobjEvo:
         if out is None:
             out = cy_matmul(self.constant, matrix, self.layer_type)
         else:
-            out = cy_matmul_inplace(self.constant, matrix, self.layer_type, 1, out)
+            cy_matmul_inplace(self.constant, matrix, self.layer_type, 1, out)
         for i in range(self.n_ops):
-            out = cy_matmul_inplace(<Data> self.ops[i], matrix, self.layer_type,
+            cy_matmul_inplace(<Data> self.ops[i], matrix, self.layer_type,
                                     self.coefficients[i], out)
         return out
 
@@ -269,13 +270,13 @@ cdef class CQobjEvo:
         cdef double complex out
         self._factor(t)
         if self.issuper:
-            out = cy_expect_super(self.constant, matrix)
+            out = cy_expect_super(self.constant, matrix, self.layer_type)
             for i in range(self.n_ops):
-                out += self.coefficients[i] * cy_expect_super(<Data> self.ops[i], matrix)
+                out += self.coefficients[i] * cy_expect_super(<Data> self.ops[i], matrix, self.layer_type)
         else:
-            out = cy_expect(self.constant, matrix)
+            out = cy_expect(self.constant, matrix, self.layer_type)
             for i in range(self.n_ops):
-                out += self.coefficients[i] * cy_expect(<Data> self.ops[i], matrix)
+                out += self.coefficients[i] * cy_expect(<Data> self.ops[i], matrix, self.layer_type)
         return out
 
 
@@ -294,13 +295,11 @@ cdef class CQobjFunc(CQobjEvo):
         return self.base(t, data=data)
 
     cpdef Data matmul(self, double t, Data matrix):
-        # TODO: like cQobjEvo, only work for CSR x Dense...
         cdef Data objdata = self.base(t, data=True)
         out = _data.matmul(objdata, matrix)
         return out
 
-    cpdef Dense matmul(self, double t, Dense matrix, Dense out=None):
-        # TODO: like cQobjEvo, only work for CSR x Dense...
+    cpdef Dense matmul_dense(self, double t, Dense matrix, Dense out=None):
         cdef Data objdata = self.base(t, data=True)
         if out is None:
             out = _data.matmul(objdata, matrix)

@@ -35,7 +35,7 @@
 cimport numpy as cnp
 
 from qutip.core.data.base cimport idxint
-from qutip.core.data cimport CSR, Dense, Data
+from qutip.core.data cimport CSR, CSC, Dense, Data
 
 
 cpdef enum TYPE:
@@ -66,5 +66,7 @@ cdef class CQobjEvo:
     cdef dict args
     cdef object op
 
-    cpdef Data matmul(self, double t, Data matrix, Data out=*)
+    cpdef Data matmul(self, double t, Data matrix)
+    cpdef Dense matmul_dense(self, double t, Dense matrix, Dense out=*)
     cpdef double complex expect(self, double t, Data matrix) except *
+    cpdef double complex expect_dense(self, double t, Dense matrix) except *

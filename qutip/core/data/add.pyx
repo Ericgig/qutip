@@ -227,7 +227,7 @@ cpdef Dense iadd_dense(Dense left, Dense right, double complex scale=1):
 cpdef CSR sub_csr(CSR left, CSR right):
     return add_csr(left, right, -1)
 
-cpdef CSC sub_csr(CSC left, CSC right):
+cpdef CSC sub_csc(CSC left, CSC right):
     return add_csc(left, right, -1)
 
 cpdef Dense sub_dense(Dense left, Dense right):

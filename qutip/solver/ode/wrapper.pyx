@@ -29,7 +29,17 @@ cdef class QtOdeFuncWrapperSolverQEvo(QtOdeFuncWrapper):
         self.evo = evo
 
     cpdef void call(self, QtOdeData out, double t, QtOdeData y):
-        self.evo.mul_data(t, y.data(), out.data())
+        out.set_data(self.evo.mul_data(t, y.data()))
+
+
+cdef class QtOdeFuncWrapperSolverQEvoDense(QtOdeFuncWrapper):
+    cdef SolverQEvo evo
+
+    def __init__(self, SolverQEvo evo):
+        self.evo = evo
+
+    cpdef void call(self, QtOdeData out, double t, QtOdeData y):
+        self.evo.mul_dense(t, y.data(), out.data())
 
 
 cdef class QtOdeData:
@@ -68,6 +78,9 @@ cdef class QtOdeData:
     cpdef _data.Data data(self):
         raise NotImplementedError
 
+    cpdef void set_data(self, _data.Data new):
+        raise NotImplementedError
+
 
 cdef class QtOdeDataCSR(QtOdeData):
     cdef _data.CSR csr
@@ -95,6 +108,9 @@ cdef class QtOdeDataCSR(QtOdeData):
 
     cpdef _data.Data data(self):
         return self.csr
+
+    cpdef void set_data(self, _data.Data new):
+        self.csr = new
 
 
 cdef class QtOdeDataDense(QtOdeData):
@@ -130,6 +146,9 @@ cdef class QtOdeDataDense(QtOdeData):
 
     cpdef _data.Data data(self):
         return self.dense
+
+    cpdef void set_data(self, _data.Data new):
+        self.dense = new
 
 
 cdef class QtOdeDataCpxArray(QtOdeDataDense):
