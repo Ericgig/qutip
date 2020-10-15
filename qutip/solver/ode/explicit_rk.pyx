@@ -274,3 +274,7 @@ cdef class Explicit_RungeKutta:
     @property
     def y_front(self):
         return self._y_front.raw()
+
+    @property
+    def t(self):
+        return self.t_front

@@ -232,7 +232,8 @@ cpdef Dense matmul_trunc_dm_dense(Dense left, Dense right, idxint[::1] used_idx,
     return out
 
 
-cpdef idxint[::1] get_idx_ket(Dense state, double atol, double rtol, int pad=0):
+cpdef idxint[::1] get_idx_ket(Dense state, double atol, double rtol, int pad,
+                    double safety_rtol, int safety_pad, idxint[::1] old_idx):
     cdef double tol, max_prob
     cdef idxint ii, N=state.shape[0],
     cdef idxint left_pad=0, last=-1
@@ -244,6 +245,15 @@ cpdef idxint[::1] get_idx_ket(Dense state, double atol, double rtol, int pad=0):
             if max_prob < imag(state.data[ii]):
                 max_prob = imag(state.data[ii])
     tol = max_prob * rtol + atol
+    safety_tol = max_prob * safety_rtol + atol
+
+    for ii in range(safety_pad):
+        if (
+            real(state.data[old_idx[ii]]) > safety_tol or
+            imag(state.data[old_idx[ii]]) > safety_tol
+        ):
+            pass
+            # TODO: make a struct for the idx data with pass/fail, extra pad, etc.
 
     for ii in range(state.shape[0]):
         if real(state.data[ii]) > tol or imag(state.data[ii]) > tol:
@@ -259,7 +269,7 @@ cpdef idxint[::1] get_idx_ket(Dense state, double atol, double rtol, int pad=0):
     return np.array(idx, dtype=idxint_dtype)
 
 
-cpdef idxint[::1] get_idx_dm(Dense state, double atol, double rtol, int pad=0):
+cpdef idxint[::1] get_idx_dm(Dense state, double atol, double rtol, int pad):
     cdef double tol, max_prob
     cdef idxint ii, N=state.shape[0]
     cdef idxint left_pad=0, last=-1

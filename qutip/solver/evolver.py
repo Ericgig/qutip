@@ -88,10 +88,11 @@ class Evolver:
         Set the state of an existing ODE solver.
 
     """
+    name = "undefined"
+
     def __init__(self, system, options, args, feedback_args):
         self.system = SolverQEvo(system, options, args, feedback_args)
         self.options = options
-        self.name = "undefined"
         self._error_msg = ("ODE integration error: Try to increase "
                            "the allowed number of substeps by increasing "
                            "the nsteps parameter in the Options class.")
@@ -104,15 +105,15 @@ class Evolver:
         else:
             self._mat_state = False
 
-    def set(self, state, t0, set_shape):
+    def set(self, state, t0, options=None):
         pass
 
     def update_args(self, args):
         self.system.arguments(args)
 
-    def step(self, t):
+    def step(self, t, step=None):
         """ Evolve to t, must be `set` before. """
-        self._ode_solver.integrate(t)
+        self._ode_solver.integrate(t, step=step)
         if not self._ode_solver.successful():
             raise Exception(self._error_msg)
         state = self.get_state()
@@ -127,8 +128,23 @@ class Evolver:
             state = self.get_state()
             yield t, state
 
-    def e_op_prepare(self, e_ops):
-        return e_ops
+    def _run_ahs(self, tlist):
+        """ Yield (t, state(t)) for t in tlist, must be `set` before. """
+        t_prev = self._ode_solver.t
+        state_prev = self.get_state()
+        for t in tlist[1:]:
+            while True:
+                self._ode_solver.integrate(t, step=1)
+                if not self._ode_solver.successful():
+                    raise Exception(self._error_msg)
+                state = self.get_state()
+                if not self.system.resize(state):
+                    self.set(state_prev, t_prev)
+                else:
+                    t_prev = self._ode_solver.t
+                    state_prev = state.copy()
+                    break
+            yield t, state
 
     def get_state(self):
         pass
@@ -147,10 +163,11 @@ class EvolverScipyZvode(Evolver):
     #
     name = "scipy_zvode"
 
-    def set(self, state0, t0, options):
-        self.options = options
+    def set(self, state0, t0, options=None):
+        self.options = options if options is not None self self.options
         self._set_shape(state0)
         self._t = t0
+        self._y = state0.copy()
 
         r = ode(self.system.mul_np_vec)
         options_keys = ['atol', 'rtol', 'nsteps', 'method', 'order',
@@ -189,8 +206,11 @@ class EvolverScipyDop853(Evolver):
     #
     name = "scipy_dop853"
 
-    def set(self, state0, t0, options):
-        self.options = options
+    def set(self, state0, t0, options=None):
+        self.options = options if options is not None self self.options
+        self._t = t0
+        self._y = state0.copy()
+
         self._set_shape(state0)
         func = self.system.mul_np_vec
         r = ode(self.funcwithfloat)
@@ -236,9 +256,11 @@ class EvolverVern(Evolver):
     #
     name = "qutip_"
 
-    def set(self, state0, t0, options):
-        self.options = options
+    def set(self, state0, t0, options=None):
+        self.options = options if options is not None self self.options
         self._set_shape(state0)
+        self._t = t0
+        self._y = state0.copy()
         func = QtOdeFuncWrapperSolverQEvo(self.system)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
                         'min_step', 'interpolate']
@@ -280,7 +302,7 @@ class EvolverDiag(Evolver):
         self.options = options
 
     def set(self, state0, t0, options):
-        self.options = options
+        self.options = options if options is not None self self.options
         self._set_shape(state0)
         self._t = t0
         self._y = self.Ud @ state0.as_array()
