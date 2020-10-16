@@ -64,7 +64,7 @@ cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
 
 
-cdef Dense cy_matmul(Data left, Dense right, TYPE layer_type):
+cdef Dense cy_matmul(Data left, Dense right, LTYPE layer_type):
     cdef Dense out
     if layer_type == CSR_TYPE:
         out = matmul_csr_dense_dense(left, right)
@@ -77,7 +77,7 @@ cdef Dense cy_matmul(Data left, Dense right, TYPE layer_type):
     return out
 
 
-cdef void cy_matmul_inplace(Data left, Dense right, TYPE layer_type,
+cdef void cy_matmul_inplace(Data left, Dense right, LTYPE layer_type,
                             double complex scale, Dense out):
     if layer_type == CSR_TYPE:
         matmul_csr_dense_dense(left, right, scale, out)
@@ -89,7 +89,7 @@ cdef void cy_matmul_inplace(Data left, Dense right, TYPE layer_type,
         iadd_dense(out, _data.matmul[type(left), Dense, Dense](left, right, scale))
 
 
-cdef double complex cy_expect(Data left, Dense right, TYPE layer_type):
+cdef double complex cy_expect(Data left, Dense right, LTYPE layer_type):
     cdef double complex out
     if layer_type == CSR_TYPE:
         out = expect_csr_dense(left, right)
@@ -102,7 +102,7 @@ cdef double complex cy_expect(Data left, Dense right, TYPE layer_type):
     return out
 
 
-cdef double complex cy_expect_super(Data left, Dense right, TYPE layer_type):
+cdef double complex cy_expect_super(Data left, Dense right, LTYPE layer_type):
     cdef size_t nrow = right.shape[0]
     cdef double complex out
     right = column_stack_dense(right, inplace=True)

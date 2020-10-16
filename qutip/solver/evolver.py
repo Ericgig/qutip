@@ -128,24 +128,6 @@ class Evolver:
             state = self.get_state()
             yield t, state
 
-    def _run_ahs(self, tlist):
-        """ Yield (t, state(t)) for t in tlist, must be `set` before. """
-        t_prev = self._ode_solver.t
-        state_prev = self.get_state()
-        for t in tlist[1:]:
-            while True:
-                self._ode_solver.integrate(t, step=1)
-                if not self._ode_solver.successful():
-                    raise Exception(self._error_msg)
-                state = self.get_state()
-                if not self.system.resize(state):
-                    self.set(state_prev, t_prev)
-                else:
-                    t_prev = self._ode_solver.t
-                    state_prev = state.copy()
-                    break
-            yield t, state
-
     def get_state(self):
         pass
 
@@ -164,7 +146,7 @@ class EvolverScipyZvode(Evolver):
     name = "scipy_zvode"
 
     def set(self, state0, t0, options=None):
-        self.options = options if options is not None self self.options
+        self.options = options or self.options
         self._set_shape(state0)
         self._t = t0
         self._y = state0.copy()
@@ -207,7 +189,7 @@ class EvolverScipyDop853(Evolver):
     name = "scipy_dop853"
 
     def set(self, state0, t0, options=None):
-        self.options = options if options is not None self self.options
+        self.options = options or self.options
         self._t = t0
         self._y = state0.copy()
 
@@ -257,7 +239,7 @@ class EvolverVern(Evolver):
     name = "qutip_"
 
     def set(self, state0, t0, options=None):
-        self.options = options if options is not None self self.options
+        self.options = options or self.options
         self._set_shape(state0)
         self._t = t0
         self._y = state0.copy()
@@ -302,7 +284,7 @@ class EvolverDiag(Evolver):
         self.options = options
 
     def set(self, state0, t0, options):
-        self.options = options if options is not None self self.options
+        self.options = options or self.options
         self._set_shape(state0)
         self._t = t0
         self._y = self.Ud @ state0.as_array()

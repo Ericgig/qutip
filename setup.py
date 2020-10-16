@@ -65,6 +65,7 @@ PACKAGES = ['qutip', 'qutip/ui', 'qutip/qip', 'qutip/qip/device',
             'qutip/qip/algorithms', 'qutip/control',
             'qutip/solve', 'qutip/solve/nonmarkov',
             'qutip/solver', 'qutip/solver/ode', 'qutip/solver/nonmarkov',
+            'qutip/solver/AHS',
             'qutip/_mkl', 'qutip/tests', 'qutip/tests/core',
             'qutip/tests/core/data',
             'qutip/tests/solver', 'qutip/tests/solve',
@@ -82,6 +83,7 @@ PACKAGE_DATA = {
     'qutip/solve/nonmarkov': ['*.pxd', '*.pyx'],
     'qutip/solver': ['*.pxd', '*.pyx'],
     'qutip/solver/ode': ['*.pxd', '*.pyx'],
+    'qutip/solver/AHS': ['*.pxd', '*.pyx'],
     'qutip/solver/nonmarkov': ['*.pxd', '*.pyx'],
     'qutip/tests/qasm_files': ['*.qasm'],
     'qutip/control': ['*.pyx'],
@@ -170,8 +172,6 @@ cy_exts = {
         'inner',
         'kron',
         'matmul',
-        'matmul_ahs',  #
-        'matmul_ahs2', #
         'matmul_psp',  #
         'mul',
         'norm',
@@ -219,6 +219,11 @@ cy_exts = {
         'verner7efficient',
         'verner9efficient',
         'explicit_rk',
+    ],
+    'solver.AHS': [
+        'matmul_ahs',  #
+        'matmul_ahs2', #
+        'qevo',
     ],
     'solver.nonmarkov': [
         '_heom',

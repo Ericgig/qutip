@@ -38,7 +38,7 @@ from qutip.core.data.base cimport idxint
 from qutip.core.data cimport CSR, CSC, Dense, Data
 
 
-cpdef enum TYPE:
+cpdef enum LTYPE:
     MIXED_TYPE   = 0
     CSR_TYPE     = 1
     Dense_TYPE   = 2
@@ -49,7 +49,7 @@ cdef class CQobjEvo:
     cdef readonly (idxint, idxint) shape
     cdef readonly object dims
     cdef str type
-    cdef TYPE layer_type
+    cdef LTYPE layer_type
     cdef str superrep
     cdef readonly bint issuper
     cdef size_t n_ops
