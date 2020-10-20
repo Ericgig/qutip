@@ -873,10 +873,12 @@ class QobjEvo(QobjEvoBase):
         -------
         None
         """
+        res = self.copy()
         try:
-            self.cte = self.cte.to(data_type)
+            res.cte = res.cte.to(data_type)
         except ValueError:
             raise ValueError("Unknown conversion type: " + str(data_type))
-        for op in self.ops:
+        for op in res.ops:
             op.qobj = op.qobj.to(data_type)
         res._compile()
+        return res

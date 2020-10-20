@@ -15,29 +15,37 @@ class AHSEvolver(Evolver):
 
     def run(self, tlist):
         """ Yield (t, state(t)) for t in tlist, must be `set` before. """
-        t_prev = self._ode_solver.t
+        t_prev = self._evolver.t
         state_prev = self.get_state()
         for t in tlist[1:]:
             yield t, self.step(t, False, True)
 
     def step(self, t, step=None, resize=False):
         """ Evolve to t, must be `set` before. """
-        done = False
-        while not done:
-            self._evolver.step(t, step)
-            state = self.get_state()
+        tries = 0
+        y_old = self.get_state()
+        t_old = self.t
+        while self.t < t and tries < 10:
+            tries += 1
+            state = self._evolver.step(t, step=1)
             if resize and not self.system.resize(state):
-                pass
+                self.set_state(y_old, t_old)
             else:
-                done = True
+                t_old = self.t
+                y_old = state.copy()
+                tries = 0
         return state
 
     def resize(self):
         return self.system.resize(self.get_state())
 
     def get_state(self):
-        self._evolver.get_state()
+        return self._evolver.get_state()
 
     def set_state(self, state0, t):
         self._evolver.set_state(state0, t)
         self.system.resize(state0)
+
+    @property
+    def t(self):
+        return self._evolver.t

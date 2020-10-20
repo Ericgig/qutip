@@ -64,7 +64,7 @@ class SolverOptions:
         # Maximum order used by integrator (<=12 for 'adams', <=5 for 'bdf')
         "order": 12,
         # Max. number of internal steps/call
-        "nsteps": 1000,
+        "nsteps": 2000,
         # Size of initial step (0 = determined by solver)
         "first_step": 0,
         # Max step size (0 = determined by solver)
@@ -73,8 +73,6 @@ class SolverOptions:
         "min_step": 0,
         # tidyup Hamiltonian before calculation (default = True)
         "tidy": True,
-        "gui": False,
-        # Normalize output of solvers
         # (turned off for batch unitary propagator mode)
         "progress_bar": "text",
         # Normalize output of solvers
@@ -82,6 +80,20 @@ class SolverOptions:
         "progress_kwargs": {"chunk_size":10},
         # Normalize the states received in feedback_args
         "feedback_normalize": True,
+
+
+        "Operator_data_type": "input",
+        "State_data_type": "dense",
+        "ahs": False,
+        "ahs_atol": 1e-8,
+        "ahs_rtol": 1e-8,
+        "ahs_padding": 5,
+        "ahs_safety_interval": 3,
+        "ahs_safety_rtol": 1e-6,
+
+
+
+
     }
 
 @optionsclass("results", SolverOptions)

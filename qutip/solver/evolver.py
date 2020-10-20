@@ -116,6 +116,8 @@ class Evolver:
         self._ode_solver.integrate(t, step=step)
         if not self._ode_solver.successful():
             raise Exception(self._error_msg)
+        if step and self._ode_solver.t > t:
+            self._ode_solver.integrate(t)
         state = self.get_state()
         return state
 
@@ -133,6 +135,10 @@ class Evolver:
 
     def set_state(self, state0, t):
         pass
+
+    @property
+    def t(self):
+        return self._ode_solver.t
 
 
 class EvolverScipyZvode(Evolver):
@@ -318,3 +324,7 @@ class EvolverDiag(Evolver):
 
     def set_state(self, state0, t):
         self._y = self.Ud @ state0.as_array()
+
+    @property
+    def t(self):
+        return self._t

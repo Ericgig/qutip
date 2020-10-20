@@ -42,7 +42,9 @@ __all__ = ['SolverOptions',
 from .. import Qobj
 from .result import Result
 from .evolver import *
+from .AHS.evolver import AHSEvolver
 from ..ui.progressbar import get_progess_bar
+from ..core.data import to
 
 class Solver:
     """
@@ -95,6 +97,9 @@ class Solver:
         self._state_dims = state.dims
         self._state_type = state.type
         self._state_qobj = state
+        str_to_type = {layer.__name__.lower(): layer for layer in to.dtypes}
+        if self.options["State_data_type"].lower() in str_to_type:
+            state = state.to(str_to_type[self.options["State_data_type"].lower()])
         return state.data
 
     def _restore_state(self, state):
@@ -144,4 +149,9 @@ class Solver:
         return res
 
     def _get_evolver(self, options, args, feedback_args):
+        str_to_type = {layer.__name__.lower(): layer for layer in to.dtypes}
+        if self.options["Operator_data_type"].lower() in str_to_type:
+            self._system = self._system.to(str_to_type[self.options["Operator_data_type"].lower()])
+        if options["ahs"]:
+            return AHSEvolver(self._system, options, args, feedback_args)
         return get_evolver(self._system, options, args, feedback_args)
