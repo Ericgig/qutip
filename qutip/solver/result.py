@@ -139,3 +139,182 @@ class Result:
     @property
     def num_expect(self):
         return self._e_num
+
+class MultiTrajResult:
+    """
+    Contain result of simulations with multiple trajectories.
+    """
+    def __init__(self, num_c_ops):
+        self.trajectories = []
+        self._to_dm = True # MCsolve
+        self.num_c_ops = num_c_ops
+
+    def add(self, one_traj):
+        self.trajectories.append(one_traj)
+
+    @property
+    def runs_states(self):
+        return [traj.states for traj in self.trajectories]
+
+    @property
+    def average_states(self):
+        if self._to_dm:
+            finals = [state.proj() for state in self.trajectories[0].states]
+            for i in range(1, len(self.trajs)):
+                finals = [state.proj() + final for final, state
+                          in zip(finals, self.trajectories[i].states)]
+        else:
+            finals = [state for state in self.trajectories[0].states]
+            for i in range(1, len(self.trajs)):
+                finals = [state + final for final, state
+                          in zip(finals, self.trajectories[i].states)]
+        return [final / len(self.trajs) for final in finals]
+
+    @property
+    def runs_final_states(self):
+        return [traj.final_state for traj in self.trajectories]
+
+    @property
+    def average_final_state(self):
+        if self._to_dm:
+            final = sum(traj.final_state.proj() for traj in self.trajectories)
+        else:
+            final = sum(traj.final_state for traj in self.trajectories)
+        return final / len(self.trajs)
+
+    @property
+    def steady_state(self):
+        avg = self.average_states
+        return sum(avg) / len(avg)
+
+    @property
+    def average_expect(self):
+        num_e = self.trajectories[0]._e_num
+        _e_type = self.trajectories[0]._e_type
+        _e_ops_dict = self.trajectories[0]._e_ops_dict
+        avg = [np.mean(np.stack([traj._expects[i]
+                    for traj in self.trajectories]), axis=0)
+               for i in range(num_e)]
+
+        result = []
+        for expect_vals, isreal  in zip(avg, _e_type):
+            if isreal:
+                expect_vals = expect_vals.real
+            result.append(expect_vals)
+
+        if _e_ops_dict:
+            result = {e: result[n]
+                      for n, e in enumerate(_e_ops_dict.keys())}
+        return result
+
+    @property
+    def std_expect(self):
+        num_e = self.trajectories[0]._e_num
+        _e_type = self.trajectories[0]._e_type
+        _e_ops_dict = self.trajectories[0]._e_ops_dict
+        avg = [np.std(np.stack([traj._expects[i]
+                    for traj in self.trajectories]), axis=0)
+               for i in range(num_e)]
+
+        result = []
+        for expect_vals, isreal  in zip(avg, _e_type):
+            if isreal:
+                expect_vals = expect_vals.real
+            result.append(expect_vals)
+
+        if _e_ops_dict:
+            result = {e: result[n]
+                      for n, e in enumerate(_e_ops_dict.keys())}
+        return result
+
+    @property
+    def runs_expect(self):
+        num_e = self.trajectories[0]._e_num
+        _e_type = self.trajectories[0]._e_type
+        _e_ops_dict = self.trajectories[0]._e_ops_dict
+        avg = [np.stack([traj._expects[i] for traj in self.trajectories])
+               for i in range(num_e)]
+
+        result = []
+        for expect_vals, isreal  in zip(avg, _e_type):
+            if isreal:
+                expect_vals = expect_vals.real
+            result.append(expect_vals)
+
+        if _e_ops_dict:
+            result = {e: result[n]
+                      for n, e in enumerate(_e_ops_dict.keys())}
+        return result
+
+    def expect_traj_avg(self, ntraj=-1):
+        num_e = self.trajectories[0]._e_num
+        _e_type = self.trajectories[0]._e_type
+        _e_ops_dict = self.trajectories[0]._e_ops_dict
+        avg = [np.mean(np.stack([traj._expects[i]
+                    for traj in self.trajectories[:ntraj]]), axis=0)
+               for i in range(num_e)]
+
+        result = []
+        for expect_vals, isreal  in zip(avg, _e_type):
+            if isreal:
+                expect_vals = expect_vals.real
+            result.append(expect_vals)
+
+        if _e_ops_dict:
+            result = {e: result[n]
+                      for n, e in enumerate(_e_ops_dict.keys())}
+        return result
+
+    def expect_traj_std(self, ntraj=-1):
+        num_e = self.trajectories[0]._e_num
+        _e_type = self.trajectories[0]._e_type
+        _e_ops_dict = self.trajectories[0]._e_ops_dict
+        avg = [np.std(np.stack([traj._expects[i]
+                    for traj in self.trajectories[:ntraj]]), axis=0)
+               for i in range(num_e)]
+
+        result = []
+        for expect_vals, isreal  in zip(avg, _e_type):
+            if isreal:
+                expect_vals = expect_vals.real
+            result.append(expect_vals)
+
+        if _e_ops_dict:
+            result = {e: result[n]
+                      for n, e in enumerate(_e_ops_dict.keys())}
+        return result
+
+    @property
+    def collapse(self):
+        return return [traj.collapse for traj in self.trajectories]
+
+    @property
+    def collapse_times(self):
+        out = []
+        for col_ in self.collapse:
+            col = list(zip(*col_))
+            col = ([] if len(col) == 0 else col[0])
+            out.append(col)
+        return out
+
+    @property
+    def collapse_which(self):
+        out = []
+        for col_ in self.collapse:
+            col = list(zip(*col_))
+            col = ([] if len(col) == 0 else col[1])
+            out.append(col)
+        return out
+
+    @property
+    def photocurrent(self):
+        cols = {}
+        tlist = self.trajectories[0].tlist
+        for traj in self.trajectories:
+            for which, t in traj.collapse:
+                cols.get(which, []).append(t)
+        mesurement = []
+        for i in range(self.num_c_ops):
+            mesurement = (np.histogram(cols.get[i], tlist)
+                          / np.diff(tlist) / len(self.trajectories))
+        return mesurement

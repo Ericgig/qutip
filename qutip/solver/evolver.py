@@ -40,6 +40,7 @@ __all__ = ['EvolverScipyZvode', 'EvolverScipyDop853',
 import numpy as np
 from numpy.linalg import norm as la_norm
 from scipy.integrate import ode
+from scipy.integrate._ode import zvode
 from qutip.core import data as _data
 from qutip.solver._solverqevo import SolverQEvo
 from qutip.solver.ode.verner7efficient import vern7
@@ -232,6 +233,23 @@ class EvolverScipyDop853(Evolver):
             _data.column_stack(state0).to_array().ravel().view(np.float64),
             t
         )
+
+    def step(self, t, step=None):
+        """ Evolve to t, must be `set` before. """
+        dt_max = self._ode_solver._integrator.work[6] # allowed max timestep
+        dt = t - self._ode_solver.t
+        if dt_max * dt < 0: # chande in direction
+            self._ode_solver._integrator.reset(len(self._ode_solver._y), False)
+            dt_max = -dt_max
+        elif dt_max == 0:
+            dt_max = 0.01 * dt
+        if step:
+            # Will probably do more work than strickly one step if cought in
+            # one of the previous conditions, making collapse finding for
+            # mcsolve not ideal.
+            t = self._ode_solver.t + min(dt_max, dt) if dt > 0 else max(dt_max, dt)
+        self._ode_solver.integrate(t)
+        return self.get_state()
 
 
 class EvolverVern(Evolver):
