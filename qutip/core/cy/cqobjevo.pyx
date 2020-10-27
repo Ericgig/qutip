@@ -103,9 +103,7 @@ cdef double complex cy_expect(Data left, Dense right, LTYPE layer_type):
 
 
 cdef double complex cy_expect_super(Data left, Dense right, LTYPE layer_type):
-    cdef size_t nrow = right.shape[0]
     cdef double complex out
-    right = column_stack_dense(right, inplace=True)
     if layer_type == CSR_TYPE:
         out = expect_super_csr_dense(left, right)
     elif layer_type == Dense_TYPE:
@@ -114,7 +112,6 @@ cdef double complex cy_expect_super(Data left, Dense right, LTYPE layer_type):
         out = expect_super_csc_dense(left, right)
     else:
         out = _data.expect_super(left, right)
-    column_unstack_dense(right, nrow, inplace=True)
     return out
 
 
@@ -249,7 +246,8 @@ cdef class CQobjEvo:
         cdef double complex out
         self._factor(t)
         if self.issuper:
-            matrix = _data.column_stack(matrix)
+            if matrix.shape[1] != 1:
+                matrix = _data.column_stack(matrix)
             out = _data.expect_super(self.constant, matrix)
             for i in range(self.n_ops):
                 out += self.coefficients[i] * _data.expect_super(self.ops[i], matrix)
@@ -266,13 +264,18 @@ cdef class CQobjEvo:
         superoperator.  If `matrix` is an operator and `self` is an operator,
         then expectation is `trace(self @ matrix)`.
         """
+        cdef size_t nrow = matrix.shape[0]
         cdef size_t i
         cdef double complex out
         self._factor(t)
         if self.issuper:
+            if matrix.shape[1] != 1:
+                matrix = column_stack_dense(matrix, inplace=matrix.fortran)
             out = cy_expect_super(self.constant, matrix, self.layer_type)
             for i in range(self.n_ops):
                 out += self.coefficients[i] * cy_expect_super(<Data> self.ops[i], matrix, self.layer_type)
+            if matrix.fortran:
+                column_unstack_dense(matrix, nrow, inplace=matrix.fortran)
         else:
             out = cy_expect(self.constant, matrix, self.layer_type)
             for i in range(self.n_ops):

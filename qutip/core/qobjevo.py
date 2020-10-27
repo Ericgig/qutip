@@ -76,19 +76,16 @@ class QobjEvoBase:
         if not isinstance(t, numbers.Real):
             raise TypeError("time needs to be a real scalar")
         if isinstance(state, Qobj):
-            state = _data.Dense(state.full())
+            state = state.data
         elif isinstance(state, np.ndarray):
             state = _data.dense.fast_from_numpy(state)
-        # TODO: remove shim once dispatch available.
-        elif isinstance(state, _data.CSR):
-            state = _data.Dense(state.to_array())
-        elif isinstance(state, _data.Dense):
+        elif isinstance(state, _data.Data):
             pass
         else:
             raise TypeError("The vector must be an array or Qobj")
 
-        if self.issuper:
-            state = _data.column_stack_dense(state)
+        if self.issuper and state.shape[1] != 1:
+            state = _data.column_stack(state)
         exp = self.compiled_qobjevo.expect(t, state)
         return exp.real if herm else exp
 
@@ -110,6 +107,7 @@ class QobjEvoBase:
         # TODO: Not always fallback to Dense
         was_Qobj = False
         was_vec = False
+        was_data = False
         if not isinstance(t, (int, float)):
             raise TypeError("the time need to be a real scalar")
         if isinstance(mat, Qobj):
@@ -117,16 +115,18 @@ class QobjEvoBase:
                 raise Exception("Dimensions do not fit")
             was_Qobj = True
             dims = mat.dims
-            mat = mat.to(_data.Dense).data
+            mat = mat.data
         elif isinstance(mat, np.ndarray):
             if mat.ndim == 1:
                 # TODO: do this properly.
-                mat = _data.Dense(mat[:, None])
+                mat = _data.dense.fast_from_numpy(mat)
                 was_vec = True
             elif mat.ndim == 2:
-                mat = _data.Dense(mat)
+                mat = _data.dense.fast_from_numpy(mat)
             else:
                 raise Exception("The matrice must be 1d or 2d")
+        elif isinstance(mat, _data.Data):
+            was_data = True
         else:
             raise TypeError("The vector must be an array or Qobj")
         if mat.shape[0] != self.shape[1]:
@@ -138,6 +138,8 @@ class QobjEvoBase:
             return Qobj(out, dims=dims)
         elif was_vec:
             return out.as_ndarray()[:, 0]
+        elif was_data:
+            return out
         else:
             return out.as_ndarray()
 
@@ -759,7 +761,7 @@ class QobjEvo(QobjEvoBase):
         res._compile()
         return res
 
-    def _compile(self, code=False, matched=False, dense=False):
+    def _compile(self):
         self.tidyup()
         self.compiled_qobjevo = CQobjEvo(self.cte, self.ops)
 

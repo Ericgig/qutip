@@ -286,7 +286,7 @@ class MultiTrajResult:
 
     @property
     def collapse(self):
-        return return [traj.collapse for traj in self.trajectories]
+        return [traj.collapse for traj in self.trajectories]
 
     @property
     def collapse_times(self):

@@ -803,9 +803,9 @@ class TestTranspose(UnaryOpMixin):
     ]
 
 
-class TestTranspose(UnaryOpMixin):
+class TestProject(UnaryOpMixin):
     def op_numpy(self, matrix):
-        if matrix,shape[0] == 1:
+        if matrix.shape[0] == 1:
             return np.outer(np.conj(matrix), matrix)
         else:
             return np.outer(matrix, np.conj(matrix))

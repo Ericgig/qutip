@@ -42,24 +42,19 @@ from scipy.integrate._ode import zvode
 
 from ..core import Qobj, QobjEvo
 from ..core import data as _data
-from ..parallel import parallel_map, serial_map
-from ._mcsolve import CyMcOde, CyMcOdeDiag
-from .sesolve import sesolve
-from .options import SolverOptions, Result, ExpectOps, solver_safe, SolverSystem
-from ..ui.progressbar import TextProgressBar, BaseProgressBar
 
+"""from ..parallel import parallel_map, serial_map
+from ._mcsolve import CyMcOde, CyMcOdeDiag
+from .sesolve import sesolve"""
+
+from .options import SolverOptions
+from .result import Result
+from .solver import Solver
+# from ..ui.progressbar import TextProgressBar, BaseProgressBar
 
 #
 # Internal, global variables for storing references to dynamically loaded
 # cython functions
-class qutip_zvode(zvode):
-    def step(self, *args):
-        itask = self.call_args[2]
-        self.rwork[0] = args[4]
-        self.call_args[2] = 5
-        r = self.run(*args)
-        self.call_args[2] = itask
-        return r
 
 
 def mcsolve(H, psi0, tlist, c_ops=None, e_ops=None, ntraj=0,
@@ -208,6 +203,7 @@ class McSolver(Solver):
 
         self.e_ops = e_ops
         self.options = options
+        self.res = MultiTrajResult()
 
         if isinstance(H, QobjEvo):
             pass
@@ -249,8 +245,8 @@ class McSolver(Solver):
 
         if len(seeds) < ntraj:
             self._seeds = seeds + list(randint(0, 2**32,
-                                              size=ntraj-len(seeds),
-                                              dtype=np.uint32))
+                                               size=ntraj-len(seeds),
+                                               dtype=np.uint32))
         else:
             self._seeds = seeds[:ntraj]
 
@@ -258,24 +254,45 @@ class McSolver(Solver):
         return None
 
     def run(self, state0, tlist, num_traj=1, args={}):
-        self.tlist = tlist
-        res = MultiTrajResult()
+        if args:
+            self._evolver.update_args(args)
         # todo, use parallel map
-        if len(self._seeds) < num_traj:
+        if len(self._seeds) != num_traj:
             self.seed(num_traj)
-        for i in range(num_traj):
-            np.random.seed(self._seeds[i])
-            res.add(super(self).run(state0, tlist, args))
-        return res
+        for seed in self._seeds:
+            self.res.add(self._add_traj(seed))
+        return self.res
+
+    def _add_traj(self, seed):
+        self._evolver.set(self._prepare_state(state0),
+                          tlist[0], seed)
+        res_1 = Result(self.e_ops, self.options, False)
+        res_1.add(tlist[0], state0)
+        for t, state in self._evolver.run(tlist):
+            res_1.add(t, self._restore_state(state))
+        return res_1
 
     def add_traj(self, num_traj):
-        raise NotImplementedError
+        n_need = len(self.res.trajectories) + num_traj
+        n_seed = len(self.seeds)
+        if n_seed <= n_need:
+            self._seeds = seeds + list(randint(0, 2**32,
+                                               size=n_need-n_seed,
+                                               dtype=np.uint32))
+        elif n_seed >= n_need:
+            self._seeds = self._seeds[:n_need]
+        for seed in self._seeds[-num_traj:]:
+            self.res.add(self._add_traj(seed))
+        return self.res
 
     def continue_runs(self, tlist):
         raise NotImplementedError
 
-
-
+    def _restore_state(self, state):
+        return Qobj(state,
+                    dims=self._state_dims,
+                    type=self._state_type,
+                    copy=True) / _data.norm.l2(state)
 
 from .evolver import Evolver, get_evolver
 
@@ -285,7 +302,11 @@ class McEvolver(Evolver):
         self._evolver = get_evolver(system, options, args, feedback_args)
         self.collapses = []
         self.c_ops = c_ops
-        self.c_ops = n_ops
+        self.n_ops = n_ops
+
+        self.norm_steps = 5 # TODO: take from McOptions
+        self.norm_t_tol = 1e-6
+        self.norm_tol = 1e-6
 
     def set(self, state, t0, seed, options=None):
         np.random.seed(seed)
@@ -293,10 +314,13 @@ class McEvolver(Evolver):
         self.options = options or self.options
         self._evolver.set(state, t0, self.options)
 
+    def update_args(self, args):
+        self.system.arguments(args)
+        [op.arguments(args) for op in self.c_ops]
+        [op.arguments(args) for op in self.n_ops]
+
     def run(self, tlist):
         """ Yield (t, state(t)) for t in tlist, must be `set` before. """
-        t_prev = self._evolver.t
-        state_prev = self.get_state()
         for t in tlist[1:]:
             yield t, self.step(t, False)
 
@@ -305,18 +329,18 @@ class McEvolver(Evolver):
         tries = 0
         y_old = self.get_state()
         t_old = self.t
-        norm_old = qt.data.norm.l2(self.get_state())
+        norm_old = _data.norm.l2(self.get_state())
         while self.t < t:
             state = self._evolver.step(t, step=1)
-            norm = qt.data.norm.l2(state)
+            norm = _data.norm.l2(state)
             if norm <= self.target_norm:
                 self.do_collapse(norm_old, norm, t_old)
                 t_old = self.t
-                norm_old = qt.data.norm.l2(self.get_state())
+                norm_old = _data.norm.l2(self.get_state())
             else:
                 t_old = self.t
                 norm_old = norm
-        return self.get_state()
+        return _data.mul(self.get_state(), 1 / norm_old)
 
     def get_state(self):
         return self._evolver.get_state()
@@ -328,7 +352,7 @@ class McEvolver(Evolver):
     def t(self):
         return self._evolver.t
 
-    def do_collapse(self, norm_old, norm, t_old):
+    def do_collapse(self, norm_old, norm, t_prev):
         t_final = self.t
         tries = 0
         while tries < self.norm_steps:
@@ -345,7 +369,7 @@ class McEvolver(Evolver):
             if (t_guess - t_prev) < self.norm_t_tol:
                 t_guess = t_prev + self.norm_t_tol
             state = self._evolver.step(t_guess)
-            norm2_guess = qt.data.norm.l2(state)
+            norm2_guess = _data.norm.l2(state)
             if (np.abs(self.target_norm - norm2_guess) < self.norm_tol * self.target_norm):
                 break
             elif (norm2_guess < target_norm):
@@ -365,12 +389,12 @@ class McEvolver(Evolver):
         # t_guess, state is at the collapse
         probs = np.zeros(len(self.n_ops)+1)
         for i, n_op in enumerate(self.n_ops):
-            probs[i+1] = n_op.expect(t_guess, state)
+            probs[i+1] = n_op.expect(t_guess, state, 1)
         probs = np.cumsum(probs)
         which = np.searchsorted(probs, probs[-1] * np.random.rand())-1
 
-        state_new = self.c_ops[which].matmul(t, state)
-        state_new = mul(state_new, 1/qt.data.norm.l2(state_new))
+        state_new = self.c_ops[which].mul(t_guess, state)
+        state_new = _data.mul(state_new, 1 / _data.norm.l2(state_new))
 
-        self.collapse.append((t_guess, which))
+        self.collapses.append((t_guess, which))
         self.set_state(state_new, t_guess)

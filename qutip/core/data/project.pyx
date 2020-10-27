@@ -11,7 +11,7 @@ cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
 
 __all__ = [
-    'project', 'project_csr',
+    'project', 'project_csr', 'project_dense',
 ]
 
 
@@ -109,7 +109,7 @@ cpdef Dense project_dense(Dense state):
     out = dense.zeros(size, size, fortran)
     for i in range(size):
         for j in range(size):
-            out.data[i*size+j] = state.data[i] * conf(state.data[j])
+            out.data[i*size+j] = conj(state.data[i]) * state.data[j]
     return out
 
 

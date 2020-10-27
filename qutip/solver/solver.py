@@ -32,9 +32,7 @@
 ###############################################################################
 from __future__ import print_function
 
-__all__ = ['SolverOptions',
-           'SolverResultsOptions',
-           'McOptions']
+__all__ = ['Solver']
 
 # import numpy as np
 # from ..core import data as _data
@@ -106,7 +104,7 @@ class Solver:
         return Qobj(state,
                     dims=self._state_dims,
                     type=self._state_type,
-                    copy=False)
+                    copy=True)
 
     def run(self, state0, tlist, args={}):
         if self._safe_mode:
@@ -125,10 +123,10 @@ class Solver:
     def step(self, t, args={}):
         if args:
             self._evolver.update_args(args)
-            self._evolver.set(self._state, self._t, self.options)
+            self._evolver.set(self._state, self._t, self.options) # TODO: reset?
         self._state = self._evolver.step(t)
         self._t = t
-        return self._restore_state(self._state.copy())
+        return self._restore_state(self._state)
 
     def _driver_step(self, tlist, state0):
         """

@@ -348,12 +348,12 @@ class MeSolver(Solver):
             return Qobj(state,
                         dims=self._state_dims,
                         type=self._state_type,
-                        copy=False)
+                        copy=True)
         else:
             return Qobj(column_unstack(state, self._state_shape[0]),
                         dims=self._state_dims,
                         type=self._state_type,
-                        copy=False)
+                        copy=True)
 
     def _safety_check(self, state):
         return None

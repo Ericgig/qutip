@@ -49,7 +49,14 @@ from qutip.solver.ode.wrapper import QtOdeFuncWrapperSolverQEvo
 
 
 all_ode_method = ['adams', 'bdf', 'dop853', 'vern7', 'vern9']
-
+class qutip_zvode(zvode):
+    def step(self, *args):
+        itask = self.call_args[2]
+        self.rwork[0] = args[4]
+        self.call_args[2] = 5
+        r = self.run(*args)
+        self.call_args[2] = itask
+        return r
 
 def get_evolver(system, options, args, feedback_args):
     if options['method'] in ['adams','bdf']:

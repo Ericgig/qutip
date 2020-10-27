@@ -162,6 +162,9 @@ def liouvillian(H, c_ops=[], data_only=False, chi=None):
             td = True
             if c_op.const:
                 c_ = c_op.cte
+            elif c_op.issuper:
+                td_c_ops.append(c_op)
+                continue
             elif chi:
                 td_c_ops.append(lindblad_dissipator(c_op, chi=chi[idx]))
                 continue
