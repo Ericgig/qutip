@@ -48,7 +48,7 @@ from ._mcsolve import CyMcOde, CyMcOdeDiag
 from .sesolve import sesolve"""
 
 from .options import SolverOptions
-from .result import Result
+from .result import Result, MultiTrajResult
 from .solver import Solver
 # from ..ui.progressbar import TextProgressBar, BaseProgressBar
 
@@ -198,12 +198,12 @@ class McSolver(Solver):
         self._safe_mode = _safe_mode
         self._super = True
         self._state = None
+        self._state0 = None
         self._t = 0
         self._seeds = []
 
         self.e_ops = e_ops
         self.options = options
-        self.res = MultiTrajResult()
 
         if isinstance(H, QobjEvo):
             pass
@@ -229,9 +229,10 @@ class McSolver(Solver):
         self._system = -1j* H
         for n_evo in n_evos:
             self._system -= 0.5 * n_evo
-        self.c_ops = n_evos
+        self.c_ops = c_evos
         self._evolver = McEvolver(self._system, self.c_ops, n_evos, options,
                                   args, feedback_args)
+        self.res = MultiTrajResult(len(self.c_ops))
 
     def seed(self, ntraj, seeds=[]):
         # setup seeds array
@@ -250,6 +251,11 @@ class McSolver(Solver):
         else:
             self._seeds = seeds[:ntraj]
 
+    def start(self, state0, t0, seed=None):
+        self._state = self._prepare_state(state0)
+        self._t = t0
+        self._evolver.set(self._state, self._t, seed, self.options)
+
     def _safety_check(self, state):
         return None
 
@@ -260,10 +266,10 @@ class McSolver(Solver):
         if len(self._seeds) != num_traj:
             self.seed(num_traj)
         for seed in self._seeds:
-            self.res.add(self._add_traj(seed))
+            self.res.add(self._add_traj(state0, tlist, seed))
         return self.res
 
-    def _add_traj(self, seed):
+    def _add_traj(self, state0, tlist, seed):
         self._evolver.set(self._prepare_state(state0),
                           tlist[0], seed)
         res_1 = Result(self.e_ops, self.options, False)
@@ -304,7 +310,7 @@ class McEvolver(Evolver):
         self.c_ops = c_ops
         self.n_ops = n_ops
 
-        self.norm_steps = 5 # TODO: take from McOptions
+        self.norm_steps = 10 # TODO: take from McOptions
         self.norm_t_tol = 1e-6
         self.norm_tol = 1e-6
 
@@ -327,19 +333,20 @@ class McEvolver(Evolver):
     def step(self, t, step=None):
         """ Evolve to t, must be `set` before. """
         tries = 0
-        y_old = self.get_state()
+        y_old = self.get_state().copy()
         t_old = self.t
         norm_old = _data.norm.l2(self.get_state())
         while self.t < t:
-            state = self._evolver.step(t, step=1)
+            state = self._evolver.step(t, step=1).copy()
             norm = _data.norm.l2(state)
             if norm <= self.target_norm:
-                self.do_collapse(norm_old, norm, t_old)
+                self.do_collapse(norm_old, norm, t_old, y_old)
                 t_old = self.t
                 norm_old = _data.norm.l2(self.get_state())
             else:
                 t_old = self.t
                 norm_old = norm
+                y_old = state
         return _data.mul(self.get_state(), 1 / norm_old)
 
     def get_state(self):
@@ -352,7 +359,7 @@ class McEvolver(Evolver):
     def t(self):
         return self._evolver.t
 
-    def do_collapse(self, norm_old, norm, t_prev):
+    def do_collapse(self, norm_old, norm, t_prev, y_prev):
         t_final = self.t
         tries = 0
         while tries < self.norm_steps:
@@ -368,17 +375,18 @@ class McEvolver(Evolver):
             )
             if (t_guess - t_prev) < self.norm_t_tol:
                 t_guess = t_prev + self.norm_t_tol
-            state = self._evolver.step(t_guess)
+            state = self._evolver.backstep(t_guess, t_prev, y_prev)
             norm2_guess = _data.norm.l2(state)
             if (np.abs(self.target_norm - norm2_guess) < self.norm_tol * self.target_norm):
                 break
-            elif (norm2_guess < target_norm):
+            elif (norm2_guess < self.target_norm):
                 # t_guess is still > t_jump
                 t_final = t_guess
                 norm = norm2_guess
             else:
                 # t_guess < t_jump
                 t_prev = t_guess
+                y_prev = state.copy()
                 norm_old = norm2_guess
 
         if tries >= self.norm_steps:
@@ -397,4 +405,5 @@ class McEvolver(Evolver):
         state_new = _data.mul(state_new, 1 / _data.norm.l2(state_new))
 
         self.collapses.append((t_guess, which))
+        self.target_norm = np.random.rand()
         self.set_state(state_new, t_guess)

@@ -46,7 +46,7 @@ from qutip.solver._solverqevo import SolverQEvo
 from qutip.solver.ode.verner7efficient import vern7
 from qutip.solver.ode.verner9efficient import vern9
 from qutip.solver.ode.wrapper import QtOdeFuncWrapperSolverQEvo
-
+import warnings
 
 all_ode_method = ['adams', 'bdf', 'dop853', 'vern7', 'vern9']
 class qutip_zvode(zvode):
@@ -168,12 +168,11 @@ class EvolverScipyZvode(Evolver):
         r = ode(self.system.mul_np_vec)
         options_keys = ['atol', 'rtol', 'nsteps', 'method', 'order',
                         'first_step', 'max_step', 'min_step']
-        opt = {key: options[key]
+        opt = {key: self.options[key]
                for key in options_keys
-               if key in options}
+               if key in self.options}
         r.set_integrator('zvode', **opt)
         self._ode_solver = r
-
         self.set_state(state0, t0)
 
     def get_state(self):
@@ -190,6 +189,18 @@ class EvolverScipyZvode(Evolver):
             _data.column_stack(state0).to_array().ravel(),
             t
         )
+
+    def backstep(self, t, t_old, y_old):
+        """ Evolve to t, must be `set` before. """
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self._ode_solver.integrate(t)
+        if not self._ode_solver.successful():
+            # print("caught", self._ode_solver.t, t,
+            #       self._ode_solver.y, self._ode_solver._integrator.call_args)
+            self.set_state(y_old, t_old)
+            self._ode_solver.integrate(t)
+        return self.get_state()
 
 
 class EvolverScipyDop853(Evolver):
@@ -212,9 +223,9 @@ class EvolverScipyDop853(Evolver):
         r = ode(self.funcwithfloat)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
                         'ifactor', 'dfactor', 'beta']
-        opt = {key: options[key]
+        opt = {key: self.options[key]
                for key in options_keys
-               if key in options}
+               if key in self.options}
         r.set_integrator('dop853', **opt)
         self._ode_solver = r
         self.set_state(state0, t0)
@@ -258,6 +269,12 @@ class EvolverScipyDop853(Evolver):
         self._ode_solver.integrate(t)
         return self.get_state()
 
+    def backstep(self, t, t_old, y_old):
+        """ Evolve to t, must be `set` before. """
+        self._ode_solver._integrator.reset(len(self._ode_solver._y), False)
+        self._ode_solver.integrate(t)
+        return self.get_state()
+
 
 class EvolverVern(Evolver):
     # -------------------------------------------------------------------------
@@ -277,11 +294,11 @@ class EvolverVern(Evolver):
         func = QtOdeFuncWrapperSolverQEvo(self.system)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
                         'min_step', 'interpolate']
-        opt = {key: options[key]
+        opt = {key: self.options[key]
                for key in options_keys
-               if key in options}
-        ode = vern7 if options['method'] == 'vern7' else vern9
-        self.name += options['method']
+               if key in self.options}
+        ode = vern7 if self.options['method'] == 'vern7' else vern9
+        self.name += self.options['method']
         self._ode_solver = ode(func, **opt)
         self.set_state(state0, t0)
 
@@ -291,6 +308,10 @@ class EvolverVern(Evolver):
     def set_state(self, state, t):
         self._ode_solver.set_initial_value(_data.to(_data.Dense, state).copy(),
                                            t)
+
+    def backstep(self, t, t_old, y_old):
+        self._ode_solver.integrate(t)
+        return self.get_state()
 
 
 class EvolverDiag(Evolver):
@@ -353,3 +374,6 @@ class EvolverDiag(Evolver):
     @property
     def t(self):
         return self._t
+
+    def backstep(self, t, t_old, y_old):
+        return self.step(t)

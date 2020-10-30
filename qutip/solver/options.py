@@ -26,7 +26,39 @@ class SolverOptions:
 
     Options
     -------
+    """
+    options = {
+        # (turned off for batch unitary propagator mode)
+        "progress_bar": "text",
+        # Normalize output of solvers
+        # (turned off for batch unitary propagator mode)
+        "progress_kwargs": {"chunk_size":10},
+        # Normalize the states received in feedback_args
+        "feedback_normalize": True,
+    }
 
+@optionsclass("ode", SolverOptions)
+class SolverOdeOptions:
+    """
+    Class of options for evolution solvers such as :func:`qutip.mesolve` and
+    :func:`qutip.mcsolve`. Options can be specified either as arguments to the
+    constructor::
+
+        opts = SolverOptions(order=10, ...)
+
+    or by changing the class attributes after creation::
+
+        opts = SolverOptions()
+        opts.order = 10
+
+    Returns options class to be used as options in evolution solvers.
+
+    The default can be changed by::
+
+        qutip.settings.solver['order'] = 10
+
+    Options
+    -------
     atol : float {1e-8}
         Absolute tolerance.
     rtol : float {1e-6}
@@ -43,16 +75,6 @@ class SolverOptions:
         Minimum step size (0 = automatic).
     max_step : float {0}
         Maximum step size (0 = automatic)
-    tidy : bool {True,False}
-        Tidyup Hamiltonian and initial state by removing small terms.
-    store_final_state : bool {False, True}
-        Whether or not to store the final state of the evolution in the
-        result class.
-    store_states : bool {False, True}
-        Whether or not to store the state vectors or density matrices in the
-        result class, even if expectation values operators are given. If no
-        expectation are provided, then states are stored by default and this
-        option has no effect.
     """
     options = {
         # Absolute tolerance (default = 1e-8)
@@ -71,17 +93,38 @@ class SolverOptions:
         "max_step": 0,
         # Minimal step size (0 = determined by solver)
         "min_step": 0,
+    }
+
+@optionsclass("rhs", SolverOptions)
+class SolverRhsOptions:
+    """
+    Class of options for evolution solvers such as :func:`qutip.mesolve` and
+    :func:`qutip.mcsolve`. Options can be specified either as arguments to the
+    constructor::
+
+        opts = SolverOptions(order=10, ...)
+
+    or by changing the class attributes after creation::
+
+        opts = SolverOptions()
+        opts.order = 10
+
+    Returns options class to be used as options in evolution solvers.
+
+    The default can be changed by::
+
+        qutip.settings.solver['order'] = 10
+
+    Options
+    -------
+    tidy : bool {True,False}
+        Tidyup Hamiltonian and initial state by removing small terms.
+    """
+    options = {
+
+
         # tidyup Hamiltonian before calculation (default = True)
         "tidy": True,
-        # (turned off for batch unitary propagator mode)
-        "progress_bar": "text",
-        # Normalize output of solvers
-        # (turned off for batch unitary propagator mode)
-        "progress_kwargs": {"chunk_size":10},
-        # Normalize the states received in feedback_args
-        "feedback_normalize": True,
-
-
         "Operator_data_type": "input",
         "State_data_type": "dense",
         "ahs": False,
@@ -90,10 +133,37 @@ class SolverOptions:
         "ahs_padding": 5,
         "ahs_safety_interval": 3,
         "ahs_safety_rtol": 1e-6,
+    }
 
+@optionsclass("ahs", SolverRhsOptions)
+class SolverAHSOptions:
+    """
+    Class of options for evolution solvers such as :func:`qutip.mesolve` and
+    :func:`qutip.mcsolve`. Options can be specified either as arguments to the
+    constructor::
 
+        opts = SolverOptions(order=10, ...)
 
+    or by changing the class attributes after creation::
 
+        opts = SolverOptions()
+        opts.order = 10
+
+    Returns options class to be used as options in evolution solvers.
+
+    The default can be changed by::
+
+        qutip.settings.solver['order'] = 10
+
+    Options
+    -------
+    """
+    options = {
+        "ahs_atol": 1e-8,
+        "ahs_rtol": 1e-8,
+        "ahs_padding": 5,
+        "ahs_safety_interval": 3,
+        "ahs_safety_rtol": 1e-6,
     }
 
 @optionsclass("results", SolverOptions)
@@ -191,8 +261,6 @@ class McOptions:
         "norm_steps": 5,
         # small value in mc solver for computing correlations
         "mc_corr_eps": 1e-10,
-        # Number of trajectories (default = 500)
-        "ntraj": 500,
 
         "map": "parallel_map",
     }
