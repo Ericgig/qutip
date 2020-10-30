@@ -96,8 +96,8 @@ class Solver:
         self._state_type = state.type
         self._state_qobj = state
         str_to_type = {layer.__name__.lower(): layer for layer in to.dtypes}
-        if self.options["State_data_type"].lower() in str_to_type:
-            state = state.to(str_to_type[self.options["State_data_type"].lower()])
+        if self.options.rhs["State_data_type"].lower() in str_to_type:
+            state = state.to(str_to_type[self.options.rhs["State_data_type"].lower()])
         return state.data
 
     def _restore_state(self, state):
@@ -132,24 +132,25 @@ class Solver:
         """
         Internal function for solving ODEs.
         """
-        progress_bar = get_progess_bar(self.options['progress_bar'])
-
         self._evolver.set(state0, tlist[0], self.options)
         res = Result(self.e_ops, self.options.results, self._super)
         res.add(tlist[0], self._state_qobj)
 
+        progress_bar = get_progess_bar(self.options['progress_bar'])
         progress_bar.start(len(tlist)-1, **self.options['progress_kwargs'])
         for t, state in self._evolver.run(tlist):
             progress_bar.update()
             res.add(t, self._restore_state(state))
         progress_bar.finished()
 
+        res.stats['time'] = progress_bar.total_time()
+        self._evolver.add_stats(res.stats)
         return res
 
     def _get_evolver(self, options, args, feedback_args):
         str_to_type = {layer.__name__.lower(): layer for layer in to.dtypes}
-        if self.options["Operator_data_type"].lower() in str_to_type:
-            self._system = self._system.to(str_to_type[self.options["Operator_data_type"].lower()])
-        if options["ahs"]:
+        if self.options.rhs["Operator_data_type"].lower() in str_to_type:
+            self._system = self._system.to(str_to_type[self.options.rhs["Operator_data_type"].lower()])
+        if options.rhs["ahs"]:
             return AHSEvolver(self._system, options, args, feedback_args)
         return get_evolver(self._system, options, args, feedback_args)

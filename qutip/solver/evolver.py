@@ -59,13 +59,13 @@ class qutip_zvode(zvode):
         return r
 
 def get_evolver(system, options, args, feedback_args):
-    if options['method'] in ['adams','bdf']:
+    if options.ode['method'] in ['adams','bdf']:
         return EvolverScipyZvode(system, options, args, feedback_args)
-    elif options['method'] in ['dop853']:
+    elif options.ode['method'] in ['dop853']:
         return EvolverScipyDop853(system, options, args, feedback_args)
-    elif options['method'] in ['vern7', 'vern9']:
+    elif options.ode['method'] in ['vern7', 'vern9']:
         return EvolverVern(system, options, args, feedback_args)
-    elif options['method'] in ['diagonalized', 'diag']:
+    elif options.ode['method'] in ['diagonalized', 'diag']:
         return EvolverDiag(system, options, args, feedback_args)
     raise ValueError("method options not recognized")
 
@@ -99,8 +99,8 @@ class Evolver:
     name = "undefined"
 
     def __init__(self, system, options, args, feedback_args):
-        self.system = SolverQEvo(system, options, args, feedback_args)
-        self.options = options
+        self.system = SolverQEvo(system, options.rhs, args, feedback_args)
+        self.options = options.ode
         self._error_msg = ("ODE integration error: Try to increase "
                            "the allowed number of substeps by increasing "
                            "the nsteps parameter in the Options class.")
@@ -148,6 +148,9 @@ class Evolver:
     def t(self):
         return self._ode_solver.t
 
+    def add_stats(self, stats):
+        stats['solver'] = self.name
+
 
 class EvolverScipyZvode(Evolver):
     # -------------------------------------------------------------------------
@@ -160,7 +163,7 @@ class EvolverScipyZvode(Evolver):
     name = "scipy_zvode"
 
     def set(self, state0, t0, options=None):
-        self.options = options or self.options
+        self.options = options.ode or self.options
         self._set_shape(state0)
         self._t = t0
         self._y = state0.copy()
@@ -214,7 +217,7 @@ class EvolverScipyDop853(Evolver):
     name = "scipy_dop853"
 
     def set(self, state0, t0, options=None):
-        self.options = options or self.options
+        self.options = options.ode or self.options
         self._t = t0
         self._y = state0.copy()
 
@@ -287,7 +290,7 @@ class EvolverVern(Evolver):
     name = "qutip_"
 
     def set(self, state0, t0, options=None):
-        self.options = options or self.options
+        self.options = options.ode or self.options
         self._set_shape(state0)
         self._t = t0
         self._y = state0.copy()

@@ -3,8 +3,8 @@ from .qevo import SolverQEvoAHS
 
 class AHSEvolver(Evolver):
     def __init__(self, system, options, args, feedback_args):
-        self.system = SolverQEvoAHS(system, options, args, feedback_args)
-        self.options = options
+        self.system = SolverQEvoAHS(system, options.rhs, args, feedback_args)
+        self.options = options.ode
         self._evolver = get_evolver(system, options, args, feedback_args)
         self._evolver.system = self.system
 

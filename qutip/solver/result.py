@@ -27,7 +27,7 @@ class Result:
         list of the times at which the expectation values and
         states where taken.
     """
-    def __init__(self, e_ops, options, super):
+    def __init__(self, e_ops, options, super_):
         self.e_ops = e_ops
         self.times = []
 
@@ -35,10 +35,12 @@ class Result:
         self._states = []
         self._expects = []
         self._last_state = None
-        self._super = super
+        self._super = super_
 
-        self._read_e_ops(super)
+        self._read_e_ops(super_)
         self._read_options(options)
+        self.collapse = None
+        self.stats = {}
 
     def _read_e_ops(self, _super):
         self._e_ops_dict = False
@@ -139,6 +141,10 @@ class Result:
     @property
     def num_expect(self):
         return self._e_num
+
+    def __repr__(self):
+        # TODO: Make better results output
+        return self.stats.__repr__()
 
 class MultiTrajResult:
     """

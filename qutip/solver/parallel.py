@@ -34,7 +34,7 @@
 This function provides functions for parallel execution of loops and function
 mappings, using the builtin Python module multiprocessing.
 """
-__all__ = ['parallel_map', 'serial_map']
+__all__ = ['parallel_map', 'serial_map', 'loky_pmap']
 
 from scipy import array
 import multiprocessing
@@ -91,7 +91,7 @@ def serial_map(task, values, task_args=tuple(), task_kwargs={},
 
     """
     progress_bar = get_progess_bar(progress_bar)
-    progress_bar.start(len(values), progress_bar_kwargs)
+    progress_bar.start(len(values), **progress_bar_kwargs)
 
     results = []
     for n, value in enumerate(values):
@@ -138,15 +138,16 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={},
 
     """
     os.environ['QUTIP_IN_PARALLEL'] = 'TRUE'
-    kw = _default_kwargs()
-    if 'num_cpus' in kwargs:
-        kw['num_cpus'] = kwargs['num_cpus']
+    # kw = _default_kwargs()
+    # if 'num_cpus' in kwargs:
+    #     kw['num_cpus'] = kwargs['num_cpus']
+
 
     progress_bar = get_progess_bar(progress_bar)
-    progress_bar.start(len(values), progress_bar_kwargs)
+    progress_bar.start(len(values), **progress_bar_kwargs)
 
     try:
-        pool = Pool(processes=kw['num_cpus'])
+        pool = Pool(processes=kwargs['num_cpus'])
 
         async_res = [pool.apply_async(task, (value,) + task_args, task_kwargs,
                                       progress_bar.update)
@@ -209,11 +210,12 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={},
     os.environ['QUTIP_IN_PARALLEL'] = 'TRUE'
     from loky import get_reusable_executor, TimeoutError
 
-    kw = _default_kwargs()
-    kw.update(kwargs)
+    # kw = _default_kwargs()
+    # kw.update(kwargs)
+    kw = kwargs
 
     progress_bar = get_progess_bar(progress_bar)
-    progress_bar.start(len(values), progress_bar_kwargs)
+    progress_bar.start(len(values), **progress_bar_kwargs)
 
     executor = get_reusable_executor(max_workers=kw['num_cpus'])
     end_time = kw['timeout'] + time.time()
@@ -239,9 +241,22 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={},
     os.environ['QUTIP_IN_PARALLEL'] = 'FALSE'
     return result
 
-#TODO: move to options
+
+def get_map(options):
+    if "parallel" in options['map']:
+        return parallel_map
+    elif "serial" in options['map']:
+        return serial_map
+    elif "loky" in options['map']:
+        return loky_pmap
+    else:
+        raise InputError("")
+
+"""
+# TODO: move to options
 def _default_kwargs():
     settings = {'num_cpus': multiprocessing.cpu_count(),
                 'timeout':1e8,
                 'job_timeout':1e8}
     return settings
+"""

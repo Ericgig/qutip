@@ -208,12 +208,12 @@ class SeSolver(Solver):
         self.e_ops = e_ops
 
         if isinstance(H, QobjEvo):
-            self._system = -1j*H
+            self._system = -1j * H
         elif isinstance(H, (list, Qobj)):
             H = QobjEvo(H, args=args, tlist=times)
-            self._system = -1j*H
+            self._system = -1j * H
         elif callable(H):
-            self._system = -1j*QobjEvoFunc(H, args=args)
+            self._system = -1j * QobjEvoFunc(H, args=args)
         else:
             raise ValueError("Invalid Hamiltonian")
         self._evolver = self._get_evolver(options, args, feedback_args)

@@ -43,18 +43,11 @@ from scipy.integrate._ode import zvode
 from ..core import Qobj, QobjEvo
 from ..core import data as _data
 
-"""from ..parallel import parallel_map, serial_map
-from ._mcsolve import CyMcOde, CyMcOdeDiag
-from .sesolve import sesolve"""
-
 from .options import SolverOptions
 from .result import Result, MultiTrajResult
 from .solver import Solver
-# from ..ui.progressbar import TextProgressBar, BaseProgressBar
-
-#
-# Internal, global variables for storing references to dynamically loaded
-# cython functions
+from .parallel import get_map
+from .evolver import Evolver, get_evolver
 
 
 def mcsolve(H, psi0, tlist, c_ops=None, e_ops=None, ntraj=0,
@@ -129,17 +122,6 @@ def mcsolve(H, psi0, tlist, c_ops=None, e_ops=None, ntraj=0,
     options : SolverOptions
         Instance of ODE solver options.
 
-    progress_bar: BaseProgressBar
-        Optional instance of BaseProgressBar, or a subclass thereof, for
-        showing the progress of the simulation. Set to None to disable the
-        progress bar.
-
-    map_func: function
-        A map function for managing the calls to the single-trajactory solver.
-
-    map_kwargs: dictionary
-        Optional keyword arguments to the map_func function.
-
     Returns
     -------
     results : :class:`qutip.solver.Result`
@@ -162,8 +144,7 @@ def mcsolve(H, psi0, tlist, c_ops=None, e_ops=None, ntraj=0,
     if len(c_ops) == 0:
         warnings.warn("No c_ops, using sesolve")
         return sesolve(H, psi0, tlist, e_ops=e_ops, args=args,
-                       options=options, progress_bar=progress_bar,
-                       _safe_mode=_safe_mode)
+                       options=options, _safe_mode=_safe_mode)
 
     # load monte carlo class
     mc = McSolver(H, c_ops, e_ops, options, tlist,
@@ -183,20 +164,16 @@ class McSolver(Solver):
     def __init__(self, H, c_ops, e_ops=None, options=None,
                  times=None, args=None, feedback_args=None,
                  _safe_mode=False):
-        if e_ops is None:
-            e_ops = []
-        if options is None:
-            options = SolverOptions()
-        elif not isinstance(options, SolverOptions):
+        e_ops = e_ops or []
+        options = options or SolverOptions()
+        args = args or {}
+        feedback_args = feedback_args or {}
+        if not isinstance(options, SolverOptions):
             raise ValueError("options must be an instance of "
                              "qutip.solver.SolverOptions")
-        if args is None:
-            args = {}
-        if feedback_args is None:
-            feedback_args = {}
 
         self._safe_mode = _safe_mode
-        self._super = True
+        self._super = False
         self._state = None
         self._state0 = None
         self._t = 0
@@ -230,8 +207,8 @@ class McSolver(Solver):
         for n_evo in n_evos:
             self._system -= 0.5 * n_evo
         self.c_ops = c_evos
-        self._evolver = McEvolver(self._system, self.c_ops, n_evos, options,
-                                  args, feedback_args)
+        self._evolver = McEvolver(self._system, self.c_ops, n_evos,
+                                  options.ode, args, feedback_args)
         self.res = MultiTrajResult(len(self.c_ops))
 
     def seed(self, ntraj, seeds=[]):
@@ -254,7 +231,7 @@ class McSolver(Solver):
     def start(self, state0, t0, seed=None):
         self._state = self._prepare_state(state0)
         self._t = t0
-        self._evolver.set(self._state, self._t, seed, self.options)
+        self._evolver.set(self._state, self._t, seed, self.options.ode)
 
     def _safety_check(self, state):
         return None
@@ -265,18 +242,15 @@ class McSolver(Solver):
         # todo, use parallel map
         if len(self._seeds) != num_traj:
             self.seed(num_traj)
-        for seed in self._seeds:
-            self.res.add(self._add_traj(state0, tlist, seed))
-        return self.res
 
-    def _add_traj(self, state0, tlist, seed):
-        self._evolver.set(self._prepare_state(state0),
-                          tlist[0], seed)
-        res_1 = Result(self.e_ops, self.options, False)
-        res_1.add(tlist[0], state0)
-        for t, state in self._evolver.run(tlist):
-            res_1.add(t, self._restore_state(state))
-        return res_1
+        map_func = get_map(self.options.mcsolve)
+        progress_bar = get_progess_bar(self.options["progress_bar"])
+        for traj in map_func(self._add_traj, self._seeds, (state0, tlist), {},
+                             progress_bar, self.options["progress_kwargs"],
+                             **self.options.mcsolve['map_options']
+                            ):
+            self.res.add(traj)
+        return self.res
 
     def add_traj(self, num_traj):
         n_need = len(self.res.trajectories) + num_traj
@@ -287,9 +261,26 @@ class McSolver(Solver):
                                                dtype=np.uint32))
         elif n_seed >= n_need:
             self._seeds = self._seeds[:n_need]
-        for seed in self._seeds[-num_traj:]:
-            self.res.add(self._add_traj(seed))
+
+        map_func = get_map(self.options.mcsolve)
+        progress_bar = get_progess_bar(self.options["progress_bar"])
+        for traj in map_func(self._add_traj, self._seeds[-num_traj:],
+                             (state0, tlist), {},
+                             progress_bar, self.options["progress_kwargs"],
+                             **self.options.mcsolve['map_options']
+                            ):
+            self.res.add(traj)
         return self.res
+
+    def _add_traj(self, seed, state0, tlist):
+        self._evolver.set(self._prepare_state(state0),
+                          tlist[0], seed)
+        res_1 = Result(self.e_ops, self.options.results, False)
+        res_1.add(tlist[0], state0)
+        for t, state in self._evolver.run(tlist):
+            res_1.add(t, self._restore_state(state))
+        res_1.collapse = self._evolver.collapses
+        return res_1
 
     def continue_runs(self, tlist):
         raise NotImplementedError
@@ -300,7 +291,6 @@ class McSolver(Solver):
                     type=self._state_type,
                     copy=True) / _data.norm.l2(state)
 
-from .evolver import Evolver, get_evolver
 
 class McEvolver(Evolver):
     def __init__(self, system, c_ops, n_ops, options, args, feedback_args):
@@ -310,9 +300,9 @@ class McEvolver(Evolver):
         self.c_ops = c_ops
         self.n_ops = n_ops
 
-        self.norm_steps = 10 # TODO: take from McOptions
-        self.norm_t_tol = 1e-6
-        self.norm_tol = 1e-6
+        self.norm_steps = options.mcsolve['norm_steps']
+        self.norm_t_tol = options.mcsolve['norm_t_tol']
+        self.norm_tol = options.mcsolve['norm_tol']
 
     def set(self, state, t0, seed, options=None):
         np.random.seed(seed)

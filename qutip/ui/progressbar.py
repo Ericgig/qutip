@@ -65,9 +65,13 @@ class BaseProgressBar(object):
         self.p_chunk_size = chunk_size
         self.p_chunk = chunk_size
         self.t_start = time.time()
+        self.t_done = self.t_start - 1
 
     def update(self, n=None):
         pass
+
+    def total_time(self):
+        return self.t_done - self.t_start
 
     def time_elapsed(self):
         return "%6.2fs" % (time.time() - self.t_start)
@@ -85,7 +89,7 @@ class BaseProgressBar(object):
         return time_string
 
     def finished(self):
-        pass
+        self.t_done = time.time()
 
 
 class TextProgressBar(BaseProgressBar):
@@ -159,6 +163,8 @@ class TqdmProgressBar(BaseProgressBar):
     def __init__(self, iterations=0, chunk_size=10):
         from tqdm import tqdm
         self.tqdm = tqdm
+        self.t_start = time.time()
+        self.t_done = self.t_start - 1
 
     def start(self, iterations, **kwargs):
         self.pbar = self.tqdm(total=iterations, **kwargs)
@@ -168,6 +174,7 @@ class TqdmProgressBar(BaseProgressBar):
 
     def finished(self):
         self.pbar.close()
+        self.t_done = time.time()
 
 
 def get_progess_bar(opt):

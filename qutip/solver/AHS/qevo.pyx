@@ -37,12 +37,12 @@ cdef class SolverQEvoAHS(SolverQEvo):
         self.layer_type = self.base.layer_type
 
         self.config = AHS_config()
-        self.config.padding = options["ahs_padding"] if options["ahs_padding"] > 0 else 2
-        self.config.safety_pad = options["ahs_safety_interval"]
+        self.config.padding = options['ahs_options']["ahs_padding"] if options['ahs_options']["ahs_padding"] > 0 else 2
+        self.config.safety_pad = options['ahs_options']["ahs_safety_interval"]
         self.config.extra_padding = 1.
-        self.config.rtol = options["ahs_rtol"]
-        self.config.atol = options["ahs_atol"]
-        self.config.safety_rtol = options["ahs_safety_rtol"]
+        self.config.rtol = options['ahs_options']["ahs_rtol"]
+        self.config.atol = options['ahs_options']["ahs_atol"]
+        self.config.safety_rtol = options['ahs_options']["ahs_safety_rtol"]
         limits[0] = 0
         limits[1] = N if not self.super else (<idxint> N**0.5)
         self.config.limits = limits

@@ -337,8 +337,8 @@ class MeSolver(Solver):
         self._state_type = state.type
         self._state_qobj = state
         str_to_type = {layer.__name__.lower(): layer for layer in to.dtypes}
-        if self.options["State_data_type"].lower() in str_to_type:
-            state = state.to(str_to_type[self.options["State_data_type"].lower()])
+        if self.options.rhs["State_data_type"].lower() in str_to_type:
+            state = state.to(str_to_type[self.options.rhs["State_data_type"].lower()])
         if state.dims[0] == self._system.dims[1]:
             return state.data
         return column_stack(state.data)
@@ -359,7 +359,6 @@ class MeSolver(Solver):
         return None
         # Todo: make proper checks
         self._system.mul(0, state)
-
         if not (state.isket or state.isunitary):
             raise TypeError("The unitary solver requires psi0 to be"
                             " a ket as initial state"
