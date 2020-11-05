@@ -1,5 +1,5 @@
 __all__ = ['SolverOptions',
-           'SolverResultsOptions',
+           'SolverResultsOptions','SolverRhsOptions','SolverOdeOptions',
            'McOptions']
 
 from ..optionsclass import optionsclass
@@ -239,6 +239,8 @@ class McOptions:
         "norm_steps": 5,
 
         "map": "parallel_map",
+
+        "keep_runs_results": False,
 
         "map_options": {
             'num_cpus': multiprocessing.cpu_count(),

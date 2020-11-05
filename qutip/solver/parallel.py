@@ -34,7 +34,7 @@
 This function provides functions for parallel execution of loops and function
 mappings, using the builtin Python module multiprocessing.
 """
-__all__ = ['parallel_map', 'serial_map', 'loky_pmap']
+__all__ = ['parallel_map', 'serial_map', 'loky_pmap', 'get_map']
 
 from scipy import array
 import multiprocessing
@@ -52,9 +52,15 @@ if sys.platform == 'darwin':
 else:
     Pool = multiprocessing.Pool
 
+map_kw = {
+    'job_timeout': 1e8,
+    'timeout': 1e8,
+    'num_cpus': multiprocessing.cpu_count(),
+}
 
 def serial_map(task, values, task_args=tuple(), task_kwargs={},
-               progress_bar=None, progress_bar_kwargs={}, **kwargs):
+               reduce_func=None, map_kw=map_kw,
+               progress_bar=None, progress_bar_kwargs={}):
     """
     Serial mapping function with the same call signature as parallel_map, for
     easy switching between serial and parallel execution. This
@@ -79,7 +85,7 @@ def serial_map(task, values, task_args=tuple(), task_kwargs={},
         Progress bar options's string for showing progress.
     progress_bar_kwargs : dict
         Options for the progress bar
-    **kwargs:
+    map_kw:
         Other options
 
     Returns
@@ -92,19 +98,25 @@ def serial_map(task, values, task_args=tuple(), task_kwargs={},
     """
     progress_bar = get_progess_bar(progress_bar)
     progress_bar.start(len(values), **progress_bar_kwargs)
-
+    end_time = map_kw['timeout'] + time.time()
     results = []
     for n, value in enumerate(values):
+        if time.time() > end_time:
+            break
         progress_bar.update(n)
         result = task(value, *task_args, **task_kwargs)
-        results.append(result)
+        if reduce_func is not None:
+            reduce_func(result)
+        else:
+            results.append(job.get(job_time))
     progress_bar.finished()
 
     return results
 
 
 def parallel_map(task, values, task_args=tuple(), task_kwargs={},
-                 progress_bar=None, progress_bar_kwargs={}, **kwargs):
+                 reduce_func=None, map_kw=map_kw,
+                 progress_bar=None, progress_bar_kwargs={}):
     """
     Parallel execution of a mapping of `values` to the function `task`. This
     is functionally equivalent to::
@@ -126,7 +138,7 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={},
         Progress bar options's string for showing progress.
     progress_bar_kwargs : dict
         Options for the progress bar
-    **kwargs:
+    map_kw:
         Other options
 
     Returns
@@ -138,41 +150,46 @@ def parallel_map(task, values, task_args=tuple(), task_kwargs={},
 
     """
     os.environ['QUTIP_IN_PARALLEL'] = 'TRUE'
-    # kw = _default_kwargs()
-    # if 'num_cpus' in kwargs:
-    #     kw['num_cpus'] = kwargs['num_cpus']
-
+    end_time = map_kw['timeout'] + time.time()
+    job_time = map_kw['job_timeout']
 
     progress_bar = get_progess_bar(progress_bar)
     progress_bar.start(len(values), **progress_bar_kwargs)
 
+    results = []
     try:
-        pool = Pool(processes=kwargs['num_cpus'])
+        pool = Pool(processes=map_kw['num_cpus'])
 
-        async_res = [pool.apply_async(task, (value,) + task_args, task_kwargs,
-                                      progress_bar.update)
+        async_res = [pool.apply_async(task, (value,) + task_args, task_kwargs)
                      for value in values]
 
-        while not all([ar.ready() for ar in async_res]):
-            for ar in async_res:
-                ar.wait(timeout=0.1)
-
-        pool.terminate()
-        pool.join()
+        for job in async_res:
+            remaining_time = min(end_time - time.time(), job_time)
+            result = job.get(remaining_time)
+            if reduce_func is not None:
+                reduce_func(result)
+            else:
+                results.append(result)
+            progress_bar.update()
 
     except KeyboardInterrupt as e:
+        raise e
+
+    except multiprocessing.TimeoutError:
+        pass
+
+    finally:
         os.environ['QUTIP_IN_PARALLEL'] = 'FALSE'
         pool.terminate()
         pool.join()
-        raise e
 
     progress_bar.finished()
-    os.environ['QUTIP_IN_PARALLEL'] = 'FALSE'
-    return [ar.get() for ar in async_res]
+    return results
 
 
 def loky_pmap(task, values, task_args=tuple(), task_kwargs={},
-              progress_bar=None, progress_bar_kwargs={}, **kwargs):
+              reduce_func=None, map_kw={},
+              progress_bar=None, progress_bar_kwargs={}):
     """
     Parallel execution of a mapping of `values` to the function `task`. This
     is functionally equivalent to::
@@ -212,7 +229,7 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={},
 
     # kw = _default_kwargs()
     # kw.update(kwargs)
-    kw = kwargs
+    kw = map_kw
 
     progress_bar = get_progess_bar(progress_bar)
     progress_bar.start(len(values), **progress_bar_kwargs)
@@ -220,26 +237,33 @@ def loky_pmap(task, values, task_args=tuple(), task_kwargs={},
     executor = get_reusable_executor(max_workers=kw['num_cpus'])
     end_time = kw['timeout'] + time.time()
     job_time = kw['job_timeout']
-    result = []
+    results = []
 
     try:
         jobs = [executor.submit(task, value, *task_args, **task_kwargs)
                for value in values]
 
         for job in jobs:
-            remaining_time = end_time - time.time()
-            result.append(job.result(min(remaining_time, job_time)))
+            remaining_time = min(end_time - time.time(), job_time)
+            result = job.result(remaining_time)
+            if reduce_func is not None:
+                reduce_func(result)
+            else:
+                results.append(result)
             progress_bar.update()
 
-    except (TimeoutError, KeyboardInterrupt) as e:
+    except KeyboardInterrupt as e:
         [job.cancel() for job in jobs]
-        executor.shutdown()
         raise e
 
-    executor.shutdown()
+    except TimeoutError:
+        [job.cancel() for job in jobs]
+
+    finally:
+        executor.shutdown()
     progress_bar.finished()
     os.environ['QUTIP_IN_PARALLEL'] = 'FALSE'
-    return result
+    return results
 
 
 def get_map(options):
@@ -251,12 +275,3 @@ def get_map(options):
         return loky_pmap
     else:
         raise InputError("")
-
-"""
-# TODO: move to options
-def _default_kwargs():
-    settings = {'num_cpus': multiprocessing.cpu_count(),
-                'timeout':1e8,
-                'job_timeout':1e8}
-    return settings
-"""

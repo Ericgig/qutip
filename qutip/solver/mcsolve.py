@@ -31,7 +31,7 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 
-__all__ = ['mcsolve']
+__all__ = ['mcsolve', "McSolver"]
 
 import warnings
 
@@ -39,18 +39,18 @@ import numpy as np
 from numpy.random import RandomState, randint
 from scipy.integrate import ode
 from scipy.integrate._ode import zvode
-
 from ..core import Qobj, QobjEvo
 from ..core import data as _data
-
 from .options import SolverOptions
-from .result import Result, MultiTrajResult
+from .result import Result, MultiTrajResult, MultiTrajResultAveraged
 from .solver import Solver
+from .sesolve import sesolve
+from .mesolve import mesolve
 from .parallel import get_map
 from .evolver import Evolver, get_evolver
 
 
-def mcsolve(H, psi0, tlist, c_ops=None, e_ops=None, ntraj=0,
+def mcsolve(H, psi0, tlist, c_ops=None, e_ops=None, ntraj=1,
             feedback_args=None, args=None, options=None, _safe_mode=True):
     """Monte Carlo evolution of a state vector :math:`|\psi \\rangle` for a
     given Hamiltonian and sets of collapse operators, and possibly, operators
@@ -151,7 +151,7 @@ def mcsolve(H, psi0, tlist, c_ops=None, e_ops=None, ntraj=0,
                   args, feedback_args, _safe_mode)
 
     # Run the simulation
-    return mc.run(psi0, tlist=tlist, num_traj=num_traj)
+    return mc.run(psi0, tlist=tlist, ntraj=ntraj)
 
 
 # -----------------------------------------------------------------------------
@@ -208,8 +208,11 @@ class McSolver(Solver):
             self._system -= 0.5 * n_evo
         self.c_ops = c_evos
         self._evolver = McEvolver(self._system, self.c_ops, n_evos,
-                                  options.ode, args, feedback_args)
-        self.res = MultiTrajResult(len(self.c_ops))
+                                  options, args, feedback_args)
+        if self.options.mcsolve['keep_runs_results']:
+            self.res = MultiTrajResult(len(self.c_ops))
+        else:
+            self.res = MultiTrajResultAveraged(len(self.c_ops))
 
     def seed(self, ntraj, seeds=[]):
         # setup seeds array
@@ -231,29 +234,29 @@ class McSolver(Solver):
     def start(self, state0, t0, seed=None):
         self._state = self._prepare_state(state0)
         self._t = t0
-        self._evolver.set(self._state, self._t, seed, self.options.ode)
+        self._evolver.set(self._state, self._t, seed, self.options)
 
     def _safety_check(self, state):
         return None
 
-    def run(self, state0, tlist, num_traj=1, args={}):
+    def run(self, state0, tlist, ntraj=1, args={}):
         if args:
             self._evolver.update_args(args)
         # todo, use parallel map
-        if len(self._seeds) != num_traj:
-            self.seed(num_traj)
+        if len(self._seeds) != ntraj:
+            self.seed(ntraj)
 
         map_func = get_map(self.options.mcsolve)
-        progress_bar = get_progess_bar(self.options["progress_bar"])
-        for traj in map_func(self._add_traj, self._seeds, (state0, tlist), {},
-                             progress_bar, self.options["progress_kwargs"],
-                             **self.options.mcsolve['map_options']
-                            ):
-            self.res.add(traj)
+        map_func(self._add_traj, self._seeds, (state0, tlist), {},
+                 reduce_func=self.res.add,
+                 map_kw=self.options.mcsolve['map_options'],
+                 progress_bar=self.options["progress_bar"],
+                 progress_bar_kwargs=self.options["progress_kwargs"]
+                 )
         return self.res
 
-    def add_traj(self, num_traj):
-        n_need = len(self.res.trajectories) + num_traj
+    def add_traj(self, ntraj):
+        n_need = len(self.res.trajectories) + ntraj
         n_seed = len(self.seeds)
         if n_seed <= n_need:
             self._seeds = seeds + list(randint(0, 2**32,
@@ -263,22 +266,23 @@ class McSolver(Solver):
             self._seeds = self._seeds[:n_need]
 
         map_func = get_map(self.options.mcsolve)
-        progress_bar = get_progess_bar(self.options["progress_bar"])
-        for traj in map_func(self._add_traj, self._seeds[-num_traj:],
-                             (state0, tlist), {},
-                             progress_bar, self.options["progress_kwargs"],
-                             **self.options.mcsolve['map_options']
-                            ):
-            self.res.add(traj)
+        map_func(self._add_traj, self._seeds, (state0, tlist), {},
+                 reduce_func=self.res.add,
+                 map_kw=self.options.mcsolve['map_options'],
+                 progress_bar=self.options["progress_bar"],
+                 progress_bar_kwargs=self.options["progress_kwargs"]
+                 )
         return self.res
 
     def _add_traj(self, seed, state0, tlist):
         self._evolver.set(self._prepare_state(state0),
                           tlist[0], seed)
+        self.options.results['normalize_output'] = False # Done here
         res_1 = Result(self.e_ops, self.options.results, False)
         res_1.add(tlist[0], state0)
         for t, state in self._evolver.run(tlist):
-            res_1.add(t, self._restore_state(state))
+            state_qobj = self._restore_state(state)
+            res_1.add(t, state_qobj)
         res_1.collapse = self._evolver.collapses
         return res_1
 
@@ -286,10 +290,82 @@ class McSolver(Solver):
         raise NotImplementedError
 
     def _restore_state(self, state):
-        return Qobj(state,
+        norm = 1/_data.norm.l2(state)
+        state = _data.mul(state, norm)
+        qobj = Qobj(state,
                     dims=self._state_dims,
                     type=self._state_type,
-                    copy=True) / _data.norm.l2(state)
+                    copy=False)
+        return qobj
+
+
+class MeMcSolve(McSolver):
+    def __init__(self, H, c_ops, sc_ops, e_ops=None, options=None,
+                 times=None, args=None, feedback_args=None,
+                 _safe_mode=False):
+        e_ops = e_ops or []
+        options = options or SolverOptions()
+        args = args or {}
+        feedback_args = feedback_args or {}
+        if not isinstance(options, SolverOptions):
+            raise ValueError("options must be an instance of "
+                             "qutip.solver.SolverOptions")
+
+        self._safe_mode = _safe_mode
+        self._super = False
+        self._state = None
+        self._state0 = None
+        self._t = 0
+        self._seeds = []
+
+        self.e_ops = e_ops
+        self.options = options
+
+        if isinstance(H, QobjEvo):
+            pass
+        elif isinstance(H, (list, Qobj)):
+            H = QobjEvo(H, args=args, tlist=times)
+        elif callable(H):
+            H = QobjEvoFunc(H, args=args)
+        else:
+            raise ValueError("Invalid Hamiltonian")
+
+        c_evos = []
+        for op in c_ops:
+            if isinstance(op, QobjEvo):
+                c_evos.append(op)
+            elif isinstance(op, (list, Qobj)):
+                c_evos.append(QobjEvo(op, args=args, tlist=times))
+            elif callable(op):
+                c_evos.append(QobjEvoFunc(op, args=args))
+            else:
+                raise ValueError("Invalid Hamiltonian")
+
+        sc_evos = []
+        for op in sc_ops:
+            if isinstance(op, QobjEvo):
+                sc_evos.append(op)
+            elif isinstance(op, (list, Qobj)):
+                sc_evos.append(QobjEvo(op, args=args, tlist=times))
+            elif callable(op):
+                sc_evos.append(QobjEvoFunc(op, args=args))
+            else:
+                raise ValueError("Invalid Hamiltonian")
+
+        ns_evos = [spre(op.dag())*spost(op) for op in sc_evos]
+        n_evos = [spre(op._cdc()) for op in sc_evos]
+        self._system = liouvillian(H, c_evos)
+        for n_evo in ns_evos:
+            self._system -= 0.5 * n_evo
+        self.c_ops = ns_evos
+        self._evolver = McEvolver(self._system, self.c_ops, n_evos,
+                                  options, args, feedback_args)
+        if self.options.mcsolve['keep_runs_results']:
+            self.res = MultiTrajResult(len(n_evos))
+        else:
+            self.res = MultiTrajResultAveraged(len(n_evos))
+        self.res._to_dm = False
+        self._evolver.norm_func = _data.norm.trace
 
 
 class McEvolver(Evolver):
@@ -303,6 +379,8 @@ class McEvolver(Evolver):
         self.norm_steps = options.mcsolve['norm_steps']
         self.norm_t_tol = options.mcsolve['norm_t_tol']
         self.norm_tol = options.mcsolve['norm_tol']
+
+        self.norm_func = _data.norm.l2
 
     def set(self, state, t0, seed, options=None):
         np.random.seed(seed)
@@ -325,14 +403,15 @@ class McEvolver(Evolver):
         tries = 0
         y_old = self.get_state().copy()
         t_old = self.t
-        norm_old = _data.norm.l2(self.get_state())
+        norm_old = self.norm_func(self.get_state())
         while self.t < t:
             state = self._evolver.step(t, step=1).copy()
-            norm = _data.norm.l2(state)
+            # print(self.t)
+            norm = self.norm_func(state)
             if norm <= self.target_norm:
                 self.do_collapse(norm_old, norm, t_old, y_old)
                 t_old = self.t
-                norm_old = _data.norm.l2(self.get_state())
+                norm_old = self.norm_func(self.get_state())
             else:
                 t_old = self.t
                 norm_old = norm
@@ -353,6 +432,7 @@ class McEvolver(Evolver):
         t_final = self.t
         tries = 0
         while tries < self.norm_steps:
+
             tries += 1
             if (t_final - t_prev) < self.norm_t_tol:
                 t_prev = t_final
@@ -363,10 +443,14 @@ class McEvolver(Evolver):
                    * np.log(norm_old / self.target_norm)
                    / np.log(norm_old / norm))
             )
+            """print(t_prev, t_final, t_guess,
+                  self._evolver._ode_solver._integrator.rwork[12],
+                  self._evolver._ode_solver._integrator.rwork[12] -
+                  self._evolver._ode_solver._integrator.rwork[10])"""
             if (t_guess - t_prev) < self.norm_t_tol:
                 t_guess = t_prev + self.norm_t_tol
             state = self._evolver.backstep(t_guess, t_prev, y_prev)
-            norm2_guess = _data.norm.l2(state)
+            norm2_guess = self.norm_func(state)
             if (np.abs(self.target_norm - norm2_guess) < self.norm_tol * self.target_norm):
                 break
             elif (norm2_guess < self.target_norm):
@@ -392,7 +476,7 @@ class McEvolver(Evolver):
         which = np.searchsorted(probs, probs[-1] * np.random.rand())-1
 
         state_new = self.c_ops[which].mul(t_guess, state)
-        state_new = _data.mul(state_new, 1 / _data.norm.l2(state_new))
+        state_new = _data.mul(state_new, 1 / (self.norm_func(state_new) + 1e-10))
 
         self.collapses.append((t_guess, which))
         self.target_norm = np.random.rand()

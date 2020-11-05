@@ -2,13 +2,15 @@
 
 from .result import *
 from .options import *
+from .parallel import *
 
 from .sesolve import *
 from .mesolve import *
 from .propagator import *
+from .mcsolve import *
+
 
 """
-from .mcsolve import *
 from .stochastic import *
 from .pdpsolve import *
 

@@ -4,7 +4,7 @@ import numpy as np
 from ..core import Qobj, QobjEvo, spre, issuper
 
 
-__all__ = ["Result"]
+__all__ = ["Result", "MultiTrajResult", "MultiTrajResultAveraged"]
 
 
 class Result:
@@ -79,14 +79,17 @@ class Result:
     def _read_options(self, options):
         self._store_states = self._e_num == 0 or options['store_states']
         self._store_final_state = options['store_final_state']
-        self._normalize_outputs = False # options['normalize']
+        if self._super:
+            self._normalize_outputs = options['normalize_output'] in ['dm', True, 'all']
+        else:
+            self._normalize_outputs = options['normalize_output'] in ['ket', True, 'all']
 
     def _normalize(self, state):
         if state.shape[1] == 1:
-            state /= state.norm()
+            return state * (1/state.norm())
         elif state.shape[1] == state.shape[0] and self._super:
-            state /= state.norm()
-        elif state.shape[1] == state.shape[0]:
+            return state * (1/state.norm())
+        else:
             # TODO add normalization for propagator evolution.
             pass
 
@@ -96,10 +99,11 @@ class Result:
         The state is expected to be a Qobj with the right dims.
         """
         self.times.append(t)
+        # this is so we don't make a copy if normalize is
+        # false and states are not stored
         state_norm = False
         if self._normalize_outputs:
-            state_norm = state.copy()
-            self._normalize(state_norm)
+            state_norm = self._normalize(state)
 
         if self._store_states:
             self._states.append(state_norm or state.copy())
@@ -110,7 +114,7 @@ class Result:
             self._expects[i].append(e_call(t, state_norm or state))
 
     def copy(self):
-        return Run(self._raw_e_ops, self.options, self.super)
+        return Result(self._raw_e_ops, self.options, self.super)
 
     @property
     def states(self):
@@ -146,6 +150,7 @@ class Result:
         # TODO: Make better results output
         return self.stats.__repr__()
 
+
 class MultiTrajResult:
     """
     Contain result of simulations with multiple trajectories.
@@ -154,6 +159,7 @@ class MultiTrajResult:
         self.trajectories = []
         self._to_dm = True # MCsolve
         self.num_c_ops = num_c_ops
+        self.tlist = None
 
     def add(self, one_traj):
         self.trajectories.append(one_traj)
@@ -166,15 +172,15 @@ class MultiTrajResult:
     def average_states(self):
         if self._to_dm:
             finals = [state.proj() for state in self.trajectories[0].states]
-            for i in range(1, len(self.trajs)):
+            for i in range(1, len(self.trajectories)):
                 finals = [state.proj() + final for final, state
                           in zip(finals, self.trajectories[i].states)]
         else:
             finals = [state for state in self.trajectories[0].states]
-            for i in range(1, len(self.trajs)):
+            for i in range(1, len(self.trajectories)):
                 finals = [state + final for final, state
                           in zip(finals, self.trajectories[i].states)]
-        return [final / len(self.trajs) for final in finals]
+        return [final / len(self.trajectories) for final in finals]
 
     @property
     def runs_final_states(self):
@@ -186,7 +192,7 @@ class MultiTrajResult:
             final = sum(traj.final_state.proj() for traj in self.trajectories)
         else:
             final = sum(traj.final_state for traj in self.trajectories)
-        return final / len(self.trajs)
+        return final / len(self.trajectories)
 
     @property
     def steady_state(self):
@@ -295,7 +301,7 @@ class MultiTrajResult:
         return [traj.collapse for traj in self.trajectories]
 
     @property
-    def collapse_times(self):
+    def col_times(self):
         out = []
         for col_ in self.collapse:
             col = list(zip(*col_))
@@ -304,7 +310,7 @@ class MultiTrajResult:
         return out
 
     @property
-    def collapse_which(self):
+    def col_which(self):
         out = []
         for col_ in self.collapse:
             col = list(zip(*col_))
@@ -315,12 +321,178 @@ class MultiTrajResult:
     @property
     def photocurrent(self):
         cols = {}
-        tlist = self.trajectories[0].tlist
+        tlist = self.trajectories[0].times
         for traj in self.trajectories:
-            for which, t in traj.collapse:
-                cols.get(which, []).append(t)
+            for t, which in traj.collapse:
+                if which in cols:
+                    cols[which].append(t)
+                else:
+                    cols[which] = [t]
         mesurement = []
         for i in range(self.num_c_ops):
-            mesurement = (np.histogram(cols.get[i], tlist)
-                          / np.diff(tlist) / len(self.trajectories))
+            mesurement += [(np.histogram(cols.get(i,[]), tlist)[0]
+                          / np.diff(tlist) / len(self.trajectories))]
         return mesurement
+
+    @property
+    def stats(self):
+        return self.trajectories[0].stats
+
+    def __repr__(self):
+        # TODO: Make better results output
+        return self.stats.__repr__()
+
+
+class MultiTrajResultAveraged:
+    """
+    Contain result of simulations with multiple trajectories.
+    """
+    def __init__(self, num_c_ops):
+        self.trajectories = None
+        self._sum_states = None
+        self._sum_last_states = None
+        self._sum_expect = None
+        self._sum2_expect = None
+        self._to_dm = True # MCsolve
+        self.num_c_ops = num_c_ops
+        self._num = 0
+        self._collapse = []
+
+    def add(self, one_traj):
+        if self._num == 0:
+            self.trajectories = one_traj
+            if self._to_dm and one_traj.states:
+                self._sum_states = [state.proj() for state in one_traj.states]
+            if self._to_dm and one_traj.final_state:
+                self._sum_last_states = one_traj.final_state.proj()
+            self._sum_expect = [np.array(expect) for expect in one_traj._expects]
+            self._sum2_expect = [np.array(expect)**2 for expect in one_traj._expects]
+        else:
+            if self._to_dm:
+                if self._sum_states:
+                    self._sum_states = [state.proj() + accu for accu, state
+                                    in zip(self._sum_states, one_traj.states)]
+                if self._sum_last_states:
+                    self._sum_last_states += one_traj.final_state.proj()
+            if self._sum_expect:
+                self._sum_expect = [np.array(one) + accu for one, accu in
+                                    zip(one_traj._expects, self._sum_expect)]
+                self._sum2_expect = [np.array(one)**2 + accu for one, accu in
+                                     zip(one_traj._expects, self._sum2_expect)]
+        self._collapse.append(one_traj.collapse)
+        self._num += 1
+
+    @property
+    def runs_states(self):
+        return None
+
+    @property
+    def average_states(self):
+        return [final / self._num for final in self._sum_states]
+
+    @property
+    def runs_final_states(self):
+        return None
+
+    @property
+    def average_final_state(self):
+        return self._sum_last_states / self._num
+
+    @property
+    def steady_state(self):
+        avg = self._sum_states
+        return sum(avg) / len(avg)
+
+    @property
+    def average_expect(self):
+        num_e = self.trajectories._e_num
+        _e_type = self.trajectories._e_type
+        _e_ops_dict = self.trajectories._e_ops_dict
+        avg = [_sum / self._num for _sum in self._sum_expect]
+
+        result = []
+        for expect_vals, isreal  in zip(avg, _e_type):
+            if isreal:
+                expect_vals = expect_vals.real
+            result.append(expect_vals)
+
+        if _e_ops_dict:
+            result = {e: result[n]
+                      for n, e in enumerate(_e_ops_dict.keys())}
+        return result
+
+    @property
+    def std_expect(self):
+        num_e = self.trajectories._e_num
+        _e_type = self.trajectories._e_type
+        _e_ops_dict = self.trajectories._e_ops_dict
+        avg = [_sum / self._num for _sum in self._sum_expect]
+        avg2 = [_sum2 / self._num for _sum2 in self._sum2_expect]
+        std = [np.sqrt(a2 - a*a) for a, a2 in zip(avg, avg2)]
+
+        result = []
+        for expect_vals, isreal  in zip(std, _e_type):
+            if isreal:
+                expect_vals = expect_vals.real
+            result.append(expect_vals)
+
+        if _e_ops_dict:
+            result = {e: result[n]
+                      for n, e in enumerate(_e_ops_dict.keys())}
+        return result
+
+    @property
+    def runs_expect(self):
+        return None
+
+    def expect_traj_avg(self, ntraj=-1):
+        return None
+
+    def expect_traj_std(self, ntraj=-1):
+        return None
+
+    @property
+    def collapse(self):
+        return self._collapse
+
+    @property
+    def col_times(self):
+        out = []
+        for col_ in self.collapse:
+            col = list(zip(*col_))
+            col = ([] if len(col) == 0 else col[0])
+            out.append(col)
+        return out
+
+    @property
+    def col_which(self):
+        out = []
+        for col_ in self.collapse:
+            col = list(zip(*col_))
+            col = ([] if len(col) == 0 else col[1])
+            out.append(col)
+        return out
+
+    @property
+    def photocurrent(self):
+        cols = {}
+        tlist = self.trajectories.times
+        for collapses in self.collapse:
+            for t, which in collapses:
+                if which in cols:
+                    cols[which].append(t)
+                else:
+                    cols[which] = [t]
+        mesurement = []
+        for i in range(self.num_c_ops):
+            mesurement += [(np.histogram(cols.get(i,[]), tlist)[0]
+                          / np.diff(tlist) / len(self.trajectories))]
+        return mesurement
+
+    @property
+    def stats(self):
+        return self.trajectories.stats
+
+    def __repr__(self):
+        # TODO: Make better results output
+        return self.stats.__repr__()

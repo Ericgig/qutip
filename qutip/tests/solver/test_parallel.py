@@ -52,51 +52,52 @@ def _func2(x, a, b, c, d=0, e=0, f=0):
     time.sleep(np.random.rand() * 0.1)  # random delay
     return x**2
 
-
-@pytest.mark.skipif(not loky, reason="module loky not available")
-def test_loki_map():
-    "parallel_map"
+@pytest.mark.parametrize('map',
+                         [parallel_map, loky_pmap, serial_map],
+                         ids=['parallel_map', 'loky_pmap', 'serial_map'])
+@pytest.mark.parametrize('num_cpus',
+                         [1, 2],
+                         ids=['1', '2'])
+def test_map(map, num_cpus):
+    if map is loky_pmap and not loky:
+        pytest.skip(reason="module loky not available")
 
     args = (1, 2, 3)
     kwargs = {'d': 4, 'e': 5, 'f': 6}
+    map_kw = {
+        'job_timeout': 1e8,
+        'timeout': 1e8,
+        'num_cpus': num_cpus,
+    }
 
     x = np.arange(10)
     y1 = [_func1(xx) for xx in x]
 
-    y2 = loky_pmap(_func2, x, args, kwargs, num_cpus=1)
-    assert ((np.array(y1) == np.array(y2)).all())
-
-    y2 = loky_pmap(_func2, x, args, kwargs, num_cpus=2)
+    y2 = parallel_map(_func2, x, args, kwargs, map_kw=map_kw)
     assert ((np.array(y1) == np.array(y2)).all())
 
 
-def test_parallel_map():
-    "parallel_map"
+@pytest.mark.parametrize('map',
+                         [parallel_map, loky_pmap, serial_map],
+                         ids=['parallel_map', 'loky_pmap', 'serial_map'])
+@pytest.mark.parametrize('num_cpus',
+                         [1, 2],
+                         ids=['1', '2'])
+def test_map_accumulator(map, num_cpus):
+    if map is loky_pmap and not loky:
+        pytest.skip(reason="module loky not available")
 
     args = (1, 2, 3)
     kwargs = {'d': 4, 'e': 5, 'f': 6}
+    map_kw = {
+        'job_timeout': 1e8,
+        'timeout': 1e8,
+        'num_cpus': num_cpus,
+    }
+    y2 = []
 
     x = np.arange(10)
     y1 = [_func1(xx) for xx in x]
 
-    y2 = parallel_map(_func2, x, args, kwargs, num_cpus=1)
-    assert ((np.array(y1) == np.array(y2)).all())
-
-    y2 = parallel_map(_func2, x, args, kwargs, num_cpus=2)
-    assert ((np.array(y1) == np.array(y2)).all())
-
-
-def test_serial_map():
-    "serial_map"
-
-    args = (1, 2, 3)
-    kwargs = {'d': 4, 'e': 5, 'f': 6}
-
-    x = np.arange(10)
-    y1 = [_func1(xx) for xx in x]
-
-    y2 = serial_map(_func2, x, args, kwargs, num_cpus=1)
-    assert ((np.array(y1) == np.array(y2)).all())
-
-    y2 = serial_map(_func2, x, args, kwargs, num_cpus=2)
+    parallel_map(_func2, x, args, kwargs, reduce_func=y2.append, map_kw=map_kw)
     assert ((np.array(y1) == np.array(y2)).all())

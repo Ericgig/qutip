@@ -121,13 +121,10 @@ class Evolver:
 
     def step(self, t, step=None):
         """ Evolve to t, must be `set` before. """
-        self._ode_solver.integrate(t, step=step)
+        self._ode_solver.integrate(t)
         if not self._ode_solver.successful():
             raise Exception(self._error_msg)
-        if step and self._ode_solver.t > t:
-            self._ode_solver.integrate(t)
-        state = self.get_state()
-        return state
+        return self.get_state()
 
     def run(self, tlist):
         """ Yield (t, state(t)) for t in tlist, must be `set` before. """
@@ -192,6 +189,32 @@ class EvolverScipyZvode(Evolver):
             _data.column_stack(state0).to_array().ravel(),
             t
         )
+
+    def step(self, t, step=None):
+        """ Evolve to t, must be `set` before. """
+        if step:
+            # integrate(t, step=True) ignore the time and advance one step.
+            # Here we want to advance to t doing maximum one step.
+            # So we check if a new step is really needed.
+            t_front = self._ode_solver._integrator.rwork[12]
+            t_ode = self._ode_solver.t
+            # print(t, t_front, t_ode)
+            if t > t_front and t_front <= t_ode:
+                self._ode_solver.integrate(t, step=True)
+                t_front = self._ode_solver._integrator.rwork[12]
+            elif t > t_front:
+                t = t_front
+            if t_front >= t:
+                self._ode_solver.integrate(t)
+            if not self._ode_solver.successful():
+                raise Exception(self._error_msg)
+            return self.get_state()
+
+        if self._ode_solver.t != t:
+            self._ode_solver.integrate(t)
+        if not self._ode_solver.successful():
+            raise Exception(self._error_msg)
+        return self.get_state()
 
     def backstep(self, t, t_old, y_old):
         """ Evolve to t, must be `set` before. """

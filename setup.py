@@ -207,7 +207,6 @@ cy_exts = {
         '_brtensor',
         '_brtools',
         '_brtools_checks',
-        '_mcsolve',
         '_piqs',
         '_steadystate',
         '_stochastic',
