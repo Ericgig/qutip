@@ -1094,7 +1094,7 @@ def _steadystate_power(L, ss_args, info):
         return rhoss
 
 
-def build_preconditioner(A, c_op_list=[], options):
+def build_preconditioner(A, c_op_list=[], options=None):
     """Constructs a iLU preconditioner necessary for solving for
     the steady state density matrix using the iterative linear solvers
     in the 'steadystate' function.
@@ -1150,7 +1150,7 @@ def build_preconditioner(A, c_op_list=[], options):
         return M
 
 
-def _pseudo_inverse_dense(L, rhoss, w=None, **pseudo_args):
+def _pseudo_inverse_dense(L, rhoss, w=None, options=None):
     """
     Internal function for computing the pseudo inverse of an Liouvillian using
     dense matrix methods. See pseudo_inverse for details.
@@ -1198,7 +1198,7 @@ def _pseudo_inverse_dense(L, rhoss, w=None, **pseudo_args):
                          pseudo_args['method'])
 
 
-def _pseudo_inverse_sparse(L, rhoss, w=None, **pseudo_args):
+def _pseudo_inverse_sparse(L, rhoss, w=None, options=None):
     """
     Internal function for computing the pseudo inverse of an Liouvillian using
     sparse matrix methods. See pseudo_inverse for details.
@@ -1267,7 +1267,7 @@ def _pseudo_inverse_sparse(L, rhoss, w=None, **pseudo_args):
     return Qobj(R, dims=L.dims)
 
 
-def pseudo_inverse(L, rhoss=None, w=None, sparse=True, method="splu", options):
+def pseudo_inverse(L, rhoss=None, w=None, sparse=True, method="splu", option=None):
     """
     Compute the pseudo inverse for a Liouvillian superoperator, optionally
     given its steady state density matrix (which will be computed if not
@@ -1327,11 +1327,11 @@ def pseudo_inverse(L, rhoss=None, w=None, sparse=True, method="splu", options):
         rhoss = steadystate(L, pseudo_args)
 
     if sparse:
-        return _pseudo_inverse_sparse(L, rhoss, w=w, pseudo_args)
+        return _pseudo_inverse_sparse(L, rhoss, w, pseudo_args)
     else:
         if pseudo_args['pinv_method'] == 'splu':
             pseudo_args['method'] = 'direct'
         else:
             pseudo_args['method'] = pseudo_args['pinv_method']
 
-        return _pseudo_inverse_dense(L, rhoss, w=w, pseudo_args)
+        return _pseudo_inverse_dense(L, rhoss, w, pseudo_args)

@@ -199,6 +199,9 @@ class TestSeSolve():
         assert (max(abs(ys - yss)) < tol)
         assert (max(abs(zs - zss)) < tol)
 
+        if normalize:
+            # propagator evolution is not normalized (yet?)
+            tol = 5e-4
         out_u = sesolve(H, U0, self.tlist, options=options, args=args)
         xu = [expect(sigmax(), U * psi0) for U in out_u.states]
         yu = [expect(sigmay(), U * psi0) for U in out_u.states]

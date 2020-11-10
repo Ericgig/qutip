@@ -731,7 +731,7 @@ class TestMeSolveAHS:
                              all_ode_method, ids=all_ode_method)
     def test_AHS(self, method):
         tol = 1e-3
-        options = SolverOptions(method=method, AHS=True, nsteps=1e8)
+        options = SolverOptions(method=method, ahs=True, nsteps=1e8)
         res = mesolve(self.H, self.psi0, self.times, c_ops=self.c_ops,
-                                e_ops=self.e_ops, args=self.args, options=options)
-        assert_allclose(res, self.normal_res, tol)
+                      e_ops=self.e_ops, args=self.args, options=options)
+        assert_allclose(res.expect, self.normal_res.expect, tol)

@@ -135,9 +135,9 @@ class SolverRhsOptions:
         "ahs_options": {
             "ahs_atol": 1e-8,
             "ahs_rtol": 1e-8,
-            "ahs_padding": 5,
-            "ahs_safety_rtol": 1e-6,
-            "ahs_safety_interval": 3,
+            "ahs_padding": 6,
+            "ahs_safety_rtol": 1e-5,
+            "ahs_safety_interval": 4,
         }
     }
 
