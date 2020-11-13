@@ -14,10 +14,10 @@ from libc.math cimport round
 
 cdef class SolverQEvo:
     def __init__(self, base, options, dict args, dict feedback):
+        self.base_py = base
         self.base = base.compiled_qobjevo
         self.set_feedback(feedback, args, base.cte.issuper,
                           options['feedback_normalize'])
-        self.collapse = []
 
     def jac_np_vec(self, t, vec):
         return self.jac_data(t).as_array()
@@ -59,10 +59,11 @@ cdef class SolverQEvo:
                 self.dynamic_arguments.append(ExpectFeedback(key, val,
                                                              issuper, norm))
             elif val in ["collapse"]:
-                if not isinstance(args[key], list):
-                    args[key] = []
-                self.collapse = args[key]
-                self.dynamic_arguments.append(CollapseFeedback(key, args[key]))
+                self.dynamic_arguments.append(
+                    CollapseFeedback(key, feedback["__col"])
+                )
+            elif key in ["__col"]:
+                pass
             else:
                 raise ValueError("unknown feedback type")
         self.has_dynamic_args = bool(self.dynamic_arguments)
@@ -77,6 +78,9 @@ cdef class SolverQEvo:
             (<Coefficient> self.base.coeff[i]).arguments(self.args)
 
     cpdef void arguments(self, dict args):
+        self.base_py.arguments(args)
+        """
         self.args = args
         for i in range(self.base.n_ops):
             (<Coefficient> self.base.coeff[i]).arguments(self.args)
+        """

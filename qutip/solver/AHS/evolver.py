@@ -34,7 +34,6 @@ class AHSEvolver(Evolver):
                 t_old = self.t
                 y_old = state.copy()
                 tries = 0
-        print(t_old, tries)
         return y_old
 
     def resize(self):

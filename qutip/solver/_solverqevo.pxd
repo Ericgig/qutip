@@ -5,6 +5,7 @@ from qutip.core.cy.cqobjevo cimport CQobjEvo
 from qutip.core.data.base cimport idxint
 
 cdef class SolverQEvo:
+    cdef object base_py
     cdef CQobjEvo base
     cdef idxint ncols
     cdef bint has_dynamic_args

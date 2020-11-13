@@ -28,7 +28,7 @@ cdef class Explicit_RungeKutta:
     # buffer for dense out: set in cinit
     cdef double *b_factor
 
-    cpdef integrate(Explicit_RungeKutta self, double t, int step=*)
+    cpdef integrate(Explicit_RungeKutta self, double t, bint step=*)
 
     cpdef void set_initial_value(self, y0, double t)
 

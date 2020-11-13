@@ -61,7 +61,7 @@ cdef class Explicit_RungeKutta:
         self.k = []
         self.dt_safe = atol
 
-    cpdef integrate(Explicit_RungeKutta self, double t, int step=-1):
+    cpdef integrate(Explicit_RungeKutta self, double t, bint step=False):
         cdef int nsteps = 0
         cdef double err = 0
         while self.t_front < t and nsteps < self.max_numsteps:
@@ -76,17 +76,16 @@ cdef class Explicit_RungeKutta:
                 self.dt_int = dt
                 self.t_front = self.t_prev + dt
                 self.norm_front = self.norm_tmp
-                step -= 1
-                if step == 0:
+                if step:
                     break
-        if self.t_front < t - 1e-15 and step:
+        if self.t_front < t - 1e-15 and not step:
             self.failed = True
         elif self.t_front > t + 1e-15:
             self.prep_dense_out()
             self.t = t
             self.interpolate_step(t, self._y)
         else:
-            self.t = t
+            self.t = self.t_front
             self._y.copy(self._y_front)
 
     def successful(self):
@@ -276,5 +275,9 @@ cdef class Explicit_RungeKutta:
         return self._y_front.raw()
 
     @property
-    def t(self):
+    def t_front(self):
         return self.t_front
+
+    @property
+    def t(self):
+        return self.t

@@ -603,7 +603,7 @@ class TestMESolveStepFuncCoeff:
     """
     # Runge-Kutta method (dop853) behave better with step function evolution
     # than multi-step methods (adams, qutip 4's default)
-    options = SolverOptions(method="dop853")
+    options = SolverOptions(method="dop853", nsteps=1e8)
 
     def python_coeff(self, t, args):
         if t < np.pi/2:
@@ -611,15 +611,18 @@ class TestMESolveStepFuncCoeff:
         else:
             return 0.
 
-    def test_py_coeff(self):
+    @pytest.mark.parametrize('method',
+                             all_ode_method, ids=all_ode_method)
+    def test_py_coeff(self, method):
         """
         Test for Python function as coefficient as step function coeff
         """
         rho0 = rand_ket(2)
         tlist = np.array([0, np.pi/2])
+        options = SolverOptions(method=method, nsteps=1e5)
         qu = QobjEvo([[sigmax(), self.python_coeff]],
                      tlist=tlist, args={"_step_func_coeff": 1})
-        result = mesolve(qu, rho0=rho0, tlist=tlist, options=self.options)
+        result = mesolve(qu, rho0=rho0, tlist=tlist, options=options)
         assert_allclose(
             fidelity(result.states[-1], sigmax()*rho0), 1, rtol=1.e-6)
 
@@ -730,8 +733,9 @@ class TestMeSolveAHS:
     @pytest.mark.parametrize('method',
                              all_ode_method, ids=all_ode_method)
     def test_AHS(self, method):
+        # TODO: check if this tol is fine
         tol = 1e-3
         options = SolverOptions(method=method, ahs=True, nsteps=1e8)
         res = mesolve(self.H, self.psi0, self.times, c_ops=self.c_ops,
                       e_ops=self.e_ops, args=self.args, options=options)
-        assert_allclose(res.expect, self.normal_res.expect, tol)
+        assert_allclose(res.expect, self.normal_res.expect, tol, 1e-4)

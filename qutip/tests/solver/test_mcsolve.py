@@ -287,7 +287,8 @@ def test_dynamic_arguments():
     state = qutip.basis(size, 2)
 
     c_ops = [[a, _dynamic], [a.dag(), _dynamic]]
-    mc = mcsolve(H, state, times, c_ops, ntraj=25, args={"collapse": []})
+    mc = mcsolve(H, state, times, c_ops, ntraj=25,
+                 args={"collapse": []}, feedback_args={"collapse":"collapse"})
     assert all(len(collapses) <= 1 for collapses in mc.col_which)
 
 
@@ -301,12 +302,13 @@ def _regression_490_f2(t, args):
 
 def test_regression_490():
     """Test for regression of gh-490."""
+    # Both call sesolve
     h = [qutip.sigmax(),
          [qutip.sigmay(), _regression_490_f1],
          [qutip.sigmaz(), _regression_490_f2]]
     state = (qutip.basis(2, 0) + qutip.basis(2, 1)).unit()
     times = np.linspace(0, 3, 10)
-    result_me = mesolve(h, state, times) # really this calls sesolve
+    result_me = mesolve(h, state, times)
     result_mc = mcsolve(h, state, times, ntraj=1)
-    for state_me, state_mc in zip(result_me.runs_states[0], result_mc.runs_states[0]):
+    for state_me, state_mc in zip(result_me.states, result_mc.states):
         np.testing.assert_allclose(state_me.full(), state_mc.full(), atol=1e-8)

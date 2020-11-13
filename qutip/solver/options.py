@@ -93,9 +93,9 @@ class SolverOdeOptions:
         "max_step": 0,
         # Minimal step size (0 = determined by solver)
         "min_step": 0,
-        'ifactor': None,
-        'dfactor': None,
-        'beta': None,
+        'ifactor': 6.0,
+        'dfactor': 0.3,
+        'beta': 0.0,
     }
 
 

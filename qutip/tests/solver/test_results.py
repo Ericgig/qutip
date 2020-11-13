@@ -1,5 +1,3 @@
-
-import pytest
 from qutip.solver.result import *
 import qutip as qt
 import numpy as np

@@ -141,6 +141,8 @@ def mcsolve(H, psi0, tlist, c_ops=None, e_ops=None, ntraj=1,
     if not psi0.isket:
         raise ValueError("Initial state must be a state vector.")
 
+    if c_ops is None:
+        c_ops = []
     if len(c_ops) == 0:
         warnings.warn("No c_ops, using sesolve")
         return sesolve(H, psi0, tlist, e_ops=e_ops, args=args,
@@ -369,10 +371,14 @@ class MeMcSolve(McSolver):
 
 
 class McEvolver(Evolver):
-    def __init__(self, system, c_ops, n_ops, options, args, feedback_args):
+    def __init__(self, system, c_ops, n_ops, options,
+                 args=None, feedback_args=None):
+        args = args or {}
+        feedback_args = feedback_args or {}
         self.options = options
-        self._evolver = get_evolver(system, options, args, feedback_args)
         self.collapses = []
+        feedback_args["__col"] = self.collapses
+        self._evolver = get_evolver(system, options, args, feedback_args)
         self.c_ops = c_ops
         self.n_ops = n_ops
 
@@ -403,20 +409,20 @@ class McEvolver(Evolver):
         tries = 0
         y_old = self.get_state().copy()
         t_old = self.t
-        norm_old = self.norm_func(self.get_state())
+        norm_old = self.norm_func(self.get_state()) ** 2
         while self.t < t:
             state = self._evolver.step(t, step=1).copy()
             # print(self.t)
-            norm = self.norm_func(state)
+            norm = self.norm_func(state) ** 2
             if norm <= self.target_norm:
                 self.do_collapse(norm_old, norm, t_old, y_old)
                 t_old = self.t
-                norm_old = self.norm_func(self.get_state())
+                norm_old = self.norm_func(self.get_state()) ** 2
             else:
                 t_old = self.t
                 norm_old = norm
                 y_old = state
-        return _data.mul(self.get_state(), 1 / norm_old)
+        return _data.mul(self.get_state(), 1 / norm_old**0.5)
 
     def get_state(self):
         return self._evolver.get_state()
@@ -435,7 +441,8 @@ class McEvolver(Evolver):
 
             tries += 1
             if (t_final - t_prev) < self.norm_t_tol:
-                t_prev = t_final
+                t_guess = t_final
+                state = self._evolver.get_state()
                 break
             t_guess = (
                 t_prev
@@ -443,14 +450,10 @@ class McEvolver(Evolver):
                    * np.log(norm_old / self.target_norm)
                    / np.log(norm_old / norm))
             )
-            """print(t_prev, t_final, t_guess,
-                  self._evolver._ode_solver._integrator.rwork[12],
-                  self._evolver._ode_solver._integrator.rwork[12] -
-                  self._evolver._ode_solver._integrator.rwork[10])"""
             if (t_guess - t_prev) < self.norm_t_tol:
                 t_guess = t_prev + self.norm_t_tol
             state = self._evolver.backstep(t_guess, t_prev, y_prev)
-            norm2_guess = self.norm_func(state)
+            norm2_guess = self.norm_func(state) ** 2
             if (np.abs(self.target_norm - norm2_guess) < self.norm_tol * self.target_norm):
                 break
             elif (norm2_guess < self.target_norm):
@@ -469,15 +472,19 @@ class McEvolver(Evolver):
                             "SolverOptions.mcsolve['norm_steps'].")
 
         # t_guess, state is at the collapse
-        probs = np.zeros(len(self.n_ops)+1)
+        probs = np.zeros(len(self.n_ops))
         for i, n_op in enumerate(self.n_ops):
-            probs[i+1] = n_op.expect(t_guess, state, 1)
+            probs[i] = n_op.expect(t_guess, state, 1)
         probs = np.cumsum(probs)
-        which = np.searchsorted(probs, probs[-1] * np.random.rand())-1
+        which = np.searchsorted(probs, probs[-1] * np.random.rand())
 
         state_new = self.c_ops[which].mul(t_guess, state)
-        state_new = _data.mul(state_new, 1 / (self.norm_func(state_new) + 1e-10))
-
-        self.collapses.append((t_guess, which))
-        self.target_norm = np.random.rand()
+        new_norm = self.norm_func(state_new)
+        if new_norm < 1e-12:
+            # This happen when the collapse is caused by numerical error
+            state_new = _data.mul(state, 1 / self.norm_func(state))
+        else:
+            state_new = _data.mul(state_new, 1 / new_norm)
+            self.collapses.append((t_guess, which))
+            self.target_norm = np.random.rand()
         self.set_state(state_new, t_guess)

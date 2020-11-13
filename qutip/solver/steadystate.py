@@ -40,7 +40,7 @@ __all__ = ['steadystate', 'build_preconditioner', 'pseudo_inverse']
 
 import warnings
 import time
-
+from ..optionsclass import optionsclass
 import numpy as np
 import scipy.sparse.csgraph
 import scipy.linalg
@@ -298,13 +298,6 @@ class SteadystateOption():
         preconditioner for the 'iterative' GMRES and BICG solvers.
         Speeds up convergence time by orders of magnitude in many cases.
 
-    M : {sparse matrix, dense matrix, LinearOperator}, optional
-        ITERATIVE ONLY. Preconditioner for A. The preconditioner should
-        approximate the inverse of A. Effective preconditioning can
-        dramatically improve the rate of convergence for iterative methods.
-        If no preconditioner is given and ``use_precond = True``, then one
-        is generated automatically.
-
     fill_factor : float, optional, default = 100
         ITERATIVE ONLY. Specifies the fill ratio upper bound (>=1) of the iLU
         preconditioner.  Lower values save memory at the cost of longer
@@ -339,7 +332,7 @@ class SteadystateOption():
         'fill_factor': 100,
         'diag_pivot_thresh': None,
         'maxiter': 1000,
-        'permc_spec': 'COLAMD',
+        'permc_spec': 'AUTO',
         'ILU_MILU': 'smilu_2',
         'restart': 20,
         'max_iter_refine': 10,
@@ -358,7 +351,8 @@ class SteadystateOption():
     }
 
 
-def steadystate(A, c_op_list=[], method='direct', solver=None, options=None):
+def steadystate(A, c_op_list=[], method='direct', solver=None, M=None,
+                options=None, **kw):
     """
     Calculates the steady state for quantum evolution subject to the supplied
     Hamiltonian or Liouvillian operator and (if given a Hamiltonian) a list of
@@ -375,10 +369,6 @@ def steadystate(A, c_op_list=[], method='direct', solver=None, options=None):
     c_op_list : list
         A list of collapse operators.
 
-    solver : str {None, 'scipy', 'mkl'}
-        Selects the sparse solver to use.  Default is auto-select
-        based on the availability of the MKL library.
-
     method : str {'direct', 'eigen', 'iterative-gmres',
                   'iterative-lgmres', 'iterative-bicgstab', 'svd', 'power',
                   'power-gmres', 'power-lgmres', 'power-bicgstab'}
@@ -389,6 +379,20 @@ def steadystate(A, c_op_list=[], method='direct', solver=None, options=None):
         SVD 'svd' (dense), or inverse-power method 'power'. The iterative
         power methods 'power-gmres', 'power-lgmres', 'power-bicgstab' use
         the same solvers as their direct counterparts.
+
+    solver : str {None, 'scipy', 'mkl'}
+        Selects the sparse solver to use.  Default is auto-select
+        based on the availability of the MKL library.
+
+    M : {sparse matrix, dense matrix, LinearOperator}, optional
+        ITERATIVE ONLY. Preconditioner for A. The preconditioner should
+        approximate the inverse of A. Effective preconditioning can
+        dramatically improve the rate of convergence for iterative methods.
+        If no preconditioner is given and ``use_precond = True``, then one
+        is generated automatically.
+
+    options: SteadystateOption
+        Different options used by the solvers
 
     Returns
     -------
@@ -411,32 +415,33 @@ def steadystate(A, c_op_list=[], method='direct', solver=None, options=None):
     elif solver not in ['scipy', 'mkl']:
         raise Exception('Invalid solver kwarg.')
 
+    if kw:
+        # FutureWarning()
+        pass
+
     if isinstance(options, SteadystateOption):
         ss_args = options
     else:
-        ss_args = SteadystateOption()
+        ss_args = SteadystateOption(**kw)
+
     ss_args['method'] = method
     ss_args['solver'] = solver
     info = _empty_info_dict()
     info['solver'] = ss_args['solver']
     info['method'] = ss_args['method']
 
-    for key, value in kwargs.items():
-        if key in ss_args:
-            ss_args[key] = value
-        else:
-            raise ValueError(
-                "Invalid keyword argument '"+key+"' passed to steadystate.")
-
     # Set column perm to NATURAL if using RCM and not specified by user
-    if ss_args['use_rcm'] and ('permc_spec' not in kwargs):
-        ss_args['permc_spec'] = 'NATURAL'
+    if ss_args['permc_spec'] not in ['NATURAL', 'COLAMD']:
+        if ss_args['use_rcm']:
+            ss_args['permc_spec'] = 'NATURAL'
+        else:
+            ss_args['permc_spec'] = 'COLAMD'
 
     # Create & check Liouvillian
     A = _steadystate_setup(A, c_op_list)
 
     # Set weight parameter to max abs val in L if not set explicitly
-    if 'weight' not in kwargs.keys():
+    if ss_args['weight'] is None:
         ss_args['weight'] = np.abs(_data.norm.max(A.data))
         info['weight'] = ss_args['weight']
 
@@ -452,14 +457,14 @@ def steadystate(A, c_op_list=[], method='direct', solver=None, options=None):
 
     elif ss_args['method'] in ['iterative-gmres',
                                'iterative-lgmres', 'iterative-bicgstab']:
-        return _steadystate_iterative(A, ss_args, info)
+        return _steadystate_iterative(A, M, ss_args, info)
 
     elif ss_args['method'] == 'svd':
         return _steadystate_svd_dense(A, ss_args, info)
 
     elif ss_args['method'] in ['power', 'power-gmres',
                                'power-lgmres', 'power-bicgstab']:
-        return _steadystate_power(A, ss_args, info)
+        return _steadystate_power(A, M, ss_args, info)
 
     else:
         raise ValueError('Invalid method argument for steadystate.')
@@ -741,7 +746,7 @@ def _iterative_precondition(A, n, ss_args, info):
     return M, ss_args
 
 
-def _steadystate_iterative(L, ss_args, info):
+def _steadystate_iterative(L, M, ss_args, info):
     """
     Iterative steady state solver using the GMRES, LGMRES, or BICGSTAB
     algorithm and a sparse incomplete LU preconditioner.
@@ -760,7 +765,7 @@ def _steadystate_iterative(L, ss_args, info):
     b = np.zeros(n ** 2)
     b[0] = ss_args['weight']
 
-    L, perm, perm2, rev_perm, ss_args = _steadystate_LU_liouvillian(L, ss_args)
+    L, perm, perm2, rev_perm, ss_args = _steadystate_LU_liouvillian(L, ss_args, info)
     if np.any(perm):
         b = b[np.ix_(perm,)]
     if np.any(perm2):
@@ -768,9 +773,9 @@ def _steadystate_iterative(L, ss_args, info):
 
     use_solver(assumeSortedIndices=True)
 
-    if ss_args['M'] is None and ss_args['use_precond']:
-        ss_args['M'], ss_args = _iterative_precondition(L, n, ss_args, info)
-        if ss_args['M'] is None:
+    if M is None and ss_args['use_precond']:
+        M, ss_args = _iterative_precondition(L, n, ss_args, info)
+        if M is None:
             warnings.warn("Preconditioning failed. Continuing without.",
                           UserWarning)
 
@@ -782,14 +787,14 @@ def _steadystate_iterative(L, ss_args, info):
     if ss_args['method'] == 'iterative-gmres':
         try:
             v, check = gmres(L, b, tol=ss_args['tol'], atol=ss_args['matol'],
-                             M=ss_args['M'], x0=ss_args['x0'],
+                             M=M, x0=ss_args['x0'],
                              restart=ss_args['restart'],
                              maxiter=ss_args['maxiter'],
                              callback=_iter_count, **extra)
         except TypeError as e:
             if "unexpected keyword argument 'atol'" in str(e):
                 v, check = gmres(L, b, tol=ss_args['tol'],
-                                 M=ss_args['M'], x0=ss_args['x0'],
+                                 M=M, x0=ss_args['x0'],
                                  restart=ss_args['restart'],
                                  maxiter=ss_args['maxiter'],
                                  callback=_iter_count)
@@ -797,13 +802,13 @@ def _steadystate_iterative(L, ss_args, info):
     elif ss_args['method'] == 'iterative-lgmres':
         try:
             v, check = lgmres(L, b, tol=ss_args['tol'], atol=ss_args['matol'],
-                              M=ss_args['M'], x0=ss_args['x0'],
+                              M=M, x0=ss_args['x0'],
                               maxiter=ss_args['maxiter'],
                               callback=_iter_count)
         except TypeError as e:
             if "unexpected keyword argument 'atol'" in str(e):
                 v, check = lgmres(L, b, tol=ss_args['tol'],
-                                  M=ss_args['M'], x0=ss_args['x0'],
+                                  M=M, x0=ss_args['x0'],
                                   maxiter=ss_args['maxiter'],
                                   callback=_iter_count)
 
@@ -811,13 +816,13 @@ def _steadystate_iterative(L, ss_args, info):
         try:
             v, check = bicgstab(L, b, tol=ss_args['tol'],
                                 atol=ss_args['matol'],
-                                M=ss_args['M'], x0=ss_args['x0'],
+                                M=M, x0=ss_args['x0'],
                                 maxiter=ss_args['maxiter'],
                                 callback=_iter_count)
         except TypeError as e:
             if "unexpected keyword argument 'atol'" in str(e):
                 v, check = bicgstab(L, b, tol=ss_args['tol'],
-                                    M=ss_args['M'], x0=ss_args['x0'],
+                                    M=M, x0=ss_args['x0'],
                                     maxiter=ss_args['maxiter'],
                                     callback=_iter_count)
     else:
@@ -950,7 +955,7 @@ def _steadystate_power_liouvillian(L, ss_args, info, has_mkl=0):
     return L, perm, perm2, rev_perm, ss_args
 
 
-def _steadystate_power(L, ss_args, info):
+def _steadystate_power(L, M, ss_args, info):
     """
     Inverse power method for steady state solving.
     """
@@ -987,13 +992,13 @@ def _steadystate_power(L, ss_args, info):
 
     # Do preconditioning
     if ss_args['solver'] == 'scipy':
-        if ss_args['M'] is None and ss_args['use_precond'] and \
+        if M is None and ss_args['use_precond'] and \
                 ss_args['method'] in ['power-gmres',
                                       'power-lgmres',
                                       'power-bicgstab']:
-            ss_args['M'], ss_args = _iterative_precondition(L, int(np.sqrt(n)),
+            M, ss_args = _iterative_precondition(L, int(np.sqrt(n)),
                                                             ss_args, info)
-            if ss_args['M'] is None:
+            if M is None:
                 warnings.warn("Preconditioning failed. Continuing without.",
                               UserWarning)
 
@@ -1029,19 +1034,19 @@ def _steadystate_power(L, ss_args, info):
             v = lu.solve(v)
         elif ss_args['method'] == 'power-gmres':
             v, check = gmres(L, v, tol=mtol, atol=ss_args['matol'],
-                             M=ss_args['M'], x0=ss_args['x0'],
+                             M=M, x0=ss_args['x0'],
                              restart=ss_args['restart'],
                              maxiter=ss_args['maxiter'],
                              callback=_iter_count,
                              callback_type='legacy')
         elif ss_args['method'] == 'power-lgmres':
             v, check = lgmres(L, v, tol=mtol, atol=ss_args['matol'],
-                              M=ss_args['M'], x0=ss_args['x0'],
+                              M=M, x0=ss_args['x0'],
                               maxiter=ss_args['maxiter'],
                               callback=_iter_count)
         elif ss_args['method'] == 'power-bicgstab':
             v, check = bicgstab(L, v, tol=mtol, atol=ss_args['matol'],
-                                M=ss_args['M'], x0=ss_args['x0'],
+                                M=M, x0=ss_args['x0'],
                                 maxiter=ss_args['maxiter'],
                                 callback=_iter_count)
         else:
@@ -1094,7 +1099,7 @@ def _steadystate_power(L, ss_args, info):
         return rhoss
 
 
-def build_preconditioner(A, c_op_list=[], options=None):
+def build_preconditioner(A, c_op_list=[], options=None, **kw):
     """Constructs a iLU preconditioner necessary for solving for
     the steady state density matrix using the iterative linear solvers
     in the 'steadystate' function.
@@ -1118,17 +1123,23 @@ def build_preconditioner(A, c_op_list=[], options=None):
     if isinstance(options, SteadystateOption):
         ss_args = options
     else:
-        ss_args = SteadystateOption()
+        if kw:
+            # warning
+            pass
+        ss_args = SteadystateOption(**kw)
     info = _empty_info_dict()
     ss_args['method'] = ss_args['precond_method']
 
     # Set column perm to NATURAL if using RCM and not specified by user
-    if ss_args['use_rcm'] and ('permc_spec' not in kwargs):
-        ss_args['permc_spec'] = 'NATURAL'
+    if ss_args['permc_spec'] not in ['NATURAL', 'COLAMD']:
+        if ss_args['use_rcm']:
+            ss_args['permc_spec'] = 'NATURAL'
+        else:
+            ss_args['permc_spec'] = 'COLAMD'
 
     L = _steadystate_setup(A, c_op_list)
     # Set weight parameter to max abs val in L if not set explicitly
-    if 'weight' not in kwargs.keys():
+    if ss_args['weight'] is None:
         ss_args['weight'] = np.abs(_data.norm.max(L.data))
         info['weight'] = ss_args['weight']
 
@@ -1267,7 +1278,8 @@ def _pseudo_inverse_sparse(L, rhoss, w=None, options=None):
     return Qobj(R, dims=L.dims)
 
 
-def pseudo_inverse(L, rhoss=None, w=None, sparse=True, method="splu", option=None):
+def pseudo_inverse(L, rhoss=None, w=None, sparse=True,
+                   method="splu", option=None, **kw):
     """
     Compute the pseudo inverse for a Liouvillian superoperator, optionally
     given its steady state density matrix (which will be computed if not
@@ -1296,7 +1308,7 @@ def pseudo_inverse(L, rhoss=None, w=None, sparse=True, method="splu", option=Non
         'splu' and 'spilu'. For sparse=False, allowed values are 'direct' and
         'numpy'.
 
-    kwargs : dictionary
+    options : SteadystateOption
         Additional keyword arguments for setting parameters for solver methods.
 
     Returns
@@ -1321,7 +1333,10 @@ def pseudo_inverse(L, rhoss=None, w=None, sparse=True, method="splu", option=Non
     if isinstance(options, SteadystateOption):
         pseudo_args = options
     else:
-        pseudo_args = SteadystateOption()
+        if kw:
+            # warning
+            pass
+        pseudo_args = SteadystateOption(**kw)
 
     if rhoss is None:
         rhoss = steadystate(L, pseudo_args)

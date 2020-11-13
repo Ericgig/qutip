@@ -149,8 +149,8 @@ class Solver:
 
     def _get_evolver(self, options, args, feedback_args):
         str_to_type = {layer.__name__.lower(): layer for layer in to.dtypes}
-        if self.options.rhs["Operator_data_type"].lower() in str_to_type:
-            self._system = self._system.to(str_to_type[self.options.rhs["Operator_data_type"].lower()])
+        if options.rhs["Operator_data_type"].lower() in str_to_type:
+            self._system = self._system.to(str_to_type[options.rhs["Operator_data_type"].lower()])
         if options.rhs["ahs"]:
             return AHSEvolver(self._system, options, args, feedback_args)
         return get_evolver(self._system, options, args, feedback_args)

@@ -49,6 +49,7 @@ from qutip.solver.ode.wrapper import QtOdeFuncWrapperSolverQEvo
 import warnings
 
 all_ode_method = ['adams', 'bdf', 'dop853', 'vern7', 'vern9']
+
 class qutip_zvode(zvode):
     def step(self, *args):
         itask = self.call_args[2]
@@ -119,9 +120,9 @@ class Evolver:
     def update_args(self, args):
         self.system.arguments(args)
 
-    def step(self, t, step=None):
+    def step(self, t, step=False):
         """ Evolve to t, must be `set` before. """
-        self._ode_solver.integrate(t)
+        self._ode_solver.integrate(t, step=step)
         if not self._ode_solver.successful():
             raise Exception(self._error_msg)
         return self.get_state()
@@ -160,7 +161,8 @@ class EvolverScipyZvode(Evolver):
     name = "scipy_zvode"
 
     def set(self, state0, t0, options=None):
-        self.options = options.ode or self.options
+        if options is not None:
+            self.options = options.ode
         self._set_shape(state0)
         self._t = t0
         self._y = state0.copy()
@@ -240,12 +242,12 @@ class EvolverScipyDop853(Evolver):
     name = "scipy_dop853"
 
     def set(self, state0, t0, options=None):
-        self.options = options.ode or self.options
+        if options is not None:
+            self.options = options.ode
         self._t = t0
         self._y = state0.copy()
 
         self._set_shape(state0)
-        func = self.system.mul_np_vec
         r = ode(self.funcwithfloat)
         options_keys = ['atol', 'rtol', 'nsteps', 'first_step', 'max_step',
                         'ifactor', 'dfactor', 'beta']
@@ -313,7 +315,8 @@ class EvolverVern(Evolver):
     name = "qutip_"
 
     def set(self, state0, t0, options=None):
-        self.options = options.ode or self.options
+        if options is not None:
+            self.options = options.ode
         self._set_shape(state0)
         self._t = t0
         self._y = state0.copy()
@@ -332,8 +335,10 @@ class EvolverVern(Evolver):
         return self._ode_solver.y
 
     def set_state(self, state, t):
-        self._ode_solver.set_initial_value(_data.to(_data.Dense, state).copy(),
-                                           t)
+        self._ode_solver.set_initial_value(
+            _data.to(_data.Dense, state).copy(),
+            t
+        )
 
     def backstep(self, t, t_old, y_old):
         self._ode_solver.integrate(t)
@@ -356,25 +361,28 @@ class EvolverDiag(Evolver):
             raise ValueError("Hamiltonian system must be constant to use "
                              "diagonalized method")
         self.system = system
-        self.U, self.diag = system(0).eigenstates()
-        self._dt
+        self.diag, self.U = system(0).eigenstates()
+        self.U = np.hstack([eket.full() for eket in self.U])
+        self._dt = 0.
+        self._expH = None
         self.Ud = self.U.T.conj()
         self.options = options
 
-    def set(self, state0, t0, options):
-        self.options = options or self.options
+    def set(self, state0, t0, options=None):
+        if options is not None:
+            self.options = options.ode
         self._set_shape(state0)
-        self._t = t0
-        self._y = self.Ud @ state0.as_array()
         self.set_state(state0, t0)
 
-    def step(self, t):
+    def step(self, t, args=None, step=False):
         """ Evolve to t, must be `set` before. """
         dt = self._t - t
-        if self.dt != dt:
-            self.expH = np.exp(self.diag * dt)
-            self.dt = dt
-        self._y *= self.expH
+        if dt == 0:
+            return self.get_state()
+        elif self._dt != dt:
+            self._expH = np.exp(self.diag * dt)
+            self._dt = dt
+        self._y *= self._expH
         self._t = t
         return self.get_state()
 
@@ -395,7 +403,8 @@ class EvolverDiag(Evolver):
             return _data.dense.fast_from_numpy(y)
 
     def set_state(self, state0, t):
-        self._y = self.Ud @ state0.as_array()
+        self._t = t
+        self._y = self.Ud @ state0.to_array().ravel()
 
     @property
     def t(self):
