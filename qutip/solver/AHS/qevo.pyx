@@ -28,6 +28,7 @@ cdef class SolverQEvoAHS(SolverQEvo):
     def __init__(self, base, options, dict args, dict feedback):
         limits = np.zeros(2, dtype=idxint_dtype)
         cdef idxint N = base.shape[1]
+        self.base_py = base
         self.base = base.compiled_qobjevo
         self.set_feedback(feedback, args, base.cte.issuper,
                           options['feedback_normalize'])
