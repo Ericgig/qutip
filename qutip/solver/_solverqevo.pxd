@@ -5,13 +5,14 @@ from qutip.core.cy.cqobjevo cimport CQobjEvo
 from qutip.core.data.base cimport idxint
 
 cdef class SolverQEvo:
+    cdef dict args
     cdef object base_py
     cdef CQobjEvo base
-    cdef idxint ncols
-    cdef bint has_dynamic_args
-    cdef list dynamic_arguments
-    cdef dict args
     cdef list collapse
+    cdef list dynamic_arguments
+    cdef bint has_dynamic_args
+    cdef idxint ncols
+
     cdef _data.Data mul_data(self, double t, _data.Data vec)
     cdef _data.Dense mul_dense(self, double t, _data.Dense vec, _data.Dense out)
     cdef _data.Data jac_data(self, double t)

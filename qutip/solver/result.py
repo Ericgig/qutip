@@ -342,6 +342,22 @@ class MultiTrajResult:
         # TODO: Make better results output
         return self.stats.__repr__()
 
+    @property
+    def times(self):
+        return self.trajectories[0].times
+
+    @property
+    def states(self):
+        return self.average_states
+
+    @property
+    def expect(self):
+        return self.average_expect
+
+    @property
+    def final_state(self):
+        return self.average_final_state
+
 
 class MultiTrajResultAveraged:
     """
@@ -486,7 +502,7 @@ class MultiTrajResultAveraged:
         mesurement = []
         for i in range(self.num_c_ops):
             mesurement += [(np.histogram(cols.get(i,[]), tlist)[0]
-                          / np.diff(tlist) / len(self.trajectories))]
+                          / np.diff(tlist) / len(self._num))]
         return mesurement
 
     @property
@@ -496,3 +512,7 @@ class MultiTrajResultAveraged:
     def __repr__(self):
         # TODO: Make better results output
         return self.stats.__repr__()
+
+    @property
+    def times(self):
+        return self.trajectories.times

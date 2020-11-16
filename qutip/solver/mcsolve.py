@@ -209,7 +209,7 @@ class McSolver(Solver):
         for n_evo in n_evos:
             self._system -= 0.5 * n_evo
         self.c_ops = c_evos
-        self._evolver = McEvolver(self._system, self.c_ops, n_evos,
+        self._evolver = McEvolver(self, self.c_ops, n_evos,
                                   options, args, feedback_args)
         if self.options.mcsolve['keep_runs_results']:
             self.res = MultiTrajResult(len(self.c_ops))
@@ -354,13 +354,13 @@ class MeMcSolve(McSolver):
             else:
                 raise ValueError("Invalid Hamiltonian")
 
-        ns_evos = [spre(op.dag())*spost(op) for op in sc_evos]
-        n_evos = [spre(op._cdc()) for op in sc_evos]
+        ns_evos = [spre(op._cdc()) + spost(op._cdc()) for op in sc_evos]
+        n_evos = [spre(op) * spost(op.dag()) for op in sc_evos]
         self._system = liouvillian(H, c_evos)
         for n_evo in ns_evos:
             self._system -= 0.5 * n_evo
-        self.c_ops = ns_evos
-        self._evolver = McEvolver(self._system, self.c_ops, n_evos,
+        self.c_ops = n_evos
+        self._evolver = McEvolver(self, self.c_ops, n_evos,
                                   options, args, feedback_args)
         if self.options.mcsolve['keep_runs_results']:
             self.res = MultiTrajResult(len(n_evos))
@@ -371,14 +371,14 @@ class MeMcSolve(McSolver):
 
 
 class McEvolver(Evolver):
-    def __init__(self, system, c_ops, n_ops, options,
+    def __init__(self, solver, c_ops, n_ops, options,
                  args=None, feedback_args=None):
         args = args or {}
         feedback_args = feedback_args or {}
         self.options = options
         self.collapses = []
         feedback_args["__col"] = self.collapses
-        self._evolver = get_evolver(system, options, args, feedback_args)
+        self._evolver = solver._get_evolver(options, args, feedback_args)
         self.c_ops = c_ops
         self.n_ops = n_ops
 
@@ -412,7 +412,6 @@ class McEvolver(Evolver):
         norm_old = self.norm_func(self.get_state()) ** 2
         while self.t < t:
             state = self._evolver.step(t, step=1).copy()
-            # print(self.t)
             norm = self.norm_func(state) ** 2
             if norm <= self.target_norm:
                 self.do_collapse(norm_old, norm, t_old, y_old)
@@ -438,7 +437,6 @@ class McEvolver(Evolver):
         t_final = self.t
         tries = 0
         while tries < self.norm_steps:
-
             tries += 1
             if (t_final - t_prev) < self.norm_t_tol:
                 t_guess = t_final

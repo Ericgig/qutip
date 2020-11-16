@@ -16,17 +16,46 @@ import time
 from qutip.core.data.base import idxint_dtype
 
 cdef class AHS_config:
+    def __init__(self, N=1, padding=1, rtol=1e-14, atol=1e-14,
+                 safety_rtol=1e-10, safety_pad=1, options=None):
+        self.extra_padding = 1
+        self.padding = padding
+        self.rtol = rtol
+        self.atol = atol
+        self.safety_pad = safety_pad
+        self.safety_rtol = safety_rtol
+        limits = np.zeros(2, dtype=idxint_dtype)
+        limits[0] = 0
+        limits[1] = N
+        self.limits = limits
+        self.np_array = limits
+        self.passed = True
+
+        if options is not None:
+            self.padding = (options['ahs_options']["ahs_padding"]
+                            if options['ahs_options']["ahs_padding"] > 0 else 2)
+            self.safety_pad = options['ahs_options']["ahs_safety_interval"]
+            self.rtol = options['ahs_options']["ahs_rtol"]
+            self.atol = options['ahs_options']["ahs_atol"]
+            self.safety_rtol = options['ahs_options']["ahs_safety_rtol"]
+
     def __repr__(self):
         out = ""
-        out += "tols:" + str(self.atol) +" "+ str(self.rtol) +" "+ str(self.safety_rtol) + "\n"
-        out += ("pads:") + str(self.padding) +" "+ str(self.safety_pad) + "\n"
-        out += ("state:") + str(self.limits[0]) +" "+ str(self.limits[1]) +" "+ str(self.extra_padding) + "\n"
-        out += ("passing:") + str(self.passed) + "\n"
+        out += ("tols:" + str(self.atol) + " " + str(self.rtol) +
+                " " + str(self.safety_rtol) + "\n")
+        out += ("pads:" + str(self.padding) +" "+ str(self.safety_pad) + "\n")
+        out += ("state:" + str(self.limits[0]) + " " + str(self.limits[1]) +
+                " " + str(self.extra_padding) + "\n")
+        out += ("passing:" + str(self.passed) + "\n")
         return out
+
+    def __reduce__(self):
+        return (AHS_config, (self.limits[1],
+                             self.padding, self.rtol, self.atol,
+                             self.safety_rtol, self.safety_pad))
 
 cdef class SolverQEvoAHS(SolverQEvo):
     def __init__(self, base, options, dict args, dict feedback):
-        limits = np.zeros(2, dtype=idxint_dtype)
         cdef idxint N = base.shape[1]
         self.base_py = base
         self.base = base.compiled_qobjevo
@@ -37,17 +66,8 @@ cdef class SolverQEvoAHS(SolverQEvo):
         self.super = self.base.issuper
         self.layer_type = self.base.layer_type
 
-        self.config = AHS_config()
-        self.config.padding = options['ahs_options']["ahs_padding"] if options['ahs_options']["ahs_padding"] > 0 else 2
-        self.config.safety_pad = options['ahs_options']["ahs_safety_interval"]
-        self.config.extra_padding = 1.
-        self.config.rtol = options['ahs_options']["ahs_rtol"]
-        self.config.atol = options['ahs_options']["ahs_atol"]
-        self.config.safety_rtol = options['ahs_options']["ahs_safety_rtol"]
-        limits[0] = 0
-        limits[1] = N if not self.super else (<idxint> N**0.5)
-        self.config.limits = limits
-        self.config.np_array = limits
+        N = N if not self.super else (<idxint> N**0.5)
+        self.config = AHS_config(N, options=options)
 
     cpdef bint resize(self, Dense state):
         if self.super:
@@ -66,8 +86,11 @@ cdef class SolverQEvoAHS(SolverQEvo):
             for ii in range(N):
                 if max_prob < norm(state.data[ii]):
                     max_prob = norm(state.data[ii])
-        tol = max_prob * self.config.rtol * self.config.rtol + self.config.atol * self.config.atol
-        safe_tol = max_prob * self.config.safety_rtol * self.config.safety_rtol + self.config.atol * self.config.atol
+        tol = (max_prob * self.config.rtol * self.config.rtol +
+               self.config.atol * self.config.atol)
+        safe_tol = (max_prob * self.config.safety_rtol *
+                    self.config.safety_rtol +
+                    self.config.atol * self.config.atol)
 
         self.config.passed = True
         for ii in range(self.config.safety_pad):
@@ -167,3 +190,7 @@ cdef class SolverQEvoAHS(SolverQEvo):
                 matmul_trunc_ket_csc_dense( mat, vec, self.config.limits, a, out)
             elif self.layer_type == Dense_TYPE:
                 matmul_trunc_ket_dense( mat, vec, self.config.limits, a, out)
+
+    @property
+    def ahs_config(self):
+        return self.config

@@ -34,7 +34,12 @@ class AHSEvolver(Evolver):
                 t_old = self.t
                 y_old = state.copy()
                 tries = 0
+                if step:
+                    break
         return y_old
+
+    def backstep(self, t, t_old, y_old):
+        return self._evolver.backstep(t, t_old, y_old)
 
     def resize(self):
         return self.system.resize(self.get_state())

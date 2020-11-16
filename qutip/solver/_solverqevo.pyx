@@ -79,8 +79,3 @@ cdef class SolverQEvo:
 
     cpdef void arguments(self, dict args):
         self.base_py.arguments(args)
-        """
-        self.args = args
-        for i in range(self.base.n_ops):
-            (<Coefficient> self.base.coeff[i]).arguments(self.args)
-        """

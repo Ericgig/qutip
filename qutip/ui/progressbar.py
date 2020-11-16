@@ -182,7 +182,7 @@ def get_progess_bar(opt):
         return opt
     if opt in ["Enhanced", "enhanced"]:
         progress_bar = EnhancedTextProgressBar()
-    elif opt in ["Text", "text"]:
+    elif opt in [True, "Text", "text"]:
         progress_bar = TextProgressBar()
     elif opt in ["Tqdm", "tqdm"]:
         progress_bar = TqdmProgressBar()
