@@ -7,6 +7,7 @@ class AHSEvolver(Evolver):
         self.options = options.ode
         self._evolver = get_evolver(system, options, args, feedback_args)
         self._evolver.system = self.system
+        self.name = self._evolver.name + " with Adaptative Hilbert Space"
 
     def set(self, state, t0, options=None):
         self.options = options or self.options
@@ -54,3 +55,7 @@ class AHSEvolver(Evolver):
     @property
     def t(self):
         return self._evolver.t
+
+    @property
+    def solver_call(self):
+        return self._evolver.solver_call

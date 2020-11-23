@@ -8,7 +8,7 @@ from .sesolve import *
 from .mesolve import *
 from .propagator import *
 from .mcsolve import *
-
+from .steadystate import *
 
 """
 from .stochastic import *
@@ -22,7 +22,6 @@ from ._brtensor import bloch_redfield_tensor
 
 from .correlation import *
 from .countstat import *
-from .steadystate import *
 
 from . import nonmarkov
 

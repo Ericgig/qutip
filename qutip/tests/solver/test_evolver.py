@@ -63,6 +63,15 @@ class TestEvolverCte():
                               bstate.to_array()[0,0]) < tol
                 state = evol.step(t)
 
+    def test_shape(self, method, system, optimization):
+        tol = 1e-5
+        opt = SolverOptions(method=method, **optimization)
+        evol = get_evolver(system, opt, {}, {})
+        evol.set(qt.core.unstack_columns(
+            qt.coherent(6,3).to(qt.data.Dense).data, (2,3)), 0)
+        for t, state in evol.run(np.linspace(0,0.1,3)):
+            assert state.shape == (2,3)
+
 
 def f(t, args):
     return t * args["cte"]

@@ -41,11 +41,11 @@ import numpy as np
 from numpy.linalg import norm as la_norm
 from scipy.integrate import ode
 from scipy.integrate._ode import zvode
-from qutip.core import data as _data
-from qutip.solver._solverqevo import SolverQEvo
-from qutip.solver.ode.verner7efficient import vern7
-from qutip.solver.ode.verner9efficient import vern9
-from qutip.solver.ode.wrapper import QtOdeFuncWrapperSolverQEvo
+from ..core import data as _data
+from ._solverqevo import SolverQEvo
+from .ode.verner7efficient import vern7
+from .ode.verner9efficient import vern9
+from .ode.wrapper import QtOdeFuncWrapperSolverQEvo
 import warnings
 
 all_ode_method = ['adams', 'bdf', 'dop853', 'vern7', 'vern9']
@@ -106,6 +106,7 @@ class Evolver:
                            "the allowed number of substeps by increasing "
                            "the nsteps parameter in the Options class.")
         self._ode_solver = None
+        self._previous_call = 0
 
     def _set_shape(self, example_state):
         if example_state.shape[1] > 1:
@@ -146,8 +147,9 @@ class Evolver:
     def t(self):
         return self._ode_solver.t
 
-    def add_stats(self, stats):
-        stats['solver'] = self.name
+    @property
+    def solver_call(self):
+        return self.system.func_call - self._previous_call
 
 
 class EvolverScipyZvode(Evolver):
@@ -176,6 +178,8 @@ class EvolverScipyZvode(Evolver):
         r.set_integrator('zvode', **opt)
         self._ode_solver = r
         self.set_state(state0, t0)
+        self.name = "scipy zvode " + opt["method"]
+        self._previous_call = self.system.func_call
 
     def get_state(self):
         if self._mat_state:
@@ -257,6 +261,8 @@ class EvolverScipyDop853(Evolver):
         r.set_integrator('dop853', **opt)
         self._ode_solver = r
         self.set_state(state0, t0)
+        self.name = "scipy dop853"
+        self._previous_call = self.system.func_call
 
     def funcwithfloat(self, t, y):
         y_cplx = y.view(complex)
@@ -312,7 +318,7 @@ class EvolverVern(Evolver):
     #
     # Use verner method implimented in cython
     #
-    name = "qutip_"
+    name = "qutip "
 
     def set(self, state0, t0, options=None):
         if options is not None:
@@ -327,16 +333,17 @@ class EvolverVern(Evolver):
                for key in options_keys
                if key in self.options}
         ode = vern7 if self.options['method'] == 'vern7' else vern9
-        self.name += self.options['method']
         self._ode_solver = ode(func, **opt)
         self.set_state(state0, t0)
+        self.name = "qutip " + self.options['method']
+        self._previous_call = self.system.func_call
 
     def get_state(self):
         return self._ode_solver.y
 
     def set_state(self, state, t):
         self._ode_solver.set_initial_value(
-            _data.to(_data.Dense, state).copy(),
+            _data.to(_data.Dense, state),
             t
         )
 
@@ -363,10 +370,12 @@ class EvolverDiag(Evolver):
         self.system = system
         self.diag, self.U = system(0).eigenstates()
         self.U = np.hstack([eket.full() for eket in self.U])
+        self.diag = self.diag.reshape((-1,1))
         self._dt = 0.
         self._expH = None
-        self.Ud = self.U.T.conj()
+        self.Uinv = np.linalg.inv(self.U)
         self.options = options
+        self.name = "qutip diagonalized"
 
     def set(self, state0, t0, options=None):
         if options is not None:
@@ -376,7 +385,7 @@ class EvolverDiag(Evolver):
 
     def step(self, t, args=None, step=False):
         """ Evolve to t, must be `set` before. """
-        dt = self._t - t
+        dt = t - self._t
         if dt == 0:
             return self.get_state()
         elif self._dt != dt:
@@ -394,17 +403,11 @@ class EvolverDiag(Evolver):
 
     def get_state(self):
         y = self.U @ self._y
-        if self._mat_state:
-            return _data.column_unstack_dense(
-                _data.dense.fast_from_numpy(y),
-                self._size,
-                inplace=True)
-        else:
-            return _data.dense.fast_from_numpy(y)
+        return _data.dense.fast_from_numpy(y)
 
     def set_state(self, state0, t):
         self._t = t
-        self._y = self.Ud @ state0.to_array().ravel()
+        self._y = (self.Uinv @ state0.to_array())
 
     @property
     def t(self):
@@ -412,3 +415,7 @@ class EvolverDiag(Evolver):
 
     def backstep(self, t, t_old, y_old):
         return self.step(t)
+
+    @property
+    def solver_call(self):
+        return 1

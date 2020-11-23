@@ -36,7 +36,6 @@ __all__ = ['propagator', 'propagator_steadystate']
 import functools
 import numbers
 import types
-
 import numpy as np
 
 from .. import (
@@ -47,11 +46,8 @@ from ..core import data as _data
 from .mesolve import *
 from .sesolve import *
 from .options import SolverOptions
-from ..parallel import parallel_map
+from .parallel import parallel_map
 from ..ui.progressbar import BaseProgressBar, TextProgressBar
-
-def _solver_safety_check(*args, **kwargs):
-    raise NotImplementedError
 
 
 def propagator(H, t, c_op_list=[], args={}, options=None,
@@ -115,12 +111,6 @@ def propagator(H, t, c_op_list=[], args={}, options=None,
         tlist = [0, t]
     else:
         tlist = t
-
-    if _safe_mode:
-        pass
-        # _solver_safety_check(H, None, c_ops=c_op_list, e_ops=[], args=args)
-
-    td_type = td_format_check(H, c_op_list, solver='me')
 
     unitary_mode = 'single'
     if isinstance(H, (types.FunctionType, types.BuiltinFunctionType,

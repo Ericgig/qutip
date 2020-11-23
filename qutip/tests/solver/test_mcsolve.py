@@ -34,7 +34,8 @@
 import pytest
 import numpy as np
 import qutip
-from qutip.solver import mcsolve, mesolve, SolverOptions, McSolver
+from qutip.solver import mcsolve, mesolve, SolverOptions, McSolver, MeMcSolver
+from qutip.solver.evolver import all_ode_method
 
 
 def _return_constant(t, args):
@@ -77,6 +78,10 @@ class StatesAndExpectOutputCase:
                          options=options)
         self._assert_expect(result, expected, tol)
         self._assert_states(result, expected, tol)
+
+    def _assert_photocurrent(self, result, expected, tol):
+        assert len(result.photocurrent) == 1
+        # Too noisy to do a simple meaningful test that would always pass
 
 
 class TestNoCollapse(StatesAndExpectOutputCase):
@@ -145,11 +150,27 @@ class TestConstantCollapse(StatesAndExpectOutputCase):
         ]
         cases = []
         for c_op, args, id in c_op_types:
-            cases.append(pytest.param(self.h, args, [c_op], [expect], tol,
-                                      id=id, marks=[pytest.mark.slow]))
+            for method in all_ode_method:
+                for ahs in [False, True]:
+                    fullid = id + "_" + method + ("_AHS" if ahs else "")
+                    options = SolverOptions(store_states=True,
+                                            method=method, ahs=ahs)
+                    cases.append(pytest.param(self.h, args, [c_op],
+                                              [expect], tol, options,
+                                              id=fullid,
+                                              marks=[pytest.mark.slow]))
         metafunc.parametrize(['hamiltonian', 'args', 'c_ops', 'expected',
-                              'tol'],
+                              'tol', 'options'],
                              cases)
+
+    def test_states_and_expect(self, hamiltonian, args, c_ops,
+                               expected, tol, options):
+        result = mcsolve(hamiltonian, self.state, self.times, args=args,
+                         c_ops=c_ops, e_ops=self.e_ops, ntraj=self.ntraj,
+                         options=options)
+        self._assert_expect(result, expected, tol)
+        self._assert_states(result, expected, tol)
+        self._assert_photocurrent(result, expected[0], 0.3)
 
 
 class TestTimeDependentCollapse(StatesAndExpectOutputCase):
@@ -177,6 +198,53 @@ class TestTimeDependentCollapse(StatesAndExpectOutputCase):
                               'tol'],
                              cases)
 
+
+class TestDiagonalized():
+    """
+    Test that `mcsolve` correctly solves the system by diagonalizing the
+    effective hamiltonian.
+    """
+    size = 10
+    h = qutip.num(size)
+    state = qutip.basis(size, size-1)
+    times = np.linspace(0, 1, 101)
+    e_ops = [qutip.num(size)]
+    ntraj = 100
+
+    def test_diag(self):
+        # The hamiltonian must not already be diagonal.
+        tol = 0.05
+        a = qutip.destroy(self.size)
+        h = self.h + a + a.dag()
+        expected = mesolve(h, self.state, self.times, c_ops=[a],
+                           e_ops=self.e_ops).expect[0]
+        opt = SolverOptions(store_states=True, method="diag")
+        result = mcsolve(h, self.state, self.times, c_ops=[a],
+                         e_ops=self.e_ops, ntraj=self.ntraj,
+                         options=opt)
+        self._assert_expect(result, [expected], tol)
+        self._assert_states(result, [expected], tol)
+        self._assert_photocurrent(result, expected, 0.5)
+
+    def _assert_photocurrent(self, result, expected, tol):
+        assert len(result.photocurrent) == 1
+        expected = np.array(expected)
+        expected = (expected[1:] + expected[:-1]) / 2
+        ratio = np.mean(result.photocurrent[0] / expected)
+        np.testing.assert_allclose(ratio, 1, rtol=tol)
+
+    def _assert_states(self, result, expected, tol):
+        assert hasattr(result, 'average_states')
+        assert len(result.average_states) == len(self.times)
+        for test_operator, expected_part in zip(self.e_ops, expected):
+            test = qutip.expect(test_operator, result.average_states)
+            np.testing.assert_allclose(test, expected_part, rtol=tol)
+
+    def _assert_expect(self, result, expected, tol):
+        assert hasattr(result, 'average_expect')
+        assert len(result.average_expect) == len(self.e_ops)
+        for test, expected_part in zip(result.average_expect, expected):
+            np.testing.assert_allclose(test, expected_part, rtol=tol)
 
 def test_stored_collapse_operators_and_times():
     """
@@ -230,17 +298,17 @@ class TestSeeds:
         np.sqrt(2*dampings[2]) * qutip.tensor(qutip.qeye(sizes[:2]), a[2]),
     ]
 
-    @pytest.mark.xfail(reason="current limitation of SolverOptions")
+    #@pytest.mark.xfail(reason="current limitation of SolverOptions")
     def test_seeds_can_be_reused(self):
         args = (self.H, self.state, self.times)
         kwargs = {'c_ops': self.c_ops, 'ntraj': self.ntraj}
         first = mcsolve(*args, **kwargs)
-        options = SolverOptions(seeds=first.seeds)
-        second = mcsolve(*args, options=options, **kwargs)
+        kwargs['seeds'] = first.seeds
+        second = mcsolve(*args, **kwargs)
         for first_t, second_t in zip(first.col_times, second.col_times):
-            np.testing.assert_equal(first_t, second_t)
+            assert np.array_equal(first_t, second_t)
         for first_w, second_w in zip(first.col_which, second.col_which):
-            np.testing.assert_equal(first_w, second_w)
+            assert np.array_equal(first_w, second_w)
 
     def test_seeds_are_not_reused_by_default(self):
         args = (self.H, self.state, self.times)
@@ -253,25 +321,6 @@ class TestSeeds:
         assert not all(np.array_equal(first_w, second_w)
                        for first_w, second_w in zip(first.col_which,
                                                     second.col_which))
-
-"""
-def test_list_ntraj():
-    ""Test that `ntraj` can be a list.""
-    size = 5
-    a = qutip.destroy(size)
-    H = qutip.num(size)
-    state = qutip.basis(size, 1)
-    times = np.linspace(0, 0.8, 100)
-    # Arbitrary coupling and bath temperature.
-    coupling = 1 / 0.129
-    n_th = 0.063
-    c_ops = [np.sqrt(coupling * (n_th + 1)) * a,
-             np.sqrt(coupling * n_th) * a.dag()]
-    e_ops = [qutip.num(size)]
-    ntraj = [1, 5, 15, 100]
-    mc = mcsolve(H, state, times, c_ops, e_ops, ntraj=ntraj)
-    assert len(ntraj) == len(mc.runs_expect)
-"""
 
 # Defined in module-scope so it's pickleable.
 def _dynamic(t, args):
@@ -312,3 +361,34 @@ def test_regression_490():
     result_mc = mcsolve(h, state, times, ntraj=1)
     for state_me, state_mc in zip(result_me.states, result_mc.states):
         np.testing.assert_allclose(state_me.full(), state_mc.full(), atol=1e-8)
+
+
+def _photo_func(t, args):
+    return args["a"] * t
+
+
+def test_McSolver():
+    N = 10
+    solver = McSolver(qutip.qeye(N),
+                      c_ops=[qutip.destroy(N)],
+                      e_ops=[qutip.num(N)])
+    res = solver.run(qutip.basis(N, N-1), np.linspace(0,1,11), ntraj=10)
+    assert res.num_traj == 10
+    res = solver.add_traj(5)
+    assert res.num_traj == 15
+    res = solver.run(qutip.basis(N, N-1), np.linspace(0,1,11), ntraj=5)
+    assert res.num_traj == 5
+
+
+def test_MeMcSolver():
+    H = qutip.tensor([qutip.qeye(4), qutip.num(2)])
+    a = qutip.tensor([qutip.qeye(4), qutip.destroy(2)])
+    b = qutip.tensor([qutip.destroy(4), qutip.qeye(2)])
+    e = qutip.tensor([qutip.num(4), qutip.qeye(2)])
+    psi0 = qutip.tensor([qutip.basis(4,3), qutip.basis(2,1)])
+    solver = MeMcSolver(H, c_ops=[a], sc_ops=[b], e_ops=[e],
+                        options=SolverOptions(map="serial_map"))
+    res = solver.run(psi0, np.linspace(0,1,11), ntraj=20).expect[0]
+    me_res = mesolve(H, psi0, np.linspace(0,1,11),
+                     c_ops=[a,b], e_ops=[e]).expect[0]
+    np.testing.assert_allclose(res, me_res, 5e-1) # High tol for faster tests

@@ -204,12 +204,7 @@ cy_exts = {
         '_stochastic',
     ],
     'solver': [
-        '_brtensor',
-        '_brtools',
-        '_brtools_checks',
-        '_piqs',
         '_steadystate',
-        '_stochastic',
         '_solverqevo',
         '_feedback',
     ],

@@ -1,4 +1,4 @@
-# This file is part of QuTiP: Quantum Toolbox in Python.
+ # This file is part of QuTiP: Quantum Toolbox in Python.
 #
 #    Copyright (c) 2011 and later, Paul D. Nation and Robert J. Johansson.
 #    All rights reserved.
@@ -37,6 +37,7 @@ This module provides solvers for the unitary Schrodinger equation.
 __all__ = ['sesolve', 'SeSolver']
 
 import numpy as np
+from time import time
 from .. import Qobj, QobjEvo
 from ..core.qobjevofunc import QobjEvoFunc
 from .solver import Solver
@@ -187,6 +188,8 @@ class SeSolver(Solver):
     def __init__(self, H, e_ops=None, options=None,
                  times=None, args=None, feedback_args=None,
                  _safe_mode=False):
+        _time_start = time()
+        self.stats = {}
         if e_ops is None:
             e_ops = []
         if options is None:
@@ -217,6 +220,8 @@ class SeSolver(Solver):
         else:
             raise ValueError("Invalid Hamiltonian")
         self._evolver = self._get_evolver(options, args, feedback_args)
+        self.stats["preparation time"] = time() - _time_start
+        self.stats['solver'] = "Stochastic Evolution"
 
     def _safety_check(self, state):
         self._system.mul(0, state)

@@ -147,8 +147,20 @@ class Result:
         return self._e_num
 
     def __repr__(self):
-        # TODO: Make better results output
-        return self.stats.__repr__()
+        out = ""
+        out += self.stats['solver'] + "\n"
+        out += "solver : " + self.stats['method'] + "\n"
+        out += "number of expect : {}\n".format(self._e_num)
+        if self._store_states:
+            out += "State saved\n"
+        elif self._store_final_state:
+            out += "Final state saved\n"
+        else:
+            out += "State not available\n"
+        out += "times from {} to {} in {} steps\n".format(self.times[0],
+                                                          self.times[-1],
+                                                          len(self.times))
+        return out
 
 
 class MultiTrajResult:
@@ -335,12 +347,25 @@ class MultiTrajResult:
         return mesurement
 
     @property
-    def stats(self):
+    def run_stats(self):
         return self.trajectories[0].stats
 
     def __repr__(self):
-        # TODO: Make better results output
-        return self.stats.__repr__()
+        out = ""
+        out += self.run_stats['solver'] + "\n"
+        out += "solver : " + self.stats['method'] + "\n"
+        out += "{} runs saved\n".format(self.num_traj)
+        out += "number of expect : {}\n".format(self.trajectories[0]._e_num)
+        if self.trajectories[0]._store_states:
+            out += "Runs states saved\n"
+        elif self.trajectories[0]._store_final_state:
+            out += "Runs final state saved\n"
+        else:
+            out += "State not available\n"
+        out += "times from {} to {} in {} steps\n".format(self.times[0],
+                                                          self.times[-1],
+                                                          len(self.times))
+        return out
 
     @property
     def times(self):
@@ -357,6 +382,10 @@ class MultiTrajResult:
     @property
     def final_state(self):
         return self.average_final_state
+
+    @property
+    def num_traj(self):
+        return len(self.trajectories)
 
 
 class MultiTrajResultAveraged:
@@ -379,8 +408,12 @@ class MultiTrajResultAveraged:
             self.trajectories = one_traj
             if self._to_dm and one_traj.states:
                 self._sum_states = [state.proj() for state in one_traj.states]
+            else:
+                self._sum_states = one_traj.states
             if self._to_dm and one_traj.final_state:
                 self._sum_last_states = one_traj.final_state.proj()
+            else:
+                self._sum_last_states = one_traj.final_state
             self._sum_expect = [np.array(expect) for expect in one_traj._expects]
             self._sum2_expect = [np.array(expect)**2 for expect in one_traj._expects]
         else:
@@ -390,6 +423,12 @@ class MultiTrajResultAveraged:
                                     in zip(self._sum_states, one_traj.states)]
                 if self._sum_last_states:
                     self._sum_last_states += one_traj.final_state.proj()
+            else:
+                if self._sum_states:
+                    self._sum_states = [state + accu for accu, state
+                                    in zip(self._sum_states, one_traj.states)]
+                if self._sum_last_states:
+                    self._sum_last_states += one_traj.final_state
             if self._sum_expect:
                 self._sum_expect = [np.array(one) + accu for one, accu in
                                     zip(one_traj._expects, self._sum_expect)]
@@ -502,17 +541,46 @@ class MultiTrajResultAveraged:
         mesurement = []
         for i in range(self.num_c_ops):
             mesurement += [(np.histogram(cols.get(i,[]), tlist)[0]
-                          / np.diff(tlist) / len(self._num))]
+                          / np.diff(tlist) / self._num)]
         return mesurement
 
     @property
-    def stats(self):
+    def run_stats(self):
         return self.trajectories.stats
 
     def __repr__(self):
-        # TODO: Make better results output
-        return self.stats.__repr__()
+        out = ""
+        out += self.run_stats['solver'] + "\n"
+        out += "solver : " + self.stats['method'] + "\n"
+        out += "{} trajectories averaged\n".format(self.num_traj)
+        out += "number of expect : {}\n".format(self.trajectories._e_num)
+        if self.trajectories._store_states:
+            out += "States saved\n"
+        elif self.trajectories._store_final_state:
+            out += "Final state saved\n"
+        else:
+            out += "State not available\n"
+        out += "times from {} to {} in {} steps\n".format(self.times[0],
+                                                          self.times[-1],
+                                                          len(self.times))
+        return out
 
     @property
     def times(self):
         return self.trajectories.times
+
+    @property
+    def states(self):
+        return self.average_states
+
+    @property
+    def expect(self):
+        return self.average_expect
+
+    @property
+    def final_state(self):
+        return self.average_final_state
+
+    @property
+    def num_traj(self):
+        return self._num

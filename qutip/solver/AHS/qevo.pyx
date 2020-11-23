@@ -62,6 +62,7 @@ cdef class SolverQEvoAHS(SolverQEvo):
         self.set_feedback(feedback, args, base.cte.issuper,
                           options['feedback_normalize'])
         self.collapse = []
+        self.num_calls = 0
 
         self.super = self.base.issuper
         self.layer_type = self.base.layer_type
@@ -125,7 +126,7 @@ cdef class SolverQEvoAHS(SolverQEvo):
     cpdef idxint[::1] get_idx_dm(self, Dense state):
         cdef double tol, max_prob, safe_tol
         cdef idxint ii, found=0, eff_padding
-        cdef idxint N=<idxint> round(sqrt(state.shape[0]))
+        cdef idxint N=<idxint> round(sqrt(state.shape[0]*state.shape[1]))
 
         if self.config.rtol != 0:
             for ii in range(N):
@@ -169,6 +170,7 @@ cdef class SolverQEvoAHS(SolverQEvo):
 
         cdef size_t i
         self.base._factor(t)
+        self.num_calls += 1
         self.mul_ahs(self.base.constant, vec, 1, out)
         for i in range(self.base.n_ops):
             self.mul_ahs(<Data> self.base.ops[i], vec,
@@ -176,6 +178,7 @@ cdef class SolverQEvoAHS(SolverQEvo):
         return out
 
     cdef void mul_ahs(self, Data mat,  Dense vec, double complex a, Dense out):
+        self.num_calls += 1
         if self.super:
             if self.layer_type == CSR_TYPE:
                 matmul_trunc_dm_csr_dense( mat, vec, self.config.limits, a, out)

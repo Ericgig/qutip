@@ -40,7 +40,6 @@ __all__ = ['steadystate', 'build_preconditioner', 'pseudo_inverse']
 
 import warnings
 import time
-from ..optionsclass import optionsclass
 import numpy as np
 import scipy.sparse.csgraph
 import scipy.linalg
@@ -48,6 +47,7 @@ from scipy.sparse.linalg import (
     use_solver, splu, spilu, eigs, LinearOperator, gmres, lgmres, bicgstab,
 )
 
+from ..optionsclass import optionsclass
 from .. import (
     Qobj, liouvillian, unstack_columns, stack_columns, spre, tensor, identity,
     operator_to_vector, settings,

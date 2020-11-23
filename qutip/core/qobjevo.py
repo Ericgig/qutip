@@ -85,6 +85,7 @@ class QobjEvoBase:
             raise TypeError("The vector must be an array or Qobj")
 
         if self.issuper and state.shape[1] != 1:
+        # expect stack column but not mul...
             state = _data.column_stack(state)
         exp = self.compiled_qobjevo.expect(t, state)
         return exp.real if herm else exp
@@ -104,7 +105,6 @@ class QobjEvoBase:
         Product of the operator quantum object at time t
         with the given matrix state.
         """
-        # TODO: Not always fallback to Dense
         was_Qobj = False
         was_vec = False
         was_data = False

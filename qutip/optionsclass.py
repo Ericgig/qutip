@@ -154,7 +154,7 @@ def __init__(self, file='', *,
     return ns["__init__"]
 
 
-def _repr(self, _recursive=False):
+def _repr(self, _recursive=True):
     out = self._fullname + ":\n"
     longest = max(len(key) for key in self.options)
     if self.read_only_options:

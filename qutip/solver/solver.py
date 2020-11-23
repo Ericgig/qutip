@@ -43,6 +43,8 @@ from .evolver import *
 from .AHS.evolver import AHSEvolver
 from ..ui.progressbar import get_progess_bar
 from ..core.data import to
+from time import time
+
 
 class Solver:
     """
@@ -97,7 +99,10 @@ class Solver:
         self._state_qobj = state
         str_to_type = {layer.__name__.lower(): layer for layer in to.dtypes}
         if self.options.rhs["State_data_type"].lower() in str_to_type:
-            state = state.to(str_to_type[self.options.rhs["State_data_type"].lower()])
+            state = state.to(
+                str_to_type[self.options.rhs["State_data_type"].lower()]
+                )
+        self._state0 = state.data
         return state.data
 
     def _restore_state(self, state):
@@ -118,12 +123,14 @@ class Solver:
     def start(self, state0, t0):
         self._state = self._prepare_state(state0)
         self._t = t0
+        _time_start = time()
         self._evolver.set(self._state, self._t, self.options)
+        self.stats["preparation time"] += time() - _time_start
 
     def step(self, t, args={}):
         if args:
             self._evolver.update_args(args)
-            self._evolver.set(self._state, self._t, self.options) # TODO: reset?
+            self._evolver.set_state(self._state, self._t)
         self._state = self._evolver.step(t)
         self._t = t
         return self._restore_state(self._state)
@@ -132,7 +139,9 @@ class Solver:
         """
         Internal function for solving ODEs.
         """
+        _time_start = time()
         self._evolver.set(state0, tlist[0], self.options)
+        self.stats["preparation time"] += time() - _time_start
         res = Result(self.e_ops, self.options.results, self._super)
         res.add(tlist[0], self._state_qobj)
 
@@ -143,8 +152,10 @@ class Solver:
             res.add(t, self._restore_state(state))
         progress_bar.finished()
 
-        res.stats['time'] = progress_bar.total_time()
-        self._evolver.add_stats(res.stats)
+        self.stats['run time'] = progress_bar.total_time()
+        self.stats["rhs call"] = self._evolver.solver_call
+        self.stats["method"] = self._evolver.name
+        res.stats = self.stats.copy()
         return res
 
     def _get_evolver(self, options, args, feedback_args):

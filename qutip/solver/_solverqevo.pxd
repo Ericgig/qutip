@@ -6,12 +6,13 @@ from qutip.core.data.base cimport idxint
 
 cdef class SolverQEvo:
     cdef dict args
-    cdef object base_py
+    cdef readonly object base_py
     cdef CQobjEvo base
     cdef list collapse
     cdef list dynamic_arguments
     cdef bint has_dynamic_args
     cdef idxint ncols
+    cdef int num_calls
 
     cdef _data.Data mul_data(self, double t, _data.Data vec)
     cdef _data.Dense mul_dense(self, double t, _data.Dense vec, _data.Dense out)

@@ -38,12 +38,14 @@ equation.
 __all__ = ['mesolve', 'MeSolver']
 
 import numpy as np
+from time import time
 from .. import ( Qobj, QobjEvo, isket, issuper, liouvillian, ket2dm)
+from ..core import stack_columns, unstack_columns
+from ..core.data import to
 from ..core.qobjevofunc import QobjEvoFunc
 from .solver import Solver
 from .options import SolverOptions
 from .sesolve import sesolve
-from ..core.data import column_stack, column_unstack, to
 
 
 # -----------------------------------------------------------------------------
@@ -286,6 +288,8 @@ class MeSolver(Solver):
     def __init__(self, H, c_ops, e_ops=None, options=None,
                  times=None, args=None, feedback_args=None,
                  _safe_mode=False):
+        _time_start = time()
+        self.stats = {}
         if e_ops is None:
             e_ops = []
         if options is None:
@@ -328,6 +332,8 @@ class MeSolver(Solver):
 
         self._system = liouvillian(H, c_evos)
         self._evolver = self._get_evolver(options, args, feedback_args)
+        self.stats["preparation time"] = time() - _time_start
+        self.stats['solver'] = "Master Equation Evolution"
 
     def _prepare_state(self, state):
         if isket(state):
@@ -339,21 +345,14 @@ class MeSolver(Solver):
         str_to_type = {layer.__name__.lower(): layer for layer in to.dtypes}
         if self.options.rhs["State_data_type"].lower() in str_to_type:
             state = state.to(str_to_type[self.options.rhs["State_data_type"].lower()])
-        if state.dims[0] == self._system.dims[1]:
-            return state.data
-        return column_stack(state.data)
+        return stack_columns(state.data)
 
     def _restore_state(self, state):
-        if self._state_dims[0] == self._system.dims[1]:
-            return Qobj(state,
-                        dims=self._state_dims,
-                        type=self._state_type,
-                        copy=True)
-        else:
-            return Qobj(column_unstack(state, self._state_shape[0]),
-                        dims=self._state_dims,
-                        type=self._state_type,
-                        copy=True)
+        return Qobj(unstack_columns(state),
+                    dims=self._state_dims,
+                    type=self._state_type,
+                    copy=True)
+
 
     def _safety_check(self, state):
         return None

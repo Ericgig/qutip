@@ -18,6 +18,7 @@ cdef class SolverQEvo:
         self.base = base.compiled_qobjevo
         self.set_feedback(feedback, args, base.cte.issuper,
                           options['feedback_normalize'])
+        self.num_calls = 0
 
     def jac_np_vec(self, t, vec):
         return self.jac_data(t).as_array()
@@ -25,6 +26,7 @@ cdef class SolverQEvo:
     cdef _data.Data jac_data(self, double t):
         if self.has_dynamic_args:
             raise NotImplementedError("jacobian not available with feedback")
+        self.num_calls += 1
         return self.base.call(t, data=True)
 
     def mul_np_vec(self, t, vec):
@@ -40,11 +42,13 @@ cdef class SolverQEvo:
     cdef _data.Data mul_data(self, double t, _data.Data vec):
         if self.has_dynamic_args:
             self.apply_feedback(t, vec)
+        self.num_calls += 1
         return self.base.matmul(t, vec)
 
     cdef _data.Dense mul_dense(self, double t, _data.Dense vec, _data.Dense out):
         if self.has_dynamic_args:
             self.apply_feedback(t, vec)
+        self.num_calls += 1
         return self.base.matmul_dense(t, vec, out)
 
     def set_feedback(self, dict feedback, dict args, bint issuper, bint norm):
@@ -60,13 +64,16 @@ cdef class SolverQEvo:
                                                              issuper, norm))
             elif val in ["collapse"]:
                 self.dynamic_arguments.append(
-                    CollapseFeedback(key, feedback["__col"])
+                    CollapseFeedback(key)
                 )
-            elif key in ["__col"]:
-                pass
             else:
                 raise ValueError("unknown feedback type")
         self.has_dynamic_args = bool(self.dynamic_arguments)
+
+    def update_feedback(self, collapse):
+        for dargs in self.dynamic_arguments:
+            if isinstance(dargs, CollapseFeedback):
+                dargs.set_collapse(collapse)
 
     cdef void apply_feedback(self, double t, _data.Data matrix) except *:
         cdef Feedback feedback
@@ -79,3 +86,7 @@ cdef class SolverQEvo:
 
     cpdef void arguments(self, dict args):
         self.base_py.arguments(args)
+
+    @property
+    def func_call(self):
+        return self.num_calls

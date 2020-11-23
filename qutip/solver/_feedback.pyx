@@ -60,9 +60,12 @@ cdef class ExpectFeedback(Feedback):
 
 
 cdef class CollapseFeedback(Feedback):
-    def __init__(self, key, collapse):
+    def __init__(self, key):
         self.key = key
-        self.collapse = collapse
+        self.collapse = []
 
     cdef object _call(self, double t, _data.Data state):
         return self.collapse
+
+    def set_collapse(self, collapse):
+        self.collapse = collapse
