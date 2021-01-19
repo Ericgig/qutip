@@ -147,6 +147,7 @@ cdef class _to:
     cdef dict _direct_convert
     cdef dict _convert
     cdef readonly dict weight
+    cdef dict _str2type
 
     def __init__(self):
         self._direct_convert = {}
@@ -154,6 +155,7 @@ cdef class _to:
         self.dtypes = set()
         self.weight = {}
         self.dispatchers = []
+        self._str2type = {}
 
     def add_conversions(self, converters):
         """
@@ -259,10 +261,31 @@ cdef class _to:
                     _converter(convert[::-1], to_t, from_t)
         for dispatcher in self.dispatchers:
             dispatcher.rebuild_lookup()
+        for dtype in self.dtypes:
+            self._str2type[dtype.__name__.lower()] = dtype
+
+    def str2type(self, arg):
+        if isinstance(arg, type):
+            return arg
+        if isinstance(arg, str):
+            if not arg.lower() in self._str2type:
+                raise TypeError("type name is not known: " + arg)
+            return self._str2type[arg.lower()]
+        if not any(isinstance(dtype, str) for dtype in arg):
+            return arg
+        corr_types = []
+        for dtype in arg:
+            if isinstance(dtype, str):
+                if not dtype.lower() in self._str2type:
+                    raise TypeError("type name is not known: " + dtype)
+                dtype = self._str2type[dtype.lower()]
+            corr_types.append(dtype)
+        return tuple(corr_types)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
     def __getitem__(self, arg):
+        arg = self.str2type(arg)
         if isinstance(arg, type):
             arg = (arg,)
         if not isinstance(arg, tuple) or not arg or len(arg) > 2:
@@ -281,6 +304,7 @@ cdef class _to:
         return self._convert[to_t, from_t]
 
     def __call__(self, to_type, data):
+        to_type = self.str2type(to_type)
         if not isinstance(to_type, type):
             raise TypeError(repr(to_type) + " is not a type object")
         if to_type not in self.dtypes:
@@ -294,13 +318,103 @@ cdef class _to:
 
 
 cdef class _create:
+    cdef readonly list _creators
+
     def __init__(self):
-        pass
+        self._creators = []
 
     def add_creators(self, creators):
-        pass
+        """
+        Add creation functions to make a data-layer object from an arbitrary
+        python object.
+
+        Parameters
+        ----------
+        creators : iterable of (condition, creator, [priority])
+            An iterable of 2- or 3-tuples describing all the new data layer
+            creation function.
+            Each element can individually be a 2- or 3-tuple; they do not need
+            to be all one or the other.
+
+            Elements
+            ........
+            condition : callable (object) -> Data
+                function determining if that object can be made to a data layer
+                using this creator.
+
+            creator function: callable (object, shape) -> Data
+                The creator function.  This should take an object and a shape
+                and output a data-layer object. The object can be anything that
+                The condition function returned `True` when tested.
+
+            priority : positive real, optional (1)
+                The priority associated with this creation. Higher priority
+                conditions will be tested first and the first valid creator
+                (condition(object) == True) will handle the creation.
+                Priority 100 is used for already data-layer entry.
+                80 for object that have a direct data-layer equivalent
+                (scipy.sparse.csr_matrix, numpy.ndarray)
+                0 is the numpy fallback, making a data-layer of anything that
+                numpy can make to complex array.
+        """
+        _creators = []
+        for creator in creators:
+            if len(creator) == 2:
+                condition, create = creator
+                priority = 10
+            elif len(creator) == 3:
+                condition, create, priority = creator
+            if not callable(condition):
+                raise TypeError(str(condition) + " is not a callable")
+            if not callable(create):
+                raise TypeError(str(create) + " is not a callable")
+            _creators.append((condition, create, priority))
+        self._creators = sorted(_creators,
+                                key=lambda creator: creator[2],
+                                reverse=True)
 
     def __call__(self, arg, shape=None):
+        for condition, create, _ in self._creators:
+            if condition(arg):
+                return create(arg, shape)
+
+to = _to()
+create = _create()
+
+import qutip.core.data as _data
+import numpy as np
+import scipy.sparse
+
+create.add_creators([
+    (
+        lambda arg: isinstance(arg, _data.base.Data),
+        lambda arg, shape: arg.copy(),
+        100
+    ),
+    (
+        lambda arg: scipy.sparse.isspmatrix_csr(arg),
+        lambda arg, shape: _data.CSR(arg, shape=shape),
+        80
+    ),
+    (
+        lambda arg: isinstance(arg, np.ndarray),
+        lambda arg, shape: _data.Dense(arg, shape=shape, copy=False),
+        80
+    ),
+    (
+        lambda arg: scipy.sparse.issparse(arg),
+        lambda arg, shape: _data.CSR(arg.tocsr(), shape=shape),
+        10
+    ),
+    (
+        lambda arg: True,
+        lambda arg, shape: _data.Dense(np.array(arg, dtype=np.complex128),
+                                       shape=shape, copy=False),
+        0
+    ),
+])
+
+"""
         from qutip.core.data import CSR, csr, dense
         import numpy as np
         import scipy.sparse
@@ -315,7 +429,4 @@ cdef class _create:
         if arr.ndim != 2:
             raise TypeError("input has incorrect dimensions: " + str(arr.shape))
         return csr.from_dense(dense.fast_from_numpy(arr))
-
-
-to = _to()
-create = _create()
+"""

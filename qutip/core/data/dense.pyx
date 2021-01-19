@@ -46,6 +46,8 @@ cdef class Dense(base.Data):
         base = np.array(data, dtype=np.complex128, order='K', copy=copy)
         if shape is None:
             shape = base.shape
+            if len(shape) == 0:
+                shape = (1, 1)
             # Promote to a ket by default if passed 1D data.
             if len(shape) == 1:
                 shape = (shape[0], 1)

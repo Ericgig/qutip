@@ -689,6 +689,7 @@ class QobjEvo:
         self.cte = self.cte.tidyup(atol)
         for op in self.ops:
             op.qobj = op.qobj.tidyup(atol)
+        self._compile()
         return self
 
     def _compress_make_set(self):
@@ -891,7 +892,7 @@ class QobjEvo:
             return out
 
     def _compile(self, code=False, matched=False, dense=False):
-        self.tidyup()
+        # self.tidyup()
         self.compiled_qobjevo = CQobjEvo(self.cte, self.ops)
         self.compiled_qobjevo.set_dyn_args(self.dynamics_args,
                                            self.args, self.cte)

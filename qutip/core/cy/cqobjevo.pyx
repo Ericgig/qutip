@@ -45,6 +45,7 @@ from ..qobj import Qobj
 from .. import data as _data
 
 from qutip.core.data cimport CSR, Dense, dense
+from qutip.core.data import to
 from qutip.core.data.add cimport add_csr
 # TODO: handle dispatch properly.  We import rather than cimport because we
 # have to call with Python semantics.
@@ -54,7 +55,6 @@ from qutip.core.data.expect import (
 from qutip.core.data.matmul cimport matmul_csr_dense_dense
 from qutip.core.data.reshape cimport column_stack_csr, column_stack_dense
 from qutip.core.cy.coefficient cimport Coefficient
-
 
 cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
@@ -85,7 +85,10 @@ cdef class CQobjEvo:
         self.dims = constant.dims
         self.type = constant.type
         self.issuper = constant.issuper
-        self.constant = constant.data
+        if isinstance(constant.data, CSR):
+            self.constant = constant.data
+        else:
+            self.constant = to(CSR, constant.data)
         self.n_ops = 0 if ops is None else len(ops)
         self.ops = [None] * self.n_ops
         self.coefficients = cnp.PyArray_EMPTY(1, [self.n_ops],
@@ -100,7 +103,10 @@ cdef class CQobjEvo:
                 or qobj.dims != self.dims
             ):
                 raise ValueError("not all inputs have the same structure")
-            self.ops[i] = qobj.data
+            if isinstance(qobj.data, CSR):
+                self.ops[i] = qobj.data
+            else:
+                self.ops[i] = to(CSR, qobj.data)
             self.coeff[i] = vary.coeff
 
     def call(self, double t, object coefficients=None, bint data=False):

@@ -130,7 +130,7 @@ class TestMatVec:
         M = _data.create(np.random.rand(10, 10))
         V = qutip.stack_columns(M)
         M2 = qutip.unstack_columns(V)
-        assert _data.csr.nnz(M - M2) == 0
+        assert qutip.Qobj(M - M2).norm('max') < 1e-8
 
     def testVecMatVec(self):
         """
@@ -139,7 +139,7 @@ class TestMatVec:
         V = _data.create(np.random.rand(100, 1))
         M = qutip.unstack_columns(V)
         V2 = qutip.stack_columns(M)
-        assert _data.csr.nnz(V - V2) == 0
+        assert qutip.Qobj(V - V2).norm('max') < 1e-8
 
     def testVecMatIndexConversion(self):
         """

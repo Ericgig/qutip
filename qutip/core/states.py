@@ -51,7 +51,7 @@ from . import data as _data
 from .qobj import Qobj
 from .operators import jmat, displace
 from .tensor import tensor
-
+from .data import to
 
 def _promote_to_zero_list(arg, length):
     """
@@ -75,7 +75,7 @@ def _promote_to_zero_list(arg, length):
     raise TypeError("Dimensions must be an integer or list of integers.")
 
 
-def basis(dimensions, n=None, offset=None):
+def basis(dimensions, n=None, offset=None, *, dtype=None):
     """Generates the vector representation of a Fock state.
 
     Parameters
@@ -93,6 +93,10 @@ def basis(dimensions, n=None, offset=None):
     offset : int or list of ints, optional (default 0 for all dimensions)
         The lowest number state that is included in the finite number state
         representation of the state in the relevant dimension.
+
+    dtype : qutip.data.Data or str
+        storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Returns
     -------
@@ -148,12 +152,15 @@ def basis(dimensions, n=None, offset=None):
     for m, dimension in zip(reversed(ns), reversed(dimensions)):
         location += m*size
         size *= dimension
-    data = _data.csr.empty(size, 1, 1)
-    sci = data.as_scipy(full=True)
-    sci.data[0] = 1
-    sci.indices[0] = 0
-    sci.indptr[:location+1] = 0
-    sci.indptr[location+1:] = 1
+
+    dtype = to.str2type(dtype or _data.Dense)
+    data = _data.one_element[dtype]((size, 1), (location, 0), 1)
+    # data = _data.csr.empty(size, 1, 1)
+    # sci = data.as_scipy(full=True)
+    # sci.data[0] = 1
+    # sci.indices[0] = 0
+    # sci.indptr[:location+1] = 0
+    # sci.indptr[location+1:] = 1
     return Qobj(data,
                 dims=[dimensions, [1]*n_dimensions],
                 type='ket',
@@ -162,8 +169,12 @@ def basis(dimensions, n=None, offset=None):
                 copy=False)
 
 
-def qutrit_basis():
+def qutrit_basis(*, dtype=None):
     """Basis states for a three level system (qutrit)
+
+    dtype : qutip.data.Data or str
+        storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Returns
     -------
@@ -171,13 +182,17 @@ def qutrit_basis():
         Array of qutrit basis vectors
 
     """
-    return np.array([basis(3, 0), basis(3, 1), basis(3, 2)], dtype=object)
+    return np.array([
+        basis(3, 0, dtype=dtype),
+        basis(3, 1, dtype=dtype),
+        basis(3, 2, dtype=dtype)
+    ], dtype=object)
 
 
 _COHERENT_METHODS = ('operator', 'analytic')
 
 
-def coherent(N, alpha, offset=0, method='operator'):
+def coherent(N, alpha, offset=0, method='operator', *, dtype=None):
     """Generates a coherent state with eigenvalue alpha.
 
     Constructed using displacement operator on vacuum state.
@@ -197,6 +212,10 @@ def coherent(N, alpha, offset=0, method='operator'):
 
     method : string {'operator', 'analytic'}
         Method for generating coherent state.
+
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Returns
     -------
@@ -228,8 +247,9 @@ def coherent(N, alpha, offset=0, method='operator'):
 
     """
     if method == "operator" and offset == 0:
-        return displace(N, alpha) * basis(N, 0)
+        return displace(N, alpha, dtype=dtype) * basis(N, 0, dtype=dtype)
     elif method == "analytic" or offset > 0:
+        dtype = to.str2type(dtype or _data.Dense)
         sqrtn = np.sqrt(np.arange(offset, offset+N, dtype=complex))
         sqrtn[0] = 1  # Get rid of divide by zero warning
         data = alpha / sqrtn
@@ -242,13 +262,13 @@ def coherent(N, alpha, offset=0, method='operator'):
         return Qobj(sqrtn,
                     dims=[[N], [1]],
                     type='ket',
-                    copy=False)
+                    copy=False).to(dtype)
     raise TypeError(
         "The method option can only take values in " + repr(_COHERENT_METHODS)
     )
 
 
-def coherent_dm(N, alpha, offset=0, method='operator'):
+def coherent_dm(N, alpha, offset=0, method='operator', *, dtype=None):
     """Density matrix representation of a coherent state.
 
     Constructed via outer product of :func:`qutip.states.coherent`
@@ -267,6 +287,10 @@ def coherent_dm(N, alpha, offset=0, method='operator'):
 
     method : string {'operator', 'analytic'}
         Method for generating coherent density matrix.
+
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Returns
     -------
@@ -297,10 +321,10 @@ shape = [3, 3], type = oper, isHerm = True
     but would in that case give more accurate coefficients.
 
     """
-    return coherent(N, alpha, offset=offset, method=method).proj()
+    return coherent(N, alpha, offset=offset, method=method, dtype=dtype).proj()
 
 
-def fock_dm(dimensions, n=None, offset=None):
+def fock_dm(dimensions, n=None, offset=None, *, dtype=None):
     """Density matrix representation of a Fock state
 
     Constructed via outer product of :func:`qutip.states.fock`.
@@ -321,6 +345,10 @@ def fock_dm(dimensions, n=None, offset=None):
         The lowest number state that is included in the finite number state
         representation of the state in the relevant dimension.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     dm : qobj
@@ -337,10 +365,11 @@ shape = [3, 3], type = oper, isHerm = True
       [ 0.+0.j  0.+0.j  0.+0.j]]
 
     """
-    return basis(dimensions, n, offset=offset).proj()
+    dtype = to.str2type(dtype or _data.CSR)
+    return basis(dimensions, n, offset=offset, dtype=dtype).proj()
 
 
-def fock(dimensions, n=None, offset=None):
+def fock(dimensions, n=None, offset=None, *, dtype=None):
     """Bosonic Fock (number) state.
 
     Same as :func:`qutip.states.basis`.
@@ -361,6 +390,9 @@ def fock(dimensions, n=None, offset=None):
         The lowest number state that is included in the finite number state
         representation of the state in the relevant dimension.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Returns
     -------
@@ -377,10 +409,10 @@ def fock(dimensions, n=None, offset=None):
      [ 1.+0.j]]
 
     """
-    return basis(dimensions, n, offset=offset)
+    return basis(dimensions, n, offset=offset, dtype=dtype)
 
 
-def thermal_dm(N, n, method='operator'):
+def thermal_dm(N, n, method='operator', *, dtype=None):
     """Density matrix for a thermal state of n particles
 
     Parameters
@@ -394,6 +426,10 @@ def thermal_dm(N, n, method='operator'):
     method : string {'operator', 'analytic'}
         ``string`` that sets the method used to generate the
         thermal state probabilities
+
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Returns
     -------
@@ -434,7 +470,7 @@ shape = [5, 5], type = oper, isHerm = True
 
     """
     if n == 0:
-        return fock_dm(N, 0)
+        return fock_dm(N, 0, dtype=dtype)
     else:
         i = np.arange(N)
         if method == 'operator':
@@ -442,19 +478,23 @@ shape = [5, 5], type = oper, isHerm = True
             diags = np.exp(-beta * i)
             diags = diags / np.sum(diags)
             # populates diagonal terms using truncated operator expression
-            rm = sp.spdiags(diags, 0, N, N, format='csr')
+            # rm = sp.spdiags(diags, 0, N, N, format='csr')
+
         elif method == 'analytic':
             # populates diagonal terms using analytic values
-            rm = sp.spdiags((1.0 + n) ** (-1.0) * (n / (1.0 + n)) ** (i),
-                            0, N, N, format='csr')
+            # rm = sp.spdiags((1.0 + n) ** (-1.0) * (n / (1.0 + n)) ** (i),
+            #                 0, N, N, format='csr')
+            diags = (1.0 + n) ** (-1.0) * (n / (1.0 + n)) ** (i)
         else:
             raise ValueError(
                 "'method' keyword argument must be 'operator' or 'analytic'"
             )
+        dtype = to.str2type(dtype or _data.CSR)
+        rm = _data.diag[dtype](diags, 0, (N,N))
     return Qobj(rm, dims=[[N], [N]], type='oper', isherm=True, copy=False)
 
 
-def maximally_mixed_dm(N):
+def maximally_mixed_dm(N, *, dtype=None):
     """
     Returns the maximally mixed density matrix for a Hilbert space of
     dimension N.
@@ -464,15 +504,20 @@ def maximally_mixed_dm(N):
     N : int
         Number of basis states in Hilbert space.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     dm : qobj
         Thermal state density matrix.
     """
+    dtype = to.str2type(dtype or _data.CSR)
     if not isinstance(N, numbers.Integral) or N <= 0:
         raise ValueError("N must be integer N > 0")
-    return Qobj(_data.csr.identity(N, scale=1/N), dims=[[N], [N]], type='oper',
-                isherm=True, isunitary=(N == 1), copy=False)
+    return Qobj(_data.identity[dtype](N, scale=1/N), dims=[[N], [N]],
+                type='oper', isherm=True, isunitary=(N == 1), copy=False)
 
 
 def ket2dm(Q):
@@ -507,7 +552,7 @@ shape = [3, 3], type = oper, isHerm = True
     raise TypeError("input is not a ket or bra vector.")
 
 
-def projection(N, n, m, offset=None):
+def projection(N, n, m, offset=None, *, dtype=None):
     """The projection operator that projects state :math:`|m>` on state :math:`|n>`.
 
     Parameters
@@ -522,16 +567,21 @@ def projection(N, n, m, offset=None):
         The lowest number state that is included in the finite number state
         representation of the projector.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     oper : qobj
          Requested projection operator.
 
     """
-    return basis(N, n, offset=offset) @ basis(N, m, offset=offset).dag()
+    return basis(N, n, offset=offset, dtype=dtype) @ \
+           basis(N, m, offset=offset, dtype=dtype).dag()
 
 
-def qstate(string):
+def qstate(string, *, dtype=None):
     """
     Creates a tensor product for a set of qubits in either the 'up' :math:`|0>`
     or 'down' :math:`|1>` state.
@@ -545,6 +595,10 @@ def qstate(string):
     -------
     qstate : qobj
         Qobj for tensor product corresponding to input string.
+
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Notes
     -----
@@ -569,7 +623,7 @@ def qstate(string):
     if n != (string.count('u') + string.count('d')):
         raise TypeError('String input to QSTATE must consist ' +
                         'of "u" and "d" elements only')
-    return basis([2]*n, [1 if x == 'u' else 0 for x in string])
+    return basis([2]*n, [1 if x == 'u' else 0 for x in string], dtype=dtype)
 
 
 #
@@ -592,7 +646,7 @@ def _character_to_qudit(x):
     return _qubit_dict[x] if x in _qubit_dict else int(x)
 
 
-def ket(seq, dim=2):
+def ket(seq, dim=2, *, dtype=None):
     """
     Produces a multiparticle ket state for a list or string,
     where each element stands for state of the respective particle.
@@ -612,6 +666,10 @@ def ket(seq, dim=2):
     dim : int (default: 2) / list of ints
         Space dimension for each particle:
         int if there are the same, list if they are different.
+
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Returns
     -------
@@ -668,10 +726,10 @@ def ket(seq, dim=2):
     """
     ns = [_character_to_qudit(x) for x in seq]
     dim = [dim]*len(ns) if isinstance(dim, numbers.Integral) else dim
-    return basis(dim, ns)
+    return basis(dim, ns, dtype=dtype)
 
 
-def bra(seq, dim=2):
+def bra(seq, dim=2, *, dtype=None):
     """
     Produces a multiparticle bra state for a list or string,
     where each element stands for state of the respective particle.
@@ -691,6 +749,10 @@ def bra(seq, dim=2):
     dim : int (default: 2) / list of ints
         Space dimension for each particle:
         int if there are the same, list if they are different.
+
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Returns
     -------
@@ -719,7 +781,7 @@ def bra(seq, dim=2):
     Qobj data =
     [[ 0.  0.  0.  0.  0.  0.  0.  1.  0.  0.]]
     """
-    return ket(seq, dim=dim).dag()
+    return ket(seq, dim=dim, dtype=dtype).dag()
 
 
 def state_number_enumerate(dims, excitations=None):
@@ -818,7 +880,7 @@ def state_index_number(dims, index):
     return list(state)
 
 
-def state_number_qobj(dims, state):
+def state_number_qobj(dims, state, *, dtype=None):
     """
     Return a Qobj representation of a quantum state specified by the state
     array `state`.
@@ -846,6 +908,10 @@ shape = [8, 1], type = ket
     state : list
         State number array.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     state : :class:`qutip.Qobj.qobj`
@@ -855,7 +921,7 @@ shape = [8, 1], type = ket
     """
     warnings.warn("basis() is a drop-in replacement for this",
                   DeprecationWarning)
-    return basis(dims, state)
+    return basis(dims, state, dtype=dtype)
 
 
 # Excitation-number restricted (enr) states
@@ -893,7 +959,7 @@ def enr_state_dictionaries(dims, excitations):
     return nstates, state2idx, idx2state
 
 
-def enr_fock(dims, excitations, state):
+def enr_fock(dims, excitations, state, *, dtype=None):
     """
     Generate the Fock state representation in a excitation-number restricted
     state space. The `dims` argument is a list of integers that define the
@@ -916,6 +982,10 @@ def enr_fock(dims, excitations, state):
     state : list of integers
         The state in the number basis representation.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     ket : Qobj
@@ -924,20 +994,22 @@ def enr_fock(dims, excitations, state):
 
     """
     nstates, state2idx, _ = enr_state_dictionaries(dims, excitations)
-    data = sp.lil_matrix((nstates, 1), dtype=np.complex)
+    # data = sp.lil_matrix((nstates, 1), dtype=np.complex)
+    dtype = to.str2type(dtype or _data.CSR)
     try:
-        data[state2idx[tuple(state)], 0] = 1
+        data =_data.one_element[dtype]((nstates, 1),
+                                       (state2idx[tuple(state)], 0), 1)
+        # data[state2idx[tuple(state)], 0] = 1
     except KeyError:
         msg = (
             "state tuple " + str(tuple(state))
             + " is not in the restricted state space."
         )
         raise ValueError(msg) from None
-    return Qobj(data.tocsr(),
-                dims=[dims, [1]*len(dims)], type='ket', copy=False)
+    return Qobj(data, dims=[dims, [1]*len(dims)], type='ket', copy=False)
 
 
-def enr_thermal_dm(dims, excitations, n):
+def enr_thermal_dm(dims, excitations, n, *, dtype=None):
     """
     Generate the density operator for a thermal state in the excitation-number-
     restricted state space defined by the `dims` and `exciations` arguments.
@@ -961,6 +1033,10 @@ def enr_thermal_dm(dims, excitations, n):
         length as dims, in which each element corresponds specifies the
         temperature of the corresponding mode.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     dm : Qobj
@@ -975,11 +1051,13 @@ def enr_thermal_dm(dims, excitations, n):
     diags = [np.prod((n / (n + 1)) ** np.array(state))
              for idx, state in idx2state.items()]
     diags /= np.sum(diags)
-    data = sp.spdiags(diags, 0, nstates, nstates, format='csr')
+    # data = sp.spdiags(diags, 0, nstates, nstates, format='csr')
+    dtype = to.str2type(dtype or _data.CSR)
+    data = _data.diag[dtype](diags, 0, (nstates, nstates))
     return Qobj(data, dims=[dims, dims], type='oper', isherm=True, copy=False)
 
 
-def phase_basis(N, m, phi0=0):
+def phase_basis(N, m, phi0=0, *, dtype=None):
     """
     Basis vector for the mth phase of the Pegg-Barnett phase operator.
 
@@ -987,10 +1065,17 @@ def phase_basis(N, m, phi0=0):
     ----------
     N : int
         Number of basis vectors in Hilbert space.
+
     m : int
-        Integer corresponding to the mth discrete phase phi_m=phi0+2*pi*m/N
+        Integer corresponding to the mth discrete phase
+        phi_m = phi0 + 2 * pi * m / N
+
     phi0 : float (default=0)
         Reference phase angle.
+
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
 
     Returns
     -------
@@ -1006,10 +1091,11 @@ def phase_basis(N, m, phi0=0):
     phim = phi0 + (2.0 * np.pi * m) / N
     n = np.arange(N)[:, np.newaxis]
     data = np.exp(1.0j * n * phim) / np.sqrt(N)
-    return Qobj(data, dims=[[N], [1]], type='ket', copy=False)
+    dtype = to.str2type(dtype or _data.Dense)
+    return Qobj(data, dims=[[N], [1]], type='ket', copy=False).to(dtype)
 
 
-def zero_ket(N, dims=None):
+def zero_ket(N, dims=None, *, dtype=None):
     """
     Creates the zero ket vector with shape Nx1 and dimensions `dims`.
 
@@ -1021,16 +1107,21 @@ def zero_ket(N, dims=None):
         Optional dimensions if ket corresponds to
         a composite Hilbert space.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     zero_ket : qobj
         Zero ket on given Hilbert space.
 
     """
-    return Qobj(_data.csr.zeros(N, 1), dims=dims, type='ket', copy=False)
+    dtype = to.str2type(dtype or _data.Dense)
+    return Qobj(_data.zeros[dtype](N, 1), dims=dims, type='ket', copy=False)
 
 
-def spin_state(j, m, type='ket'):
+def spin_state(j, m, type='ket', *, dtype=None):
     """Generates the spin state |j, m>, i.e.  the eigenstate
     of the spin-j Sz operator with eigenvalue m.
 
@@ -1045,6 +1136,10 @@ def spin_state(j, m, type='ket'):
     type : string {'ket', 'bra', 'dm'}
         Type of state to generate.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     state : qobj
@@ -1054,16 +1149,16 @@ def spin_state(j, m, type='ket'):
     J = 2*j + 1
 
     if type == 'ket':
-        return basis(int(J), int(j - m))
+        return basis(int(J), int(j - m), dtype=dtype)
     elif type == 'bra':
-        return basis(int(J), int(j - m)).dag()
+        return basis(int(J), int(j - m), dtype=dtype).dag()
     elif type == 'dm':
-        return fock_dm(int(J), int(j - m))
+        return fock_dm(int(J), int(j - m), dtype=dtype)
     else:
         raise ValueError(f"invalid value keyword argument type='{type}'")
 
 
-def spin_coherent(j, theta, phi, type='ket'):
+def spin_coherent(j, theta, phi, type='ket', *, dtype=None):
     """Generate the coherent spin state |theta, phi>.
 
     Parameters
@@ -1080,16 +1175,21 @@ def spin_coherent(j, theta, phi, type='ket'):
     type : string {'ket', 'bra', 'dm'}
         Type of state to generate.
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     state : qobj
         Qobj quantum object for spin coherent state
 
     """
-    Sp = jmat(j, '+')
-    Sm = jmat(j, '-')
+    Sp = jmat(j, '+', dtype=dtype)
+    Sm = jmat(j, '-', dtype=dtype)
     psi = (0.5 * theta * np.exp(1j * phi) * Sm -
-           0.5 * theta * np.exp(-1j * phi) * Sp).expm() * spin_state(j, j)
+           0.5 * theta * np.exp(-1j * phi) * Sp).expm() * \
+           spin_state(j, j, dtype=dtype)
 
     if type == 'ket':
         return psi
@@ -1143,7 +1243,7 @@ def singlet_state():
     return bell_state('11')
 
 
-def triplet_states():
+def triplet_states(*, dtype=None):
     """
     Returns the two particle triplet-states:
         |T> = |1>|1>
@@ -1151,19 +1251,26 @@ def triplet_states():
             = |0>|0>
     that is identical to the fourth bell state.
 
+    Parameters
+    ----------
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     trip_states : list
         2 particle triplet states
     """
     return [
-        basis([2, 2], [1, 1]),
-        np.sqrt(0.5) * (basis([2, 2], [0, 1]) + basis([2, 2], [1, 0])),
-        basis([2, 2], [0, 0]),
+        basis([2, 2], [1, 1], dtype=dtype),
+        np.sqrt(0.5) * (basis([2, 2], [0, 1], dtype=dtype) +
+                        basis([2, 2], [1, 0], dtype=dtype)),
+        basis([2, 2], [0, 0], dtype=dtype),
     ]
 
 
-def w_state(N=3):
+def w_state(N=3, *, dtype=None):
     """
     Returns the N-qubit W-state.
         [ |100..0> + |010..0> + |001..0> + ... |000..1> ] / sqrt(n)
@@ -1173,6 +1280,10 @@ def w_state(N=3):
     N : int (default=3)
         Number of qubits in state
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     W : qobj
@@ -1180,13 +1291,13 @@ def w_state(N=3):
     """
     inds = np.zeros(N, dtype=int)
     inds[0] = 1
-    state = basis([2]*N, list(inds))
+    state = basis([2]*N, list(inds), dtype=dtype)
     for kk in range(1, N):
-        state += basis([2]*N, list(np.roll(inds, kk)))
+        state += basis([2]*N, list(np.roll(inds, kk)), dtype=dtype)
     return np.sqrt(1 / N) * state
 
 
-def ghz_state(N=3):
+def ghz_state(N=3, *, dtype=None):
     """
     Returns the N-qubit GHZ-state
         [ |00...00> + |11...11> ] / sqrt(2)
@@ -1196,9 +1307,14 @@ def ghz_state(N=3):
     N : int (default=3)
         Number of qubits in state
 
+    dtype : qutip.data.Data or str
+        Storage representation. Any data-layer known to `qutip.data.to` is
+        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+
     Returns
     -------
     G : qobj
         N-qubit GHZ-state
     """
-    return np.sqrt(0.5) * (basis([2]*N, [0]*N) + basis([2]*N, [1]*N))
+    return np.sqrt(0.5) * (basis([2]*N, [0]*N, dtype=dtype) +
+                           basis([2]*N, [1]*N, dtype=dtype))
