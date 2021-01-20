@@ -147,7 +147,7 @@ cdef class _to:
     cdef dict _direct_convert
     cdef dict _convert
     cdef readonly dict weight
-    cdef dict _str2type
+    cdef readonly dict _str2type
 
     def __init__(self):
         self._direct_convert = {}

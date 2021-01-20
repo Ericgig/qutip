@@ -44,6 +44,11 @@ class OrderEfficiencyWarning(EfficiencyWarning):
 cdef class Dense(base.Data):
     def __init__(self, data, shape=None, copy=True):
         base = np.array(data, dtype=np.complex128, order='K', copy=copy)
+        # Ensure that the array is continuous.
+        # Non continuous array with copy=False would otherwise slip through
+        if not (cnp.PyArray_IS_C_CONTIGUOUS(base) or
+                cnp.PyArray_IS_F_CONTIGUOUS(base)):
+            base = base.copy()
         if shape is None:
             shape = base.shape
             if len(shape) == 0:

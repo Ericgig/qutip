@@ -40,9 +40,13 @@ The sparsity of the ouput Qobj's is controlled by varing the
 """
 
 __all__ = [
-    'rand_herm', 'rand_unitary', 'rand_ket', 'rand_dm',
-    'rand_unitary_haar', 'rand_ket_haar', 'rand_dm_ginibre',
-    'rand_dm_hs', 'rand_super_bcsz', 'rand_stochastic', 'rand_super'
+    'rand_herm',
+    'rand_unitary', 'rand_unitary_haar',
+    'rand_dm', 'rand_dm_ginibre', 'rand_dm_hs',
+    'rand_stochastic',
+    'rand_ket', 'rand_ket_haar',
+    'rand_kraus_map',
+    'rand_super_bcsz', 'rand_super'
 ]
 
 import numbers
@@ -200,7 +204,7 @@ def _rand_herm_sparse(N, density, pos_def):
     target = (1 - (1 - density)**0.5)
     num_elems = (N**2 - 0.666 * N) * target + 0.666 * N * density
     num_elems = max([num_elems, 1])
-    num_elems = np.int(num_elems)
+    num_elems = np.int(np.round(num_elems))
     data = (2 * np.random.rand(num_elems) - 1) + \
            (2 * np.random.rand(num_elems) - 1) * 1j
     row_idx, col_idx = zip(*[divmod(index, N) for index
@@ -223,7 +227,7 @@ def _rand_herm_dense(N, density, pos_def):
     target = (1-(density)**0.5)
     num_remove = N * (N - 0.666) * target + 0.666 * N * (1 - density)
     num_remove = max([num_remove, 1])
-    num_remove = np.int(num_remove)
+    num_remove = np.int(np.round(num_remove))
     for row, col in [divmod(index, N)
                      for index in np.random.choice(N*N,
                                                    num_remove,
@@ -231,7 +235,7 @@ def _rand_herm_dense(N, density, pos_def):
         M[col, row] = 0
         M[row, col] = 0
     if pos_def:
-        M[::N+1] = np.abs(M.diagonal()) + np.sqrt(2) * N
+        np.fill_diagonal(M, np.abs(M.diagonal()) + np.sqrt(2) * N )
     return _data.create(M)
 
 
@@ -269,7 +273,9 @@ def rand_unitary(N, density=0.75, dims=None, *, seed=None, dtype=None):
     dtype = to.str2type(dtype or _data.Dense)
     if dims:
         _check_dims(dims, N, N)
-    return (-1.0j * rand_herm(N, density, dims=dims, seed=seed, dtype=dtype)).expm()
+    return (-1.0j * rand_herm(N, density, dims=dims,
+                              seed=seed, dtype=dtype)
+            ).expm().to(dtype)
 
 
 def rand_unitary_haar(N=2, dims=None, *, seed=None, dtype=None):
@@ -641,6 +647,7 @@ def rand_super(N, dims=None, *, seed=None, dtype=None):
     dtype = to.str2type(dtype or _data.Dense)  # propagator return Dense
     if dims is not None:
         # TODO: check!
+        _check_dims(dims, N**2, N**2)
         pass
     else:
         dims = [[[N], [N]], [[N], [N]]]
