@@ -413,20 +413,3 @@ create.add_creators([
         0
     ),
 ])
-
-"""
-        from qutip.core.data import CSR, csr, dense
-        import numpy as np
-        import scipy.sparse
-        if isinstance(arg, CSR):
-            return arg.copy()
-        if scipy.sparse.issparse(arg):
-            return CSR(arg.tocsr(), shape=shape)
-        # Promote 1D lists and arguments to kets, not bras by default.
-        arr = np.array(arg, dtype=np.complex128)
-        if arr.ndim == 1:
-            arr = arr[:, np.newaxis]
-        if arr.ndim != 2:
-            raise TypeError("input has incorrect dimensions: " + str(arr.shape))
-        return csr.from_dense(dense.fast_from_numpy(arr))
-"""
