@@ -90,8 +90,6 @@ def diag_dense(diagonals, offsets=0, shape=None):
     nda = out.as_ndarray()
 
     for diagonal, offset in zip(diagonals, offsets):
-        if isinstance(diagonal, Number):
-            diagonal = np.ones(max(shape)) * diagonal
         i = max(0, -offset)
         j = max(0, offset)
         for k in range(0, max(shape)):

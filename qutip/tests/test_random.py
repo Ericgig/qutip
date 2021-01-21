@@ -68,7 +68,7 @@ def _valid_rand_herm_eigs(rand_qobj):
 
 def _make_rand_herm_eigs(N, dims=None, *, seed=None, dtype=None):
     eigen_vals = np.linspace(0.0, 1.0, N)
-    return rand_herm(N, dims=dims, seed=seed, dtype=dtype)
+    return rand_herm(eigen_vals, dims=dims, seed=seed, dtype=dtype)
 
 
 def _valid_rand_dm(rand_qobj):
@@ -96,7 +96,8 @@ def _valid_rand_dm_eigs(rand_qobj):
 
 def _make_rand_dm_eigs(N, dims=None, *, seed=None, dtype=None):
     eigen_vals = np.linspace(0.0, 1.0, N)
-    return rand_dm(N, dims=dims, seed=seed, dtype=dtype)
+    eigen_vals /= np.sum(eigen_vals)
+    return rand_dm(eigen_vals, dims=dims, seed=seed, dtype=dtype)
 
 
 def _valid_rand_stochastic(rand_qobj, kind=0):

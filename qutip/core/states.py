@@ -94,9 +94,9 @@ def basis(dimensions, n=None, offset=None, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the state in the relevant dimension.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -155,12 +155,6 @@ def basis(dimensions, n=None, offset=None, *, dtype=None):
 
     dtype = to.str2type(dtype or _data.Dense)
     data = _data.one_element[dtype]((size, 1), (location, 0), 1)
-    # data = _data.csr.empty(size, 1, 1)
-    # sci = data.as_scipy(full=True)
-    # sci.data[0] = 1
-    # sci.indices[0] = 0
-    # sci.indptr[:location+1] = 0
-    # sci.indptr[location+1:] = 1
     return Qobj(data,
                 dims=[dimensions, [1]*n_dimensions],
                 type='ket',
@@ -172,9 +166,9 @@ def basis(dimensions, n=None, offset=None, *, dtype=None):
 def qutrit_basis(*, dtype=None):
     """Basis states for a three level system (qutrit)
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -213,9 +207,9 @@ def coherent(N, alpha, offset=0, method='operator', *, dtype=None):
     method : string {'operator', 'analytic'}
         Method for generating coherent state.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -288,9 +282,9 @@ def coherent_dm(N, alpha, offset=0, method='operator', *, dtype=None):
     method : string {'operator', 'analytic'}
         Method for generating coherent density matrix.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -345,9 +339,9 @@ def fock_dm(dimensions, n=None, offset=None, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the state in the relevant dimension.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -390,9 +384,9 @@ def fock(dimensions, n=None, offset=None, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the state in the relevant dimension.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -427,9 +421,9 @@ def thermal_dm(N, n, method='operator', *, dtype=None):
         ``string`` that sets the method used to generate the
         thermal state probabilities
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -478,12 +472,9 @@ shape = [5, 5], type = oper, isHerm = True
             diags = np.exp(-beta * i)
             diags = diags / np.sum(diags)
             # populates diagonal terms using truncated operator expression
-            # rm = sp.spdiags(diags, 0, N, N, format='csr')
 
         elif method == 'analytic':
             # populates diagonal terms using analytic values
-            # rm = sp.spdiags((1.0 + n) ** (-1.0) * (n / (1.0 + n)) ** (i),
-            #                 0, N, N, format='csr')
             diags = (1.0 + n) ** (-1.0) * (n / (1.0 + n)) ** (i)
         else:
             raise ValueError(
@@ -504,9 +495,9 @@ def maximally_mixed_dm(N, *, dtype=None):
     N : int
         Number of basis states in Hilbert space.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -567,9 +558,9 @@ def projection(N, n, m, offset=None, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the projector.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -596,9 +587,9 @@ def qstate(string, *, dtype=None):
     qstate : qobj
         Qobj for tensor product corresponding to input string.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Notes
     -----
@@ -667,9 +658,9 @@ def ket(seq, dim=2, *, dtype=None):
         Space dimension for each particle:
         int if there are the same, list if they are different.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -750,9 +741,9 @@ def bra(seq, dim=2, *, dtype=None):
         Space dimension for each particle:
         int if there are the same, list if they are different.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -908,9 +899,9 @@ shape = [8, 1], type = ket
     state : list
         State number array.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -982,9 +973,9 @@ def enr_fock(dims, excitations, state, *, dtype=None):
     state : list of integers
         The state in the number basis representation.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1033,9 +1024,9 @@ def enr_thermal_dm(dims, excitations, n, *, dtype=None):
         length as dims, in which each element corresponds specifies the
         temperature of the corresponding mode.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1073,9 +1064,9 @@ def phase_basis(N, m, phi0=0, *, dtype=None):
     phi0 : float (default=0)
         Reference phase angle.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1107,9 +1098,9 @@ def zero_ket(N, dims=None, *, dtype=None):
         Optional dimensions if ket corresponds to
         a composite Hilbert space.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1136,9 +1127,9 @@ def spin_state(j, m, type='ket', *, dtype=None):
     type : string {'ket', 'bra', 'dm'}
         Type of state to generate.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1175,9 +1166,9 @@ def spin_coherent(j, theta, phi, type='ket', *, dtype=None):
     type : string {'ket', 'bra', 'dm'}
         Type of state to generate.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1253,9 +1244,9 @@ def triplet_states(*, dtype=None):
 
     Parameters
     ----------
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1280,9 +1271,9 @@ def w_state(N=3, *, dtype=None):
     N : int (default=3)
         Number of qubits in state
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1307,9 +1298,9 @@ def ghz_state(N=3, *, dtype=None):
     N : int (default=3)
         Number of qubits in state
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------

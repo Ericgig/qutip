@@ -83,8 +83,8 @@ def rand_jacobi_rotation(A, *, seed=None):
     if A.shape[0] != A.shape[1]:
         raise Exception('Input matrix must be square.')
     n = A.shape[0]
-    angle = 2*np.random.random()*np.pi
-    a = np.sqrt(0.5) * np.exp(-1j*angle)
+    angle = 2 * np.random.random() * np.pi
+    a = np.sqrt(0.5) * np.exp(-1j * angle)
     b = np.conj(a)
     i = np.random.randint(n)
     j = i
@@ -151,9 +151,9 @@ def rand_herm(N, density=0.75, dims=None, pos_def=False, *, seed=None, dtype=Non
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -172,7 +172,7 @@ def rand_herm(N, density=0.75, dims=None, pos_def=False, *, seed=None, dtype=Non
     if seed is not None:
         np.random.seed(seed=seed)
     if isinstance(N, (np.ndarray, list)):
-        M = _data.CSR(sp.diags(N, 0, dtype=complex, format='csr'))
+        M = _data.diag[_data.CSR](N, 0)
         N = len(N)
         if dims:
             _check_dims(dims, N, N)
@@ -260,9 +260,9 @@ def rand_unitary(N, density=0.75, dims=None, *, seed=None, dtype=None):
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -295,9 +295,9 @@ def rand_unitary_haar(N=2, dims=None, *, seed=None, dtype=None):
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -357,9 +357,9 @@ def rand_ket(N=0, density=1, dims=None, *, seed=None, dtype=None):
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -411,9 +411,9 @@ def rand_ket_haar(N=2, dims=None, *, seed=None, dtype=None):
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -450,9 +450,9 @@ def rand_dm(N, density=0.75, pure=False, dims=None, *, seed=None, dtype=None):
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -472,7 +472,7 @@ def rand_dm(N, density=0.75, pure=False, dims=None, *, seed=None, dtype=None):
         if np.abs(np.sum(N)-1.0) > 1e-15:
             raise ValueError('Eigenvalues of a density matrix '
                              'must sum to one.')
-        H = _data.create(sp.diags(N, 0, dtype=complex, format='csr'))
+        H = _data.diag(N, 0)
         N = len(N)
         if dims:
             _check_dims(dims, N, N)
@@ -529,9 +529,9 @@ def rand_dm_ginibre(N=2, rank=None, dims=None, *, seed=None, dtype=None):
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -570,9 +570,9 @@ def rand_dm_hs(N=2, dims=None, *, seed=None, dtype=None):
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -601,9 +601,9 @@ def rand_kraus_map(N, dims=None, *, seed=None, dtype=None):
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -640,9 +640,9 @@ def rand_super(N, dims=None, *, seed=None, dtype=None):
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
     """
     dtype = to.str2type(dtype or _data.Dense)  # propagator return Dense
     if dims is not None:
@@ -688,9 +688,9 @@ def rand_super_bcsz(N=2, enforce_tp=True, rank=None, dims=None, *,
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -777,9 +777,9 @@ def rand_stochastic(N, density=0.75, kind='left', dims=None, *, seed=None, dtype
     seed : int
         seed for the random number generator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------

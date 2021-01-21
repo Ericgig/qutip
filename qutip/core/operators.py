@@ -65,9 +65,9 @@ def jmat(j, which=None, *, dtype=None):
         Which operator to return 'x','y','z','+','-'.
         If no args given, then output is ['x','y','z']
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -143,11 +143,6 @@ def _jplus(j, *, dtype=None):
     m = np.arange(j, -j - 1, -1, dtype=complex)
     data = np.sqrt(j * (j + 1) - m * (m + 1))[1:]
     return _data.diag[dtype](data, 1)
-    # N = m.shape[0]
-    # ind = np.arange(1, N, dtype=np.int32)
-    # ptr = np.arange(N + 1, dtype=np.int32)
-    # ptr[-1] = N-1
-    # return _data.csr.CSR((data, ind, ptr), shape=(N, N))
 
 
 def _jz(j, *, dtype=None):
@@ -158,18 +153,6 @@ def _jz(j, *, dtype=None):
     N = int(2*j + 1)
     data = np.array([j-k for k in range(N)], dtype=complex)
     return _data.diag[dtype](data, 0)
-    # Even shaped matrix
-    # if N % 2 == 0:
-    #     ind = np.arange(N, dtype=np.int32)
-    #     ptr = np.arange(N+1, dtype=np.int32)
-    # Odd shaped matrix
-    # else:
-    #     j = int(j)
-    #     ind = np.concatenate((np.arange(j, dtype=np.int32),
-    #                           np.arange(j + 1, N, dtype=np.int32)))
-    #     ptr = np.concatenate((np.arange(j + 1, dtype=np.int32),
-    #                           np.arange(j, N, dtype=np.int32)))
-    # return _data.csr.CSR((data, ind, ptr), shape=(N, N))
 
 
 #
@@ -183,9 +166,9 @@ def spin_Jx(j, *, dtype=None):
     j : float
         Spin of operator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -204,9 +187,9 @@ def spin_Jy(j, *, dtype=None):
     j : float
         Spin of operator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -225,9 +208,9 @@ def spin_Jz(j, *, dtype=None):
     j : float
         Spin of operator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -246,9 +229,9 @@ def spin_Jm(j, *, dtype=None):
     j : float
         Spin of operator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -267,9 +250,9 @@ def spin_Jp(j, *, dtype=None):
     j : float
         Spin of operator
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -288,9 +271,9 @@ def spin_J_set(j, *, dtype=None):
     j : float
         Spin of operators
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -406,9 +389,9 @@ def destroy(N, offset=0, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the operator.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -430,12 +413,6 @@ def destroy(N, offset=0, *, dtype=None):
     data = np.sqrt(np.arange(offset+1, N+offset, dtype=complex))
     dtype = to.str2type(dtype or _data.CSR)
     out = _data.diag[dtype](data, 1)
-    """
-    ind = np.arange(1, N, dtype=np.int32)
-    ptr = np.arange(N+1, dtype=np.int32)
-    ptr[-1] = N-1
-    _data.csr.CSR((data, ind, ptr)
-    """
     return Qobj(out,
                 dims=[[N], [N]],
                 type='oper',
@@ -457,9 +434,9 @@ def create(N, offset=0, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the operator.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -491,7 +468,6 @@ def create(N, offset=0, *, dtype=None):
                 isherm=False,
                 isunitary=False,
                 copy=False)
-    return destroy(N, offset=offset).dag()
 
 
 def _implicit_tensor_dimensions(dimensions):
@@ -535,9 +511,9 @@ def qzero(dimensions, *, dtype=None):
         the new Qobj are set to this list.  This can produce either `oper` or
         `super` depending on the passed `dimensions`.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -565,9 +541,9 @@ def qeye(dimensions, *, dtype=None):
         the new Qobj are set to this list.  This can produce either `oper` or
         `super` depending on the passed `dimensions`.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -617,9 +593,9 @@ def position(N, offset=0, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the operator.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -643,9 +619,9 @@ def momentum(N, offset=0, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the operator.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -669,9 +645,9 @@ def num(N, offset=0, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the operator.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -691,19 +667,6 @@ def num(N, offset=0, *, dtype=None):
     dtype = to.str2type(dtype or _data.CSR)
     data = np.arange(offset, offset + N, dtype=complex)
     mat = _data.diag[dtype](data)
-    """
-    if offset == 0:
-        data = np.arange(1, N, dtype=complex)
-        ind = np.arange(1, N, dtype=np.int32)
-        ptr = np.arange(-1, N, dtype=np.int32)
-        ptr[0] = 0
-    else:
-        data = np.arange(offset, offset + N, dtype=complex)
-        ind = np.arange(N, dtype=np.int32)
-        ptr = np.arange(N+1, dtype=np.int32)
-    mat = _data.CSR((data, ind, ptr)
-    """
-
     return Qobj(mat,
                 dims=[[N], [N]],
                 type='oper',
@@ -727,9 +690,9 @@ def squeeze(N, z, offset=0, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the operator.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -799,9 +762,9 @@ def displace(N, alpha, offset=0, *, dtype=None):
         The lowest number state that is included in the finite number state
         representation of the operator.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -846,9 +809,9 @@ def qutrit_ops(*, dtype=None):
 
     Parameters
     ----------
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -890,9 +853,9 @@ def qdiags(diagonals, offsets, dims=None, shape=None, *, dtype=None):
         Shape of operator.  If omitted, a square operator large enough
         to contain the diagonals is generated.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     See Also
     --------
@@ -931,9 +894,9 @@ def phase(N, phi0=0, *, dtype=None):
     phi0 : float
         Reference phase.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -989,9 +952,9 @@ def enr_destroy(dims, excitations, *, dtype=None):
         The maximum number of excitations that are to be included in the
         state space.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1037,9 +1000,9 @@ def enr_identity(dims, excitations, *, dtype=None):
     state : list of integers
         The state in the number basis representation.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1075,9 +1038,9 @@ def charge(Nmax, Nmin=None, frac=1, *, dtype=None):
     frac : float (default = 1)
         Specify fractional charge if needed.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
@@ -1110,9 +1073,9 @@ def tunneling(N, m=1, *, dtype=None):
     m : int (default = 1)
         Number of excitations in tunneling event.
 
-    dtype : qutip.data.Data or str
+    dtype : type or str
         Storage representation. Any data-layer known to `qutip.data.to` is
-        accepted. Default `qutip.data.Dense` (numpy.ndarray like).
+        accepted.
 
     Returns
     -------
