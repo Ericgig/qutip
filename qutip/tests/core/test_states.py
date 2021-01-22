@@ -33,10 +33,11 @@
 
 import pytest
 import numpy as np
-from numpy.testing import assert_, run_module_suite
+import scipy.sparse as sp
 import qutip
-from qutip import (expect, destroy, coherent, coherent_dm, thermal_dm,
-                   fock_dm, triplet_states)
+from qutip import Qobj
+from qutip.core.states import *
+from qutip.core.data import to
 
 
 @pytest.mark.parametrize("size, n", [(2, 0), (2, 1), (100, 99)])

@@ -31,31 +31,55 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 
+import pytest
 import numbers
 import numpy as np
-from numpy.testing import assert_equal, run_module_suite
-import pytest
-
+import scipy.sparse as sp
+from functools import partial
 import qutip
-from qutip import (jmat, basis, destroy, create, displace, qzero, qeye,
-                    num, squeeze, charge, tunneling)
+from qutip import Qobj
+from qutip.core.operators import *
+from qutip.core.data import to
+
+dtype_names = list(to._str2type.keys()) + list(to.dtypes)
+dtype_types = list(to._str2type.values()) + list(to.dtypes)
+dtypes = zip(dtype_names, dtype_types)
+dtype_ids = [str(dtype) for dtype in dtype_names]
+
+@pytest.fixture(params=dtypes, ids=dtype_ids)
+def dtype(request):
+    return request.param
+
+N = 5
 
 
 def test_jmat_12():
     "Spin 1/2 operators"
     spinhalf = jmat(1 / 2.)
 
-    paulix = np.array([[0.0 + 0.j, 0.5 + 0.j], [0.5 + 0.j, 0.0 + 0.j]])
+    paulix = np.array([[0. + 0.j, 0.5 + 0.j],[0.5 + 0.j, 0. + 0.j]])
     pauliy = np.array([[0. + 0.j, 0. - 0.5j], [0. + 0.5j, 0. + 0.j]])
-    pauliz = np.array([[0.5 + 0.j, 0.0 + 0.j], [0.0 + 0.j, -0.5 + 0.j]])
-    sigmap = np.array([[0. + 0.j, 1. + 0.j], [0. + 0.j, 0. + 0.j]])
-    sigmam = np.array([[0. + 0.j, 0. + 0.j], [1. + 0.j, 0. + 0.j]])
+    pauliz = np.array([[0.5 + 0.j, 0. + 0.j], [0. + 0.j, -0.5 + 0.j]])
+    sigma_p = np.array([[0. + 0.j, 1. + 0.j], [0. + 0.j, 0. + 0.j]])
+    sigma_m = np.array([[0. + 0.j, 0. + 0.j], [1. + 0.j, 0. + 0.j]])
 
-    assert_equal(np.allclose(spinhalf[0].full(), paulix), True)
-    assert_equal(np.allclose(spinhalf[1].full(), pauliy), True)
-    assert_equal(np.allclose(spinhalf[2].full(), pauliz), True)
-    assert_equal(np.allclose(jmat(1 / 2., '+').full(), sigmap), True)
-    assert_equal(np.allclose(jmat(1 / 2., '-').full(), sigmam), True)
+    assert np.allclose(spinhalf[0].full(), paulix)
+    assert np.allclose(spinhalf[1].full(), pauliy)
+    assert np.allclose(spinhalf[2].full(), pauliz)
+    assert np.allclose(jmat(1 / 2., '+').full(), sigma_p)
+    assert np.allclose(jmat(1 / 2., '-').full(), sigma_m)
+
+    assert np.allclose(spin_Jx(1 / 2.).full(), paulix)
+    assert np.allclose(spin_Jy(1 / 2.).full(), pauliy)
+    assert np.allclose(spin_Jz(1 / 2.).full(), pauliz)
+    assert np.allclose(spin_Jp(1 / 2.).full(), sigma_p)
+    assert np.allclose(spin_Jm(1 / 2.).full(), sigma_m)
+
+    assert np.allclose(sigmax().full(), paulix*2)
+    assert np.allclose(sigmay().full(), pauliy*2)
+    assert np.allclose(sigmaz().full(), pauliz*2)
+    assert np.allclose(sigmap().full(), sigma_p)
+    assert np.allclose(sigmam().full(), sigma_m)
 
 
 def test_jmat_32():
@@ -63,10 +87,11 @@ def test_jmat_32():
     spin32 = jmat(3 / 2.)
 
     paulix32 = np.array(
-        [[0.0000000 + 0.j, 0.8660254 + 0.j, 0.0000000 + 0.j, 0.0000000 + 0.j],
-         [0.8660254 + 0.j, 0.0000000 + 0.j, 1.0000000 + 0.j, 0.0000000 + 0.j],
-         [0.0000000 + 0.j, 1.0000000 + 0.j, 0.0000000 + 0.j, 0.8660254 + 0.j],
-         [0.0000000 + 0.j, 0.0000000 + 0.j, 0.8660254 + 0.j, 0.0000000 + 0.j]])
+        [[0.0000000, 0.8660254, 0.0000000, 0.0000000],
+         [0.8660254, 0.0000000, 1.0000000, 0.0000000],
+         [0.0000000, 1.0000000, 0.0000000, 0.8660254],
+         [0.0000000, 0.0000000, 0.8660254, 0.0000000]],
+        dtype=np.complex128)
 
     pauliy32 = np.array(
         [[0. + 0.j, 0. - 0.8660254j, 0. + 0.j, 0. + 0.j],
@@ -74,69 +99,71 @@ def test_jmat_32():
          [0. + 0.j, 0. + 1.j, 0. + 0.j, 0. - 0.8660254j],
          [0. + 0.j, 0. + 0.j, 0. + 0.8660254j, 0. + 0.j]])
 
-    pauliz32 = np.array([[1.5 + 0.j, 0.0 + 0.j, 0.0 + 0.j, 0.0 + 0.j],
-                         [0.0 + 0.j, 0.5 + 0.j, 0.0 + 0.j, 0.0 + 0.j],
-                         [0.0 + 0.j, 0.0 + 0.j, -0.5 + 0.j, 0.0 + 0.j],
-                         [0.0 + 0.j, 0.0 + 0.j, 0.0 + 0.j, -1.5 + 0.j]])
+    pauliz32 = np.array([[1.5, 0.0, 0.0, 0.0],
+                         [0.0, 0.5, 0.0, 0.0],
+                         [0.0, 0.0,-0.5, 0.0],
+                         [0.0, 0.0, 0.0,-1.5]],
+                        dtype=np.complex128)
 
-    assert_equal(np.allclose(spin32[0].full(), paulix32), True)
-    assert_equal(np.allclose(spin32[1].full(), pauliy32), True)
-    assert_equal(np.allclose(spin32[2].full(), pauliz32), True)
+    assert np.allclose(spin32[0].full(), paulix32)
+    assert np.allclose(spin32[1].full(), pauliy32)
+    assert np.allclose(spin32[2].full(), pauliz32)
 
 
-def test_jmat_42():
+@pytest.mark.parametrize(['j_func1', 'j_func2'], [
+    pytest.param(spin_Jx, partial(jmat, which="x"), id="x"),
+    pytest.param(spin_Jy, partial(jmat, which="y"), id="y"),
+    pytest.param(spin_Jz, partial(jmat, which="z"), id="z"),
+    pytest.param(spin_Jp, partial(jmat, which="+"), id="+"),
+    pytest.param(spin_Jm, partial(jmat, which="-"), id="-"),
+])
+@pytest.mark.parametrize(['spin', 'N'], [
+    pytest.param(3/2., 4, id="1.5"),
+    pytest.param(5/2., 6, id="2.5"),
+    pytest.param(3.0, 7, id="3.0"),
+])
+def test_jmat(j_func1, j_func2, spin, N, dtype):
     "Spin 2 operators"
-    spin42 = jmat(4 / 2., '+')
-    assert_equal(spin42.dims == [[5], [5]], True)
+    spin_mat1 = j_func1(spin, dtype=dtype[0])
+    spin_mat2 = j_func2(spin, dtype=dtype[0])
+    assert spin_mat1 == spin_mat2
+    assert spin_mat1.dims == [[N], [N]]
+    assert spin_mat1.shape == (N, N)
+    assert isinstance(spin_mat1.data, dtype[1])
+    assert isinstance(spin_mat2.data, dtype[1])
 
 
-def test_jmat_52():
-    "Spin 5/2 operators"
-    spin52 = jmat(5 / 2., '+')
-    assert_equal(spin52.shape == (6, 6), True)
 
-
-def test_destroy():
-    "Destruction operator"
-    b4 = basis(5, 4)
-    d5 = destroy(5)
-    test1 = d5 * b4
-    assert_equal(np.allclose(test1.full(), 2.0 * basis(5, 3).full()), True)
-    d3 = destroy(3)
-    matrix3 = np.array(
-        [[0.00000000 + 0.j, 1.00000000 + 0.j, 0.00000000 + 0.j],
-         [0.00000000 + 0.j, 0.00000000 + 0.j, 1.41421356 + 0.j],
-         [0.00000000 + 0.j, 0.00000000 + 0.j, 0.00000000 + 0.j]])
-
-    assert_equal(np.allclose(matrix3, d3.full()), True)
-
-
-def test_create():
-    "Creation operator"
-    b3 = basis(5, 3)
-    c5 = create(5)
-    test1 = c5 * b3
-    assert_equal(np.allclose(test1.full(), 2.0 * basis(5, 4).full()), True)
-    c3 = create(3)
-    matrix3 = np.array(
-        [[0.00000000 + 0.j, 0.00000000 + 0.j, 0.00000000 + 0.j],
-         [1.00000000 + 0.j, 0.00000000 + 0.j, 0.00000000 + 0.j],
-         [0.00000000 + 0.j, 1.41421356 + 0.j, 0.00000000 + 0.j]])
-
-    assert_equal(np.allclose(matrix3, c3.full()), True)
+@pytest.mark.parametrize(['oper_func', 'diag', 'offset', 'args'], [
+    pytest.param(destroy, np.arange(1, N)**0.5, 1, (), id="destroy"),
+    pytest.param(destroy, np.arange(6, N+5)**0.5, 1, (5,),
+                 id="destroy_offset"),
+    pytest.param(create, np.arange(1, N)**0.5, -1, (), id="create"),
+    pytest.param(create, np.arange(6, N+5)**0.5, -1, (5,),
+                 id="create_offset"),
+    pytest.param(num, np.arange(N), 0, (), id="num"),
+    pytest.param(num, np.arange(5, N+5), 0, (5,), id="num_offset"),
+    pytest.param(charge, np.arange(-N, N+1), 0, (), id="charge"),
+    pytest.param(charge, np.arange(2, N+1)/3, 0, (2, 1/3), id="charge_args"),
+])
+def test_diagonal_oper(oper_func, diag, offset, args, dtype):
+    oper = oper_func(N, *args, dtype=dtype[0])
+    assert isinstance(oper.data, dtype[1])
+    assert oper == Qobj(sp.diags(diag, offset))
 
 
 @pytest.mark.parametrize("to_test, expected", [
-        (qutip.qzero, lambda x: np.zeros((x, x), dtype=complex)),
-        (qutip.qeye, lambda x: np.eye(x, dtype=complex)),
+        (qzero, lambda x: np.zeros((x, x), dtype=complex)),
+        (qeye, lambda x: np.eye(x, dtype=complex)),
     ])
 @pytest.mark.parametrize("dimension", [1, 5, 100])
-def test_simple_operator_creation(to_test, expected, dimension):
-    qobj = to_test(dimension)
-    assert np.allclose(qobj.full(), expected(dimension))
+def test_simple_operator_creation(to_test, expected, dimension, dtype):
+    qobj = to_test(dimension, dtype=dtype[0])
+    assert isinstance(qobj.data, dtype[1])
+    assert np.allclose(qobj.full(), expected(np.prod(dimension)))
 
 
-@pytest.mark.parametrize("to_test", [qutip.qzero, qutip.qeye, qutip.identity])
+@pytest.mark.parametrize("to_test", [qzero, qeye, identity])
 @pytest.mark.parametrize("dimensions", [
         2,
         [2],
@@ -152,7 +179,7 @@ def test_implicit_tensor_creation(to_test, dimensions):
     assert implicit.dims == [dimensions, dimensions]
 
 
-@pytest.mark.parametrize("to_test", [qutip.qzero, qutip.qeye, qutip.identity])
+@pytest.mark.parametrize("to_test", [qzero, qeye, identity])
 def test_super_operator_creation(to_test):
     size = 2
     implicit = to_test([[size], [size]])
@@ -160,18 +187,29 @@ def test_super_operator_creation(to_test):
     assert implicit == explicit
 
 
-def test_num():
-    "Number operator"
-    n5 = num(5)
-    assert_equal(
-        np.allclose(n5.full(),
-                    np.diag([0 + 0j, 1 + 0j, 2 + 0j, 3 + 0j, 4 + 0j])),
-        True)
+def test_position(dtype):
+    "position operator"
+    N = 5
+    pos = position(N, dtype=dtype[0])
+    pos_matrix = (np.diag((np.arange(1, N)/2)**0.5, k=-1) +
+                  np.diag((np.arange(1, N)/2)**0.5, k=1))
+    assert np.allclose(pos.full(), pos_matrix)
+    assert isinstance(pos.data, dtype[1])
 
 
-def test_squeeze():
+def test_momentum(dtype):
+    "momentum operator"
+    N = 5
+    mom = momentum(N, dtype=dtype[0])
+    mom_matrix = (np.diag((np.arange(1, N)/2)**0.5, k=-1) +-
+                  np.diag((np.arange(1, N)/2)**0.5, k=1)) * 1j
+    assert np.allclose(mom.full(), mom_matrix)
+    assert isinstance(mom.data, dtype[1])
+
+
+def test_squeeze(dtype):
     "Squeezing operator"
-    sq = squeeze(4, 0.1 + 0.1j)
+    sq = squeeze(4, 0.1 + 0.1j, dtype=dtype[0])
     sqmatrix = np.array([[0.99500417 + 0.j, 0.00000000 + 0.j,
                           0.07059289 - 0.07059289j, 0.00000000 + 0.j],
                          [0.00000000 + 0.j, 0.98503746 + 0.j,
@@ -180,13 +218,13 @@ def test_squeeze():
                           0.99500417 + 0.j, 0.00000000 + 0.j],
                          [0.00000000 + 0.j, -0.12186303 - 0.12186303j,
                           0.00000000 + 0.j, 0.98503746 + 0.j]])
+    assert isinstance(sq.data, dtype[1])
+    assert np.allclose(sq.full(), sqmatrix)
 
-    assert_equal(np.allclose(sq.full(), sqmatrix), True)
 
-
-def test_displace():
+def test_displace(dtype):
     "Displacement operator"
-    dp = displace(4, 0.25)
+    dp = displace(4, 0.25, dtype=dtype[0])
     dpmatrix = np.array(
         [[0.96923323 + 0.j, -0.24230859 + 0.j, 0.04282883 + 0.j, -
           0.00626025 + 0.j],
@@ -197,29 +235,29 @@ def test_displace():
          [0.00626025 + 0.j, 0.07418172 + 0.j, 0.41083747 + 0.j,
           0.90866411 + 0.j]])
 
-    assert_equal(np.allclose(dp.full(), dpmatrix), True)
+    assert np.allclose(dp.full(), dpmatrix)
+    assert isinstance(dp.data, dtype[1])
 
 
-def test_charge():
-    "Charge operator"
-    N = 5
-    M = - np.random.randint(N)
-    ch = charge(N,M)
-    ch_matrix = np.diag(np.arange(M,N+1))
-    assert_equal(np.allclose(ch.full(), ch_matrix), True)
-
-
-def test_tunneling():
+def test_tunneling(dtype):
     "Tunneling operator"
     N = 5
-    tn = tunneling(2*N+1)
+    tn = tunneling(2*N+1, dtype=dtype[0])
     tn_matrix = np.diag(np.ones(2*N),k=-1) + np.diag(np.ones(2*N),k=1)
-    assert_equal(np.allclose(tn.full(), tn_matrix), True) 
-    
-    tn = tunneling(2*N+1,2)
+    assert np.allclose(tn.full(), tn_matrix)
+    assert isinstance(tn.data, dtype[1])
+
+    tn = tunneling(2*N+1, 2, dtype=dtype[0])
     tn_matrix = np.diag(np.ones(2*N-1),k=-2) + np.diag(np.ones(2*N-1),k=2)
-    assert_equal(np.allclose(tn.full(), tn_matrix), True)
+    assert np.allclose(tn.full(), tn_matrix)
+    assert isinstance(tn.data, dtype[1])
 
 
-if __name__ == "__main__":
-    run_module_suite()
+def test_commutator():
+    A = qeye(N)
+    B = destroy(N)
+    assert commutator(A, B) == qzero(N)
+
+    sx = sigmax()
+    sy = sigmay()
+    assert commutator(sx, sy)/2 == (sigmaz()*1j)

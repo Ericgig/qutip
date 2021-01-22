@@ -37,10 +37,12 @@ of commonly occuring quantum operators.
 
 __all__ = ['jmat', 'spin_Jx', 'spin_Jy', 'spin_Jz', 'spin_Jm', 'spin_Jp',
            'spin_J_set', 'sigmap', 'sigmam', 'sigmax', 'sigmay', 'sigmaz',
-           'destroy', 'create', 'qeye', 'identity', 'position', 'momentum',
-           'num', 'squeeze', 'squeezing', 'displace', 'commutator',
-           'qutrit_ops', 'qdiags', 'phase', 'qzero', 'enr_destroy',
-           'enr_identity', 'charge', 'tunneling']
+           'destroy', 'create',  'qeye', 'identity', 'num', 'charge',
+           'position', 'momentum', 'tunneling',
+           'qzero', 'squeeze', 'displace', 'phase',
+           'squeezing', 'commutator', 'qdiags',
+           'qutrit_ops', 'enr_destroy', 'enr_identity',
+          ]
 
 import numbers
 
@@ -713,9 +715,9 @@ shape = [4, 4], type = oper, isHerm = False
 
     """
     dtype = to.str2type(dtype or _data.Dense)
-    asq = destroy(N, offset=offset, dtype=dtype) ** 2
+    asq = destroy(N, offset=offset) ** 2
     op = 0.5*np.conj(z)*asq - 0.5*z*asq.dag()
-    return op.expm()
+    return op.expm().to(dtype)
 
 
 def squeezing(a1, a2, z):
@@ -784,8 +786,8 @@ shape = [4, 4], type = oper, isHerm = False
 
     """
     dtype = to.str2type(dtype or _data.Dense)
-    a = destroy(N, offset=offset, dtype=dtype)
-    return (alpha * a.dag() - np.conj(alpha) * a).expm()
+    a = destroy(N, offset=offset)
+    return (alpha * a.dag() - np.conj(alpha) * a).expm().to(dtype)
 
 
 def commutator(A, B, kind="normal"):
