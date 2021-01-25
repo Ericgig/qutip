@@ -268,7 +268,7 @@ cdef class _to:
         if isinstance(arg, type):
             return arg
         if isinstance(arg, str):
-            if not arg.lower() in self._str2type:
+            if arg.lower() not in self._str2type:
                 raise TypeError("type name is not known: " + arg)
             return self._str2type[arg.lower()]
         if not any(isinstance(dtype, str) for dtype in arg):
