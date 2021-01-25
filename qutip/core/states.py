@@ -1176,11 +1176,13 @@ def spin_coherent(j, theta, phi, type='ket', *, dtype=None):
         Qobj quantum object for spin coherent state
 
     """
+    dtype = to.str2type(dtype or _data.Dense)
     Sp = jmat(j, '+', dtype=dtype)
     Sm = jmat(j, '-', dtype=dtype)
     psi = (0.5 * theta * np.exp(1j * phi) * Sm -
            0.5 * theta * np.exp(-1j * phi) * Sp).expm() * \
-           spin_state(j, j, dtype=dtype)
+           spin_state(j, j)
+    psi = psi.to(dtype)
 
     if type == 'ket':
         return psi

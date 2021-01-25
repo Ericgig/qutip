@@ -6,122 +6,63 @@ from .csr import CSR
 from . import csr, dense, CSR, Dense
 from numbers import Number
 
-__all__ = ['diag_csr', 'diag_dense', 'diag',
+__all__ = ['diag',
            'one_element_csr', 'one_element_dense', 'one_element']
 
 
-def diag_csr(diagonals, offsets=0, shape=None):
+def diag_signature(diagonals, offsets=None, shape=None):
     """
-    Construct a matrix from diagonals.
+    Construct a matrix from diagonals and their offsets.  Using this
+    function in single-argument form produces a square matrix with the given
+    values on the main diagonal.
+
+    With lists of diagonals and offsets, the matrix will be the smallest
+    possible square matrix if shape is not given, but in all cases the
+    diagonals must fit exactly with no extra or missing elements. Duplicated
+    diagonals will be summed together in the output.
 
     Parameters
     ----------
+    diagonals : sequence of array_like of complex or array_like of complex
+        The entries (including zeros) that should be placed on the diagonals in
+        the output matrix.  Each entry must have enough entries in it to fill
+        the relevant diagonal and no more.
 
-    diagonals : array_like of complex or list of array_like of complex
-        One or multiple diagonals of the matrix.
+    offsets : sequence of integer or integer, optional
+        The indices of the diagonals.  `offsets[i]` is the location of the
+        values `diagonals[i]`.  An offset of 0 is the main diagonal, positive
+        values are above the main diagonal and negative ones are below the main
+        diagonal.
 
-    offsets : int or list of int, optional
-        Positions of the diagonal. 0 for the main diagonals. Positive for upper
-        diagonals.
-
-    shape : (int, int), optional
-        shape of the output matrix.
+    shape : tuple, optional
+        The shape of the output as (``rows``, ``columns``).  The result does
+        not need to be square, but the diagonals must be of the correct length
+        to fit in exactly.
     """
-    if not (isinstance(offsets, int) or len(offsets) == 1):
-        # Many diagonals are given: we use scipy.
-        return CSR(scipy_diags(diagonals, offsets, shape,
-                               format='csr', dtype=np.complex128))
-    diagonal = np.asarray(diagonals).ravel('K')
-    offset = offsets if isinstance(offsets, int) else offsets[0]
-    if shape is None:
-        N = len(diagonal)
-        d0 = len(diagonal) + abs(offset)
-        shape = (d0, d0)
-    else:
-        d0, d1 = shape
-        N = min(d0 + offset, d1 - offset, d0, d1)
-        if len(diagonal) != N:
-            raise ValueError("len of the diagonal does not match the shape.")
-
-    ind = np.arange(max(0, offset), N + max(0, offset), dtype=np.int32)
-    ptr = np.arange(min(0, offset), d0 + 1 + min(0, offset), dtype=np.int32)
-    ptr[ptr<0] = 0
-    ptr[ptr>N] = N
-
-    return CSR((diagonal, ind, ptr), shape=shape)
+    pass
 
 
-def diag_dense(diagonals, offsets=0, shape=None):
-    """
-    Construct a matrix from diagonals.
-
-    Parameters
-    ----------
-
-    diagonals : array_like of complex or list of array_like of complex
-        One or multiple diagonals of the matrix.
-
-    offsets : int or list of int, optional
-        Positions of the diagonal. 0 for the main diagonals. Positive for upper
-        diagonals.
-
-    shape : (int, int), optional
-        shape of the output matrix.
-    """
-    if isinstance(offsets, int):
-        offsets = [offsets]
-        if len(diagonals) != 1:
-            diagonals = [diagonals]
-
-    if len(diagonals) != len(offsets):
-        raise ValueError("Number of diagonals and offsets does not match")
-
-    if shape is None:
-        Ns = []
-        for diagonal in diagonals:
-            try:
-                Ns.append(len(diagonal))
-            except TypeError:
-                Ns.append(1)
-        sizes = [N + abs(offset) for N, offset in zip(Ns, offsets)]
-        shape = min(sizes), min(sizes)
-
-    out = dense.zeros(*shape)
-    nda = out.as_ndarray()
-
-    for diagonal, offset in zip(diagonals, offsets):
-        i = max(0, -offset)
-        j = max(0, offset)
-        for k in range(0, max(shape)):
-            if i >= shape[0] or j >= shape[1]:
-                break
-            nda[i, j] = diagonal[k]
-            i += 1
-            j += 1
-    return out
-
-
-diag = _Dispatcher(diag_dense, name='diag', inputs=(), out=True)
+diag = _Dispatcher(diag_signature, name='diag', inputs=(), out=True)
 diag.add_specialisations([
-    (CSR, diag_csr),
-    (Dense, diag_dense),
+    (CSR, csr.diags),
+    (Dense, dense.diags),
 ], _defer=True)
 
 
-def one_element_csr(shape, position, value=1):
+def one_element_csr(shape, position, value=1.0):
     """
     Create a matrix with only one non-null elements.
 
     Parameters
     ----------
-    shape : (int, int)
-        shape of the output matrix.
+    shape : tuple
+        The shape of the output as (``rows``, ``columns``).
 
-    position : (int, int)
-        position of the non zero in the matrix.
+    position : tuple
+        The position of the non zero in the matrix as (``rows``, ``columns``).
 
     value : complex, optional
-        value of the non-null element.
+        The value of the non-null element.
     """
     if not (0 <= position[0] < shape[0] or 0 <= position[1] < shape[1]):
         raise ValueError("Position of the elements out of bound: " +
@@ -141,14 +82,14 @@ def one_element_dense(shape, position, value=1):
 
     Parameters
     ----------
-    shape : (int, int)
-        shape of the output matrix.
+    shape : tuple
+        The shape of the output as (``rows``, ``columns``).
 
-    position : (int, int)
-        position of the non zero in the matrix.
+    position : tuple
+        The position of the non zero in the matrix as (``rows``, ``columns``).
 
     value : complex, optional
-        value of the non-null element.
+        The value of the non-null element.
     """
     if not (0 <= position[0] < shape[0] or 0 <= position[1] < shape[1]):
         raise ValueError("Position of the elements out of bound: " +

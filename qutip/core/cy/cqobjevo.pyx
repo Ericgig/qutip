@@ -43,17 +43,11 @@ cnp.import_array()
 
 from ..qobj import Qobj
 from .. import data as _data
-
-from qutip.core.data cimport CSR, Dense, dense
-from qutip.core.data import to
-from qutip.core.data.add cimport add_csr
-# TODO: handle dispatch properly.  We import rather than cimport because we
-# have to call with Python semantics.
-from qutip.core.data.expect import (
-    expect_csr, expect_super_csr, expect_csr_dense, expect_super_csr_dense,
-)
-from qutip.core.data.matmul cimport matmul_csr_dense_dense
-from qutip.core.data.reshape cimport column_stack_csr, column_stack_dense
+from qutip.core.data cimport Dense, Data
+from qutip.core.data.add cimport iadd_dense
+from qutip.core.data.matmul cimport *
+from qutip.core.data.expect cimport *
+from qutip.core.data.reshape cimport (column_stack_dense, column_unstack_dense)
 from qutip.core.cy.coefficient cimport Coefficient
 
 cdef extern from "<complex>" namespace "std" nogil:
@@ -62,12 +56,12 @@ cdef extern from "<complex>" namespace "std" nogil:
 
 cdef class CQobjEvo:
     """
-    Dense matmul(double t, Dense matrix, Dense out=None)
+    Data matmul(double t, Data matrix, Data out=None)
       Get the matrix multiplication of self with matrix and put the result in
       `out`, if supplied.  Always returns the object it stored the output in
       (even if it was passed).
 
-    expect(double t, CSR matrix)
+    expect(double t, Data matrix)
       Get the expectation value at a time `t`.
       return expectation value, knows to use the super version or not.
 
@@ -85,10 +79,7 @@ cdef class CQobjEvo:
         self.dims = constant.dims
         self.type = constant.type
         self.issuper = constant.issuper
-        if isinstance(constant.data, CSR):
-            self.constant = constant.data
-        else:
-            self.constant = to(CSR, constant.data)
+        self.constant = constant.data
         self.n_ops = 0 if ops is None else len(ops)
         self.ops = [None] * self.n_ops
         self.coefficients = cnp.PyArray_EMPTY(1, [self.n_ops],
@@ -103,14 +94,12 @@ cdef class CQobjEvo:
                 or qobj.dims != self.dims
             ):
                 raise ValueError("not all inputs have the same structure")
-            if isinstance(qobj.data, CSR):
-                self.ops[i] = qobj.data
-            else:
-                self.ops[i] = to(CSR, qobj.data)
+            self.ops[i] = qobj.data
             self.coeff[i] = vary.coeff
 
+
     def call(self, double t, object coefficients=None, bint data=False):
-        cdef CSR out = self.constant.copy()
+        cdef Data out = self.constant.copy()
         cdef Py_ssize_t i
         if coefficients is None:
             self._factor(t)
@@ -121,7 +110,7 @@ cdef class CQobjEvo:
                 + " but expected " + str(self.n_ops)
             )
         for i in range(len(self.ops)):
-            out = add_csr(out, self.ops[i], scale=coefficients[i])
+            out = _data.add(out, <Data> self.ops[i], scale=coefficients[i])
         if data:
             return out
         return Qobj(out, dims=self.dims, type=self.type,
@@ -135,17 +124,30 @@ cdef class CQobjEvo:
             self.coefficients[i] = coeff._call(t)
         return
 
-    cpdef Dense matmul(self, double t, Dense matrix, Dense out=None):
+    cpdef Data matmul(self, double t, Data matrix):
         cdef size_t i
-        self.dyn_args(t, matrix) # TODO: move Out
+        if isinstance(matrix, Dense):
+            return self.matmul_dense(t, matrix)
+        self._factor(t)
+        out = _data.matmul(self.constant, matrix)
+        for i in range(self.n_ops):
+            out = _data.add(out,
+                            _data.matmul(<Data> self.ops[i],
+                                         matrix,
+                                         self.coefficients[i])
+                )
+        return out
+
+    cpdef Dense matmul_dense(self, double t, Dense matrix, Dense out=None):
+        cdef size_t i
         self._factor(t)
         if out is None:
-            out = matmul_csr_dense_dense(self.constant, matrix)
+            out = matmul_data_dense(self.constant, matrix)
         else:
-            matmul_csr_dense_dense(self.constant, matrix, scale=1, out=out)
+            imatmul_data_dense(self.constant, matrix, 1, out)
         for i in range(self.n_ops):
-            matmul_csr_dense_dense(self.ops[i], matrix,
-                                   scale=self.coefficients[i], out=out)
+            imatmul_data_dense(<Data> self.ops[i], matrix,
+                               self.coefficients[i], out)
         return out
 
     cpdef double complex expect(self, double t, Data matrix) except *:
@@ -155,39 +157,106 @@ cdef class CQobjEvo:
         superoperator.  If `matrix` is an operator and `self` is an operator,
         then expectation is `trace(self @ matrix)`.
         """
-        # TODO: remove shim once we have dispatching
-        if self.issuper:
-            matrix = (column_stack_csr(matrix) if isinstance(matrix, CSR)
-                      else column_stack_dense(matrix, inplace=True))
-            _expect = expect_super_csr if isinstance(matrix, CSR) else expect_super_csr_dense
-        else:
-            _expect = expect_csr if isinstance(matrix, CSR) else expect_csr_dense
-        self.dyn_args(t, matrix) # TODO: move Out
-        self._factor(t)
-        # end shim
         cdef size_t i
         cdef double complex out
-        out = _expect(self.constant, matrix)
-        for i in range(self.n_ops):
-            out += self.coefficients[i] * _expect(self.ops[i], matrix)
+        self._factor(t)
+        if self.issuper:
+            if matrix.shape[1] != 1:
+                matrix = _data.column_stack(matrix)
+            out = _data.expect_super(self.constant, matrix)
+            for i in range(self.n_ops):
+                out += self.coefficients[i] * _data.expect_super(self.ops[i], matrix)
+        else:
+            out = _data.expect(self.constant, matrix)
+            for i in range(self.n_ops):
+                out += self.coefficients[i] * _data.expect(self.ops[i], matrix)
         return out
 
-    def set_dyn_args(self, object dyn_args, dict args, object op):
-        # Move elsewhere and op should be a dimensions object when available
-        self.args = args
-        self.op = op
-        self.dynamic_arguments = dyn_args
-        self.has_dynamic_args = bool(self.dynamic_arguments)
-
-    cpdef dyn_args(self, double t, Data matrix):
-        from ..qobjevo import dynamic_argument
-        cdef Coefficient coeff
-        if not self.has_dynamic_args:
-            return
-        else:
-            for name, what, e_op in self.dynamic_arguments:
-                self.args[name] = dynamic_argument(t, self.op, matrix,
-                                                   what, e_op)
+    cpdef double complex expect_dense(self, double t, Dense matrix) except *:
+        """
+        Expectation is defined as `matrix.adjoint() @ self @ matrix` if
+        `matrix` is a vector, or `matrix` is an operator and `self` is a
+        superoperator.  If `matrix` is an operator and `self` is an operator,
+        then expectation is `trace(self @ matrix)`.
+        """
+        cdef size_t nrow = matrix.shape[0]
+        cdef size_t i
+        cdef double complex out
+        self._factor(t)
+        if self.issuper:
+            if matrix.shape[1] != 1:
+                matrix = column_stack_dense(matrix, inplace=matrix.fortran)
+            out = expect_super_data_dense(self.constant, matrix)
             for i in range(self.n_ops):
-                coeff = <Coefficient> self.coeff[i]
-                coeff.arguments(self.args)
+                out += self.coefficients[i] * expect_super_data_dense(<Data> self.ops[i], matrix)
+            if matrix.fortran:
+                column_unstack_dense(matrix, nrow, inplace=matrix.fortran)
+        else:
+            out = expect_data_dense(self.constant, matrix)
+            for i in range(self.n_ops):
+                out += self.coefficients[i] * expect_data_dense(<Data> self.ops[i], matrix)
+        return out
+
+
+cdef class CQobjFunc(CQobjEvo):
+    cdef object base
+    def __init__(self, base):
+        self.base = base
+        self.reset_shape()
+
+    def reset_shape(self):
+        self.shape = self.base.shape
+        self.dims = self.base.dims
+        self.issuper = self.base.issuper
+
+    def call(self, double t, int data=0):
+        return self.base(t, data=data)
+
+    cpdef Data matmul(self, double t, Data matrix):
+        cdef Data objdata = self.base(t, data=True)
+        out = _data.matmul(objdata, matrix)
+        return out
+
+    cpdef Dense matmul_dense(self, double t, Dense matrix, Dense out=None):
+        cdef Data objdata = self.base(t).data
+        if out is None:
+            # out = _data.matmul(objdata, matrix)
+            out = matmul_data_dense(objdata, matrix)
+        else:
+            imatmul_data_dense(objdata, matrix, 1, out)
+            #iadd_dense(out, _data.matmul[type(objdata), Dense, Dense](objdata, matrix, 1))
+        return out
+
+    cpdef double complex expect(self, double t, Data matrix) except *:
+        """
+        Expectation is defined as `matrix.adjoint() @ self @ matrix` if
+        `matrix` is a vector, or `matrix` is an operator and `self` is a
+        superoperator.  If `matrix` is an operator and `self` is an operator,
+        then expectation is `trace(self @ matrix)`.
+        """
+        cdef double complex out
+        cdef int nrow
+        cdef Data objdata = self.base(t, data=True)
+        if self.issuper:
+            matrix = _data.column_stack(matrix)
+            out = _data.expect_super(objdata, matrix)
+        else:
+            out = _data.expect(objdata, matrix)
+        return out
+
+    cpdef double complex expect_dense(self, double t, Dense matrix) except *:
+        """
+        Expectation is defined as `matrix.adjoint() @ self @ matrix` if
+        `matrix` is a vector, or `matrix` is an operator and `self` is a
+        superoperator.  If `matrix` is an operator and `self` is an operator,
+        then expectation is `trace(self @ matrix)`.
+        """
+        cdef double complex out
+        cdef int nrow
+        cdef Data objdata = self.base(t, data=True)
+        if self.issuper:
+            matrix = _data.column_stack(matrix)
+            out = _data.expect_super(objdata, matrix)
+        else:
+            out = _data.expect(objdata, matrix)
+        return out

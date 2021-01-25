@@ -306,3 +306,25 @@ class TestFactoryMethods:
         assert isinstance(base, data.CSR)
         assert base.shape == shape
         np.testing.assert_allclose(base.to_array(), test, rtol=1e-10)
+
+    @pytest.mark.parametrize(['shape', 'position', 'value'], [
+        pytest.param((1,1), (0,0), None, id='minimal'),
+        pytest.param((10,10), (5,5), 1.j, id='on diagonal'),
+        pytest.param((10,10), (1,5), 1., id='upper'),
+        pytest.param((10,10), (5,1), 2., id='lower'),
+        pytest.param((10,1), (5,0), None, id='column'),
+        pytest.param((1,10), (0,5), -5j, id='row'),
+        pytest.param((10,2), (5,1), 1+2j, id='tall'),
+        pytest.param((2,10), (1,5), 10, id='wide'),
+    ])
+    def test_one_element(self, shape, position, value):
+        test = np.zeros(shape, dtype=np.complex128)
+        if value is None:
+            base = data.one_element_csr(shape, position)
+            test[position] = 1.0+0.0j
+        else:
+            base = data.one_element_csr(shape, position, value)
+            test[position] = value
+        assert isinstance(base, data.CSR)
+        assert base.shape == shape
+        np.testing.assert_allclose(base.to_array(), test, rtol=1e-10)
