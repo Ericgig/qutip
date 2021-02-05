@@ -91,7 +91,7 @@ def brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[],
 
     *Example*
 
-        a_ops = [ [a+a.dag(), ( f(w), g(t)] ]
+        a_ops = [ [a+a.dag(), (f(w), g(t))] ]
 
     where f(w) and g(t) are strings or Cubic_spline objects for the bath
     spectrum and time-dependence, respectively.
@@ -250,8 +250,8 @@ def _ode_rhs(t, state, oper):
 # Evolution of the Bloch-Redfield master equation given the Bloch-Redfield
 # tensor.
 #
-def bloch_redfield_solve(R, ekets, rho0, tlist, e_ops=[], options=None,
-                         progress_bar=None):
+def bloch_redfield_solve(R, ekets, rho0, tlist, e_ops=[], options=None):
+    progress_bar=None
     """
     Evolve the ODEs defined by Bloch-Redfield master equation. The
     Bloch-Redfield tensor can be calculated by the function
@@ -610,3 +610,88 @@ def _td_brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[], args={},
         output.final_state = Qobj(rho, dims=rho0.dims, isherm=True)
 
     return output
+
+
+def to_QEvo(op, args, times):
+    if isinstance(op, QobjEvo):
+        return op
+    elif isinstance(op, (list, Qobj)):
+        return QobjEvo(op, args=args, tlist=times)
+    elif callable(op):
+        return QobjEvoFunc(op, args=args)
+    else:
+        raise ValueError("Invalid time dependent format")
+
+
+class BrMeSolver(Mesolver):
+    def __init__(self, H, a_ops, c_ops=[], e_ops=None,
+                 use_secular=True, sec_cutoff=0.0,
+                 options=None, times=None, args=None, feedback_args=None,
+                 _safe_mode=False):
+        _time_start = time()
+        self.stats = {}
+        if e_ops is None:
+            e_ops = []
+        if options is None:
+            options = SolverOptions()
+        elif not isinstance(options, SolverOptions):
+            raise ValueError("options must be an instance of "
+                             "qutip.solver.SolverOptions")
+        if args is None:
+            args = {}
+        if feedback_args is None:
+            feedback_args = {}
+
+        self._safe_mode = _safe_mode
+        self._super = True
+        self._state = None
+        self._t = 0
+
+        self.e_ops = e_ops
+        self.options = options
+        atol = options["atol"]
+
+        constant_system = True
+
+        H = to_QEvo(H, args, times)
+        constant_system = constant_system and H.const
+
+        c_evos = []
+        for op in c_ops:
+            c_evos.append(to_QEvo(op, args, times))
+            constant_system = constant_system and c_evos[-1].const
+
+        a_evos = []
+        spectrum = []
+        for (op, spec) in a_ops:
+            if isinstance(spec, (tuple, list)):
+                raise ValueError("a_ops format changed from v5, use: "
+                                 "a_ops=[([op, g(t)], f(w))]")
+            if isinstance(op, tuple):
+                a_evos.append(to_QEvo(op[0]))
+                constant_system = constant_system and a_evos[-1].const
+                a_evos.append(to_QEvo(op[1]))
+                constant_system = constant_system and a_evos[-1].const
+                spectrum.append(build_spectrum(spec))
+                spectrum.append(build_spectrum(spec))
+            else:
+                spectrum.append(build_spectrum(spec))
+                a_evos.append(to_QEvo(op))
+                constant_system = constant_system and a_evos[-1].const
+                if not a_evos[-1].isherm:
+                    spectrum.append(build_spectrum(spec))
+                    a_evos.append(a_evos[-1].dag())
+
+        if constant_system:
+            R = bloch_redfield_tensor(H(0),
+                [(a(0), spec) for a, spec in zip(a_evos, spectrum)],
+                [c(0) for c in c_evos], use_secular, sec_cutoff, atol,
+                evecs=False, basis='original')
+            self._system = QobjEvo(R)
+        else:
+            self._system = BR_RHS(H, a_ops, spectrum, c_ops,
+                                  use_secular, sec_cutoff, atol)
+
+        self._evolver = self._get_evolver(options, args, feedback_args)
+        self.stats["preparation time"] = time() - _time_start
+        self.stats['solver'] = "Bloch Redfield Equation Evolution"

@@ -34,7 +34,8 @@
 import warnings
 import numpy as np
 from qutip.settings import settings as qset
-from qutip.core import Qobj
+from qutip.core import Qobj, sprepost
+from qutip import sprepost
 
 import sys
 
@@ -48,11 +49,10 @@ cimport cython
 from qutip.core.data cimport CSR, idxint, csr
 from qutip.core.data.add cimport add_csr
 from qutip.solve._brtools cimport (
-    vec2mat_index, dense_to_eigbasis, ZHEEVR, skew_and_dwmin,
-    liou_from_diag_ham, cop_super_term
+    vec2mat_index, dense_to_eigbasis, ZHEEVR, skew_and_dwmin
 )
 
-__all__ = ['_br_term', 'bloch_redfield_tensor']
+__all__ = ['bloch_redfield_tensor']
 
 np.import_array()
 
@@ -62,6 +62,73 @@ cdef extern from "numpy/arrayobject.h" nogil:
     void PyDataMem_RENEW(void * ptr, size_t size)
     void PyDataMem_NEW_ZEROED(size_t size, size_t elsize)
     void PyDataMem_NEW(size_t size)
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef complex[::1,:] dense_to_eigbasis(complex[::1,:] A, complex[::1,:] evecs,
+                                    unsigned int nrows,
+                                    double atol):
+    cdef int kk
+    cdef double complex * temp1 = ZGEMM(&A[0,0], &evecs[0,0],
+                                       nrows, nrows, nrows, nrows, 0, 0)
+    cdef double complex * eig_mat = ZGEMM(&evecs[0,0], temp1,
+                                       nrows, nrows, nrows, nrows, 2, 0)
+    PyDataMem_FREE(temp1)
+    #Get view on ouput
+    # Find all small elements and set to zero
+    for kk in range(nrows**2):
+        if cabs(eig_mat[kk]) < atol:
+            eig_mat[kk] = 0
+    cdef complex[:,::1] out = <complex[:nrows, :nrows]> eig_mat
+    #This just gets the correct f-ordered view on the data
+    cdef complex[::1,:] out_f = out.T
+    return out_f
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cpdef CSR liou_from_diag_ham(double[::1] diags):
+    cdef unsigned int nrows = diags.shape[0]
+    cdef CSR out = csr.empty(nrows*nrows, nrows*nrows, nrows*nrows)
+    cdef size_t row, col, row_out, nnz=0
+    cdef double complex val1, val2, ans
+
+    out.row_index[0] = 0
+    for row in range(nrows):
+        val1 = 1j*diags[row]
+        row_out = nrows*row
+        for col in range(nrows):
+            val2 = -1j*diags[col]
+            ans = val1 + val2
+            if ans != 0:
+                out.data[nnz] = ans
+                out.col_index[nnz] = row_out + col
+                out.row_index[row_out + col + 1] = nnz+1
+                nnz += 1
+            else:
+                out.row_index[row_out + col + 1] = nnz
+    return out
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cpdef CSR cop_super_term(complex[::1,:] cop, complex[::1,:] evecs,
+                         double complex alpha, unsigned int nrows, double atol):
+    cdef size_t kk
+    cdef complex[::1,:] cop_eig = dense_to_eigbasis(cop, evecs, nrows, atol)
+    cdef CSR c = csr.from_dense(dense.wrap(&cop_eig[0, 0], nrows, nrows, fortran=True))
+    cdef size_t nnz = csr.nnz(c)
+    # Multiply by alpha for time-dependence
+    for kk in range(nnz):
+        c.data[kk] *= alpha
+    #Free data associated with cop_eig as it is no longer needed.
+    PyDataMem_FREE(&cop_eig[0,0])
+    cdef CSR cdc = matmul_csr(c.adjoint(), c)
+    cdef CSR iden = csr.identity(nrows)
+    cdef CSR out = add_csr(kron_csr(c.conj(), c), kron_csr(iden, cdc), scale=-0.5)
+    return add_csr(out, kron_csr(cdc.transpose(), iden), scale=-0.5)
+
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -113,10 +180,11 @@ cpdef CSR _br_term(complex[::1,:] A, complex[::1,:] evecs, double[:,::1] skew,
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def bloch_redfield_tensor(object H, list a_ops, spectra_cb=None,
+def bloch_redfield_tensor(object H, list a_ops,
                  list c_ops=[], bool use_secular=True,
                  double sec_cutoff=0.1,
-                 double atol = qset.core['atol']):
+                 double atol = qset.core['atol'],
+                 bint eigenket=True, str basis='eigen'):
     """
     Calculates the time-independent Bloch-Redfield tensor for a system given
     a set of operators and corresponding spectral functions that describes the
@@ -161,22 +229,15 @@ def bloch_redfield_tensor(object H, list a_ops, spectra_cb=None,
     cdef list _a_ops
     cdef object a, cop
     cdef CSR L
-    cdef int K, kk
+    cdef int kk
     cdef int nrows = H.shape[0]
     cdef list op_dims = H.dims
+    cdef list ket_dims = [op_dims[0], [1] * len(op_dims[0])]
     cdef list sop_dims = [[op_dims[0], op_dims[0]], [op_dims[1], op_dims[1]]]
-    cdef list ekets, ket_dims
-
-    ket_dims = [op_dims[0], [1] * len(op_dims[0])]
-
-    if not (spectra_cb is None):
-        warnings.warn("The use of spectra_cb is depreciated.", DeprecationWarning)
-        _a_ops = []
-        for kk, a in enumerate(a_ops):
-            _a_ops.append([a, spectra_cb[kk]])
-        a_ops = _a_ops
-
-    K = len(a_ops)
+    cdef list ekets
+    cdef double dw_min
+    cdef double[:,::1] skew = np.zeros((nrows,nrows), dtype=float)
+    cdef object R
 
     # Sanity checks for input parameters
     if not isinstance(H, Qobj):
@@ -192,22 +253,24 @@ def bloch_redfield_tensor(object H, list a_ops, spectra_cb=None,
 
     ZHEEVR(H0, &evals[0], evecs, nrows)
     L = liou_from_diag_ham(evals)
+    ekets = [Qobj(np.asarray(evecs[:,k]), dims=ket_dims) for k in range(nrows)]
 
     for cop in c_ops:
         L = add_csr(L, cop_super_term(cop.full('F'), evecs, 1, nrows, atol))
 
-    #only lindblad collapse terms
-    if K == 0:
-        ekets = [Qobj(np.asarray(evecs[:,k]), dims=ket_dims)
-                 for k in range(nrows)]
-        return Qobj(L, dims=sop_dims, type='super', copy=False), ekets
+    if not len(a_ops) == 0:
+        #has some br operators and spectra
+        dw_min = skew_and_dwmin(&evals[0], skew, nrows)
+        for a in a_ops:
+            L = add_csr(L, _br_term(a[0].full('F'), evecs, skew, dw_min, a[1],
+                        nrows, use_secular, sec_cutoff, atol))
 
-    #has some br operators and spectra
-    cdef double[:,::1] skew = np.zeros((nrows,nrows), dtype=float)
-    cdef double dw_min = skew_and_dwmin(&evals[0], skew, nrows)
+    R = Qobj(L, dims=sop_dims, type='super', copy=False)
+    if not basis == 'eigen':
+        base = np.hstack([psi.full() for psi in eket])
+        S = Qobj(_data.adjoint(_data.create(base)), dims=R.dims)
+        R = sprepost(S.dag(), S) @ R @ sprepost(S, S.dag())
 
-    for a in a_ops:
-        L = add_csr(L, _br_term(a[0].full('F'), evecs, skew, dw_min, a[1],
-                                nrows, use_secular, sec_cutoff, atol))
-    ekets = [Qobj(np.asarray(evecs[:,k]), dims=ket_dims) for k in range(nrows)]
-    return Qobj(L, dims=sop_dims, type='super', copy=False), ekets
+    if eigenket:
+        return R, ekets
+    return R
