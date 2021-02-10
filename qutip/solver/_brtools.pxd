@@ -34,51 +34,33 @@
 ###############################################################################
 cimport numpy as cnp
 
-from qutip.core.data cimport CSR
+from qutip.core.data cimport CSR, Dense, Data
 
-#Spectral function with signature (w,t)
-ctypedef complex (*spec_func)(double, double)
+cdef void ZHEEVR(Dense H, double * eigvals, Dense Z, int nrows)
 
-cdef complex[::1,:] farray_alloc(int nrows)
-
-cpdef void dense_add_mult(complex[::1,:] A, complex[::1,:] B,
-                  double complex alpha) nogil
-
-cdef void ZHEEVR(complex[::1,:] H, double * eigvals,
+cdef void ZGEEV(complex[::1,:] H, double * eigvals,
                 complex[::1,:] Z, int nrows)
 
-cdef complex[::1,:] dense_to_eigbasis(complex[::1,:] A, complex[::1,:] evecs,
-                                    unsigned int nrows, double atol)
+cdef double complex * ZGEMM(double complex * A, double complex * B,
+                            int Arows, int Acols, int Brows, int Bcols,
+                            int transA=*, int transB=*, double complex alpha=*,
+                            double complex beta=*, double complex * C=*)
 
-cdef void diag_liou_mult(double * diags, double complex * vec,
-                        double complex * out, unsigned int nrows) nogil
-
-cdef double complex * vec_to_eigbasis(complex[::1] vec, complex[::1,:] evecs,
-                                    unsigned int nrows)
-
-cdef cnp.ndarray[complex, ndim=1, mode='c'] vec_to_fockbasis(
-    double complex * eig_vec,
-    complex[::1,:] evecs,
-    unsigned int nrows,
-)
-
-cdef void cop_super_mult(complex[::1,:] cop, complex[::1,:] evecs,  double complex * vec,
-                    double complex alpha,
-                    double complex * out,
-                    unsigned int nrows,
-                    double atol)
-cpdef CSR cop_super_term(complex [::1, :] cop, complex [::1, :] evecs,
-                         double complex alpha, unsigned int nrows, double atol)
-cpdef CSR liou_from_diag_ham(double[::1] diags)
-
-cdef void vec2mat_index(int nrows, int index, int[2] out) nogil
+cdef inline void vec2mat_index(int nrows, int index, int[2] out) nogil
 
 cdef double skew_and_dwmin(double * evals, double[:,::1] skew,
-                                unsigned int nrows) nogil
+                           unsigned int nrows) nogil
 
+cdef Dense dense_to_eigbasis(Dense A, Dense evecs, double atol)
 
-cdef void br_term_mult(double t, complex[::1,:] A, complex[::1,:] evecs,
-                double[:,::1] skew, double dw_min, spec_func spectral,
-                double complex * vec, double complex * out,
-                unsigned int nrows, int use_secular, double sec_cutoff,
-                double atol)
+cpdef CSR liou_from_diag_ham(double[::1] diags)
+
+cpdef CSR cop_super_term(Dense cop, Dense evecs,
+                         double complex alpha, double atol)
+
+cpdef Data _br_term_cross(Data A, Data B,
+                          double[:, ::1] skew, double[:, ::1] spectrum,
+                          bint use_secular, double cutoff)
+
+cpdef CSR _br_term(Data A, double[:, ::1] skew, double[:, ::1] spectrum,
+                   bint use_secular, double cutoff)

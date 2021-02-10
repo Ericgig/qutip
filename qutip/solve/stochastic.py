@@ -43,7 +43,7 @@ from ._stochastic import (
     SSESolver, SMESolver, PcSSESolver, PcSMESolver, PmSMESolver,
     GenericSSolver, Solvers
 )
-from .solver import Result, SolverOptions, _solver_safety_check
+from .solver_base import Result, SolverOptions, _solver_safety_check
 from ..parallel import serial_map
 from ..ui.progressbar import TextProgressBar
 

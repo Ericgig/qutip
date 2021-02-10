@@ -45,7 +45,7 @@ from ..core.data import column_stack, column_unstack, to
 from ..core import data as _data
 from .options import SolverOptions
 from .result import Result, MultiTrajResult, MultiTrajResultAveraged
-from .solver import Solver
+from .solver_base import Solver
 from .sesolve import sesolve
 from .mesolve import mesolve
 from .parallel import get_map

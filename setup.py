@@ -196,10 +196,8 @@ cy_exts = {
         '_piqs',
         '_stochastic',
     ],
-    'solver': [
-        '_feedback',
-        '_solverqevo',
-    ],
+    'solver': [file.split("/")[-1][:-4]
+               for file in glob("qutip/solver/*.pyx")],
     'solver.ode': [file.split("/")[-1][:-4]
                    for file in glob("qutip/solver/*/*.pyx")],
     'solve.nonmarkov': [

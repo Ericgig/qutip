@@ -33,414 +33,197 @@
 import os
 import numpy as np
 from qutip.settings import settings as qset
-from qutip.core.interpolate import Cubic_Spline
-_cython_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
-_math_header = """\
-cdef extern from "<complex>" namespace "std" nogil:
-    double         abs(double complex x)
-    double complex acos(double complex x)
-    double complex acosh(double complex x)
-    double         arg(double complex x)
-    double complex asin(double complex x)
-    double complex asinh(double complex x)
-    double complex atan(double complex x)
-    double complex atanh(double complex x)
-    double complex conj(double complex x)
-    double complex cos(double complex x)
-    double complex cosh(double complex x)
-    double complex exp(double complex x)
-    double         imag(double complex x)
-    double complex log(double complex x)
-    double complex log10(double complex x)
-    double         norm(double complex x)
-    double complex proj(double complex x)
-    double         real(double complex x)
-    double complex sin(double complex x)
-    double complex sinh(double complex x)
-    double complex sqrt(double complex x)
-    double complex tan(double complex x)
-    double complex tanh(double complex x)
-"""
-__all__ = ['BR_Codegen']
+
+from ..core import QobjEvoFunc, Qobj, QobjEvo, sprepost, liouvillian
+from ..core.qobjevo import QobjEvoBase
+from ._brtools import bloch_redfield_tensor, CBR_RHS
+from ..core import data as _data
 
 
-class BR_Codegen(object):
-    """
-    Class for generating Bloch-Redfield time-dependent code
-    at runtime.
-    """
-    def __init__(self, h_terms=None, h_td_terms=None, h_obj=None, c_terms=None,
-                 c_td_terms=None, c_obj=None, a_terms=None, a_td_terms=None,
-                 spline_count=[0,0], coupled_ops=[], coupled_lengths=[],
-                 coupled_spectra=[], config=None, sparse=False,
-                 use_secular=None, sec_cutoff=0.1, args=None, use_openmp=False,
-                 omp_thresh=None, omp_threads=None, atol=None):
-        try:
-            import cython
-        except (ImportError, ModuleNotFoundError):
-            raise ModuleNotFoundError("Cython is needed for "
-                                      "time-depdendent brmesolve")
-        import sys
-        import os
-        sys.path.append(os.getcwd())
+__all__ = ['bloch_redfield']
 
-        # Hamiltonian time-depdendent pieces
-        self.h_terms = h_terms  # number of H pieces
-        self.h_td_terms = h_td_terms
-        self.h_obj = h_obj
-        # Collapse operator time-depdendent pieces
-        self.c_terms = c_terms  # number of C pieces
-        self.c_td_terms = c_td_terms
-        self.c_obj = c_obj
-        # BR operator time-depdendent pieces
-        self.a_terms = a_terms  # number of A pieces
-        self.a_td_terms = a_td_terms
-        self.spline_count = spline_count
-        self.use_secular = int(use_secular)
-        self.sec_cutoff = sec_cutoff
-        self.args = args
-        self.sparse = sparse
-        self.spline = 0
-        # Code generator properties
-        self.code = []  # strings to be written to file
-        self.level = 0  # indent level
-        self.config = config
-        if atol is None:
-            self.atol = qset.core['atol']
+def make_spectra(f):
+    return f
+
+def bloch_redfield(H, a_ops, c_ops=[],
+                   use_secular=True, sec_cutoff=0.1, atol=qset.core['atol']):
+    ops = [H] + [op for op, spec in a_ops] + c_ops
+    if not all(isinstance(op, (Qobj, QobjEvoBase)) for op in ops):
+        raise TypeError("Operators must be Qobj of QobjEvo")
+    if not all(op.dims == H.dims for op, spec in a_ops):
+        raise TypeError("dimension of a_ops and H do not match")
+    any_QEvo = any(isinstance(op, QobjEvoBase) for op in ops)
+    any_td = any(isinstance(op, QobjEvoBase) and not op.const for op in ops)
+
+    if not any_td:
+        H = H(0) if isinstance(H, QobjEvoBase) else H
+        c_ops = [(cop(0) if isinstance(cop, QobjEvoBase) else cop)
+                 for cop in c_ops]
+        aops = [(aop(0) if isinstance(aop, QobjEvoBase) else aop,
+                 make_spectra(spec))
+                for aop, spec in a_ops]
+        R, ekets = bloch_redfield_tensor(H, a_ops, c_ops, use_secular,
+                                         sec_cutoff, atol)
+        base = np.hstack([psi.full() for psi in ekets])
+        S = Qobj(_data.adjoint(_data.create(base)), dims=H.dims)
+        R = sprepost(S.dag(), S) @ R @ sprepost(S, S.dag())
+        if any_QEvo:
+            R = QobjEvo(R)
+        return R
+
+    #elif isinstance(H, Qobj) or H.const:
+        # H cte, can precompute the eigenvectors
+        # pass
+
+    else:
+        return BR_QobjEvoFunc(H, a_ops, c_ops,
+                              use_secular, sec_cutoff, atol)
+
+
+class BR_QobjEvoFunc(QobjEvoFunc):
+    def __init__(self, H, a_ops, c_ops, use_secular, sec_cutoff, atol):
+        if isinstance(H, Qobj):
+            H = QobjEvo(H)
+        self.H = H.to(_data.Dense)
+        self.args = {}
+        if c_ops:
+            self.dissipator = liouvillian(H=None, c_ops=c_ops)
         else:
-            self.atol = atol
+            self.dissipator = None
+        if isinstance(self.dissipator, Qobj):
+            self.dissipator = QobjEvo(self.dissipator)
+        self.a_ops = []
+        self.spectra = []
+        for aop, spec in a_ops:
+            self.a_ops.append(QobjEvo(aop).to(_data.Dense)
+                              if isinstance(aop, Qobj) else aop.to(_data.Dense))
+            self.spectra.append(make_spectra(spec))
 
-        self.use_openmp = use_openmp
-        self.omp_thresh = omp_thresh
-        self.omp_threads = omp_threads
+        self.opt = (use_secular, sec_cutoff, atol)
+        self.compiled_qobjevo = CBR_RHS(self.H, self.a_ops, self.spectra,
+                                        self.dissipator, *self.opt)
 
-        self.coupled_ops = coupled_ops
-        self.coupled_lengths = coupled_lengths
-        self.coupled_spectra = coupled_spectra
+        self.cte = self.compiled_qobjevo.call(0)
+        self.operation_stack = []
+        self._shifted = False
+        self.const = False
 
-    def write(self, string):
-        """write lines of code to self.code"""
-        self.code.append("    " * self.level + string + "\n")
+    def _get_qobj(self, t, args={}, data=False):
+        if self._shifted:
+            t += self.args["_t0"]
+        if args:
+            a_ops = zip([aop(t, args) for aop in self.a_ops], self.spectra)
+            c_ops = [cop(t, args) for cop in self.c_ops]
+            R, ekets = bloch_redfield_tensor(self.H(t, args), a_ops, c_ops,
+                                             *self.opt)
+            base = np.hstack([psi.full() for psi in ekets])
+            S = Qobj(_data.adjoint(_data.create(base)), dims=H.dims)
+            R = sprepost(S.dag(), S) @ R @ sprepost(S, S.dag())
+            for transform in self.operation_stack:
+                R = transform(R, t, args)
+        else:
+            R = self.compiled_qobjevo.call(t, False, False)
+            for transform in self.operation_stack:
+                R = transform(R, t, self.args)
+        return R
 
-    def file(self, filename):
-        """open file called filename for writing"""
-        self.file = open(filename, "w")
+    def arguments(self, new_args):
+        if not isinstance(new_args, dict):
+            raise TypeError("The new args must be in a dict")
+        self.args.update(new_args)
+        self.H.arguments(new_args)
+        for cop in self.c_ops:
+            cop.arguments(new_args)
+        for aop in self.a_ops:
+            aop.arguments(new_args)
 
-    def generate(self, filename="rhs.pyx"):
-        """generate the file"""
-        for line in cython_preamble(self.use_openmp)+self.aop_td_funcs():
-            self.write(line)
+    def copy(self):
+        new = BR_QobjEvoFunc.__new__(BR_QobjEvoFunc)
+        new.__dict__ = self.__dict__.copy()
+        new.H = self.H.copy()
+        new.dissipator = self.dissipator.copy()
+        new.a_ops = [aop.copy() for aop in self.a_ops]
+        new.compiled_qobjevo = CBR_RHS(new.H, new.a_ops, new.spectra,
+                                       new.dissipator, *self.opt)
+        new.cte = self.cte.copy()
+        new.operation_stack = [oper.copy() for oper in self.operation_stack]
+        new.args = self.args.copy()
+        return new
 
-        # write function for Hamiltonian terms (there is always
-        # be at least one term)
-        for line in cython_checks() + self.ODE_func_header():
-            self.write(line)
-        self.indent()
-        #Reset spline count
-        self.spline = 0
-        for line in self.func_vars()+self.ham_add_and_eigsolve()+ \
-                self.br_matvec_terms()+["\n"]:
-            self.write(line)
+    def __reduce__(self):
+        return BR_QobjEvoFunc, (self.H, zip(self.a_ops, self.spectra),
+                                self.dissipator, *self.opt)
 
-        for line in self.func_end():
-            self.write(line)
-        self.dedent()
+    def mul(self, t, mat):
+        """
+        Product of the operator quantum object at time t
+        with the given matrix state.
+        """
+        was_Qobj = False
+        was_vec = False
+        was_data = False
+        if not isinstance(t, (int, float)):
+            raise TypeError("the time need to be a real scalar")
 
-        self.file(filename)
-        self.file.writelines(self.code)
-        self.file.close()
-        self.config.cgen_num += 1
+        if isinstance(mat, Qobj):
+            if self.dims[1] != mat.dims[0]:
+                raise Exception("Dimensions do not fit")
+            was_Qobj = True
+            dims = [self.dims[0], mat.dims[1]]
+            mat = mat.data
 
-    def indent(self):
-        """increase indention level by one"""
-        self.level += 1
+        elif isinstance(mat, _data.Data):
+            was_data = True
 
-    def dedent(self):
-        """decrease indention level by one"""
-        if self.level == 0:
-            raise SyntaxError("Error in code generator")
-        self.level -= 1
-
-
-    def _get_arg_str(self, args):
-        if len(args) == 0:
-            return ''
-
-        ret = ''
-        for name, value in self.args.items():
-            if isinstance(value, np.ndarray):
-                ret += ",\n        np.ndarray[np.%s_t, ndim=1] %s" % \
-                    (value.dtype.name, name)
+        elif isinstance(mat, np.ndarray):
+            if mat.ndim == 1:
+                mat = _data.dense.fast_from_numpy(mat)
+                was_vec = True
+            elif mat.ndim == 2:
+                mat = _data.dense.fast_from_numpy(mat)
             else:
-                if isinstance(value, (int, np.int32, np.int64)):
-                    kind = 'int'
-                elif isinstance(value, (float, np.float32, np.float64)):
-                    kind = 'float'
-                elif isinstance(value, (complex, np.complex128)):
-                    kind = 'complex'
-                #kind = type(value).__name__
-                ret += ",\n        " + kind + " " + name
-        return ret
+                raise Exception("The matrice must be 1d or 2d")
 
+        else:
+            raise TypeError("The vector must be an array or Qobj")
 
-    def ODE_func_header(self):
-        """Creates function header for time-dependent ODE RHS."""
-        func_name = "def cy_td_ode_rhs("
-        # strings for time and vector variables
-        input_vars = ("\n        double t" +
-                      ",\n        complex[::1] vec")
-        for k in range(self.h_terms):
-            input_vars += (",\n        " +
-                           "complex[::1,:] H%d" % k)
+        if mat.shape[0] != self.shape[1]:
+            raise Exception("The length do not match")
 
-        #Add array for each Cubic_Spline H term
-        for htd in self.h_td_terms:
-            if isinstance(htd, Cubic_Spline):
-                if not htd.is_complex:
-                    input_vars += (",\n        " +
-                                   "double[::1] spline%d" % self.spline)
-                else:
-                    input_vars += (",\n        " +
-                                   "complex[::1] spline%d" % self.spline)
-                self.spline += 1
+        if self.operation_stack:
+            out = _data.matmul(self.__call__(t, data=True), mat)
+        else:
+            out = self.compiled_qobjevo.matmul(t, mat)
 
+        if was_Qobj:
+            return Qobj(out, dims=dims)
+        elif was_data:
+            return out
+        elif was_vec:
+            return out.as_ndarray()[:, 0]
+        else:
+            return out.as_ndarray()
 
-        for k in range(self.c_terms):
-            input_vars += (",\n        " +
-                           "complex[::1,:] C%d" % k)
+    def eigenbasis(self, t):
+        if self._shifted:
+            t += self.args["_t0"]
 
-        #Add array for each Cubic_Spline c_op term
-        for ctd in self.c_td_terms:
-            if isinstance(ctd, Cubic_Spline):
-                if not ctd.is_complex:
-                    input_vars += (",\n        " +
-                                   "double[::1] spline%d" % self.spline)
-                else:
-                    input_vars += (",\n        " +
-                                   "complex[::1] spline%d" % self.spline)
-                self.spline += 1
+        if args:
+            H = self.H(t, args)
+            a_ops = zip([aop(t, args) for aop in self.a_ops], self.spectra)
+            c_ops = [cop(t, args) for cop in self.c_ops]
+            R, ekets = bloch_redfield_tensor(H, a_ops, c_ops, *self.opt)
+        else:
+            R, ekets = self.compiled_qobjevo.call(t, False, True)
 
+        if self.operation_stack:
+            # TODO raise efficiency warning?
+            base = np.hstack([psi.full() for psi in ekets])
+            S = Qobj(_data.adjoint(_data.create(base)), dims=H.dims)
+            SS = sprepost(S.dag(), S)
+            R = SS @ R @ SS.dag()
+            for transform in self.operation_stack:
+                R = transform(R, t, args)
+            R = SS.dag() @ R @ SS
 
-        #Add coupled a_op terms
-        for _a in self.a_td_terms:
-            if isinstance(_a, Cubic_Spline):
-                if not _a.is_complex:
-                    input_vars += (",\n        " +
-                                   "double[::1] spline%d" % self.spline)
-                else:
-                    input_vars += (",\n        " +
-                                   "complex[::1] spline%d" % self.spline)
-                self.spline += 1
-
-
-        #Add a_op terms
-        for k in range(self.a_terms):
-            input_vars += (",\n        " +
-                           "complex[::1,:] A%d" % k)
-
-
-        input_vars += (",\n        unsigned int nrows")
-        input_vars += self._get_arg_str(self.args)
-
-        func_end = "):"
-        return [func_name + input_vars + func_end]
-
-    def func_vars(self):
-        """Writes the variables and their types & spmv parts"""
-        func_vars = ["", "cdef double complex * " +
-                     'out = <complex *>PyDataMem_NEW_ZEROED(nrows**2,sizeof(complex))']
-        func_vars.append(" ")
-        return func_vars
-
-
-    def aop_td_funcs(self):
-        aop_func_str=[]
-        spline_val = self.spline_count[0]
-        coupled_val = 0
-        kk = 0
-        while kk < self.a_terms:
-            if kk not in self.coupled_ops:
-                aa = self.a_td_terms[kk]
-                if isinstance(aa, str):
-                    aop_func_str += ["cdef complex spectral{0}(double w, double t): return {1}".format(kk, aa)]
-                elif isinstance(aa, tuple):
-                    if isinstance(aa[0],str):
-                        str0 = aa[0]
-                    elif isinstance(aa[0],Cubic_Spline):
-                        if not aa[0].is_complex:
-                            aop_func_str += ["cdef double[::1] spline{0} = np.array(".format(spline_val)+np.array2string(aa[0].coeffs,separator=',',precision=16)+",dtype=float)"]
-                            str0 = "interp(w, %s, %s, spline%s)" % (aa[0].a, aa[0].b, spline_val)
-                        else:
-                            aop_func_str += ["cdef complex[::1] spline{0} = np.array(".format(spline_val)+np.array2string(aa[0].coeffs,separator=',',precision=16)+",dtype=complex)"]
-                            str0 = "zinterp(w, %s, %s, spline%s)" % (aa[0].a, aa[0].b, spline_val)
-                        spline_val += 1
-                    else:
-                        raise Exception('Error parsing tuple.')
-
-                    if isinstance(aa[1],str):
-                        str1 = aa[1]
-                    elif isinstance(aa[1],Cubic_Spline):
-                        if not aa[1].is_complex:
-                            aop_func_str += ["cdef double[::1] spline{0} = np.array(".format(spline_val)+np.array2string(aa[1].coeffs,separator=',',precision=16)+",dtype=float)"]
-                            str1 = "interp(t, %s, %s, spline%s)" % (aa[1].a, aa[1].b, spline_val)
-                        else:
-                            aop_func_str += ["cdef complex[::1] spline{0} = np.array(".format(spline_val)+np.array2string(aa[1].coeffs,separator=',',precision=16)+",dtype=complex)"]
-                            str1 = "zinterp(t, %s, %s, spline%s)" % (aa[1].a, aa[1].b, spline_val)
-                        spline_val += 1
-                    else:
-                        raise Exception('Error parsing tuple.')
-
-                    aop_func_str += ["cdef complex spectral{0}(double w, double t): return ({1})*({2})".format(kk, str0, str1)]
-                else:
-                    raise Exception('Invalid a_td_term.')
-                kk += 1
-            else:
-                aa = self.coupled_spectra[coupled_val]
-                if isinstance(aa, str):
-                    aop_func_str += ["cdef complex spectral{0}(double w, double t): return {1}".format(kk, aa)]
-                elif isinstance(aa, Cubic_Spline):
-                    if not aa[1].is_complex:
-                        aop_func_str += ["cdef double[::1] spline{0} = np.array(".format(spline_val)+np.array2string(aa[1].coeffs,separator=',',precision=16)+",dtype=float)"]
-                        str1 = "interp(t, %s, %s, spline%s)" % (aa[1].a, aa[1].b, spline_val)
-                    else:
-                        aop_func_str += ["cdef complex[::1] spline{0} = np.array(".format(spline_val)+np.array2string(aa[1].coeffs,separator=',',precision=16)+",dtype=complex)"]
-                        str1 = "zinterp(t, %s, %s, spline%s)" % (aa[1].a, aa[1].b, spline_val)
-                    spline_val += 1
-                    aop_func_str += ["cdef complex spectral{0}(double w, double t): return {1}".format(kk, str1)]
-                kk += self.coupled_lengths[coupled_val]
-                coupled_val += 1
-
-        return aop_func_str
-
-
-    def ham_add_and_eigsolve(self):
-        ham_str = []
-        #allocate initial zero-Hamiltonian and eigenvector array in Fortran-order
-        ham_str += ['cdef complex[::1, :] H = farray_alloc(nrows)']
-        ham_str += ['cdef complex[::1, :] evecs = farray_alloc(nrows)']
-        #allocate double array for eigenvalues
-        ham_str += ['cdef double * eigvals = <double *>PyDataMem_NEW_ZEROED(nrows,sizeof(double))']
-        for kk in range(self.h_terms):
-            if isinstance(self.h_td_terms[kk], Cubic_Spline):
-                S = self.h_td_terms[kk]
-                if not S.is_complex:
-                    td_str = "interp(t, %s, %s, spline%s)" % (S.a, S.b, self.spline)
-                else:
-                    td_str = "zinterp(t, %s, %s, spline%s)" % (S.a, S.b, self.spline)
-                ham_str += ["dense_add_mult(H, H{0}, {1})".format(kk,td_str)]
-                self.spline += 1
-            else:
-                ham_str += ["dense_add_mult(H, H{0}, {1})".format(kk,self.h_td_terms[kk])]
-        #Do the eigensolving
-        ham_str += ["ZHEEVR(H, eigvals, evecs, nrows)"]
-        #Free H as it is no longer needed
-        ham_str += ["PyDataMem_FREE(&H[0,0])"]
-
-        return ham_str
-
-    def br_matvec_terms(self):
-        br_str = []
-        # Transform vector eigenbasis
-        br_str += ["cdef double complex * eig_vec = vec_to_eigbasis(vec, evecs, nrows)"]
-        # Do the diagonal liouvillian matvec
-        br_str += ["diag_liou_mult(eigvals, eig_vec, out, nrows)"]
-        # Do the cop_term matvec for each c_term
-        for kk in range(self.c_terms):
-            if isinstance(self.c_td_terms[kk], Cubic_Spline):
-                S = self.c_td_terms[kk]
-                if not S.is_complex:
-                    td_str = "interp(t, %s, %s, spline%s)" % (S.a, S.b, self.spline)
-                else:
-                    td_str = "zinterp(t, %s, %s, spline%s)" % (S.a, S.b, self.spline)
-                br_str += ["cop_super_mult(C{0}, evecs, eig_vec, {1}, out, nrows, {2})".format(kk, td_str, self.atol)]
-                self.spline += 1
-            else:
-                br_str += ["cop_super_mult(C{0}, evecs, eig_vec, {1}, out, nrows, {2})".format(kk, self.c_td_terms[kk], self.atol)]
-
-        if self.a_terms != 0:
-            #Calculate skew and dw_min terms
-            br_str += ["cdef double[:,::1] skew = <double[:nrows,:nrows]><double *>PyDataMem_NEW_ZEROED(nrows**2,sizeof(double))"]
-            br_str += ["cdef double dw_min = skew_and_dwmin(eigvals, skew, nrows)"]
-
-        #Compute BR term matvec
-        kk = 0
-        coupled_val = 0
-        while kk < self.a_terms:
-            if kk not in self.coupled_ops:
-                br_str += ["br_term_mult(t, A{0}, evecs, skew, dw_min, spectral{0}, eig_vec, out, nrows, {1}, {2}, {3})".format(kk, self.use_secular, self.sec_cutoff, self.atol)]
-                kk += 1
-            else:
-                br_str += ['cdef complex[::1, :] Ac{0} = farray_alloc(nrows)'.format(kk)]
-                for nn in range(self.coupled_lengths[coupled_val]):
-                    if isinstance(self.a_td_terms[kk+nn], str):
-                        br_str += ["dense_add_mult(Ac{0}, A{1}, {2})".format(kk,kk+nn,self.a_td_terms[kk+nn])]
-                    elif isinstance(self.a_td_terms[kk+nn], Cubic_Spline):
-                        S = self.a_td_terms[kk+nn]
-                        if not S.is_complex:
-                            td_str = "interp(t, %s, %s, spline%s)" % (S.a, S.b, self.spline)
-                        else:
-                            td_str = "zinterp(t, %s, %s, spline%s)" % (S.a, S.b, self.spline)
-                        br_str += ["dense_add_mult(Ac{0}, A{1}, {2})".format(kk,kk+nn,td_str)]
-                    else:
-                        raise Exception('Invalid time-dependence fot a_op.')
-
-                br_str += ["br_term_mult(t, Ac{0}, evecs, skew, dw_min, spectral{0}, eig_vec, out, nrows, {1}, {2}, {3})".format(kk, self.use_secular, self.sec_cutoff, self.atol)]
-
-                br_str += ["PyDataMem_FREE(&Ac{0}[0,0])".format(kk)]
-                kk += self.coupled_lengths[coupled_val]
-                coupled_val += 1
-        return br_str
-
-
-    def func_end(self):
-        end_str = []
-        #Transform out vector back to fock basis
-        end_str += ["cdef np.ndarray[complex, ndim=1, mode='c'] arr_out = vec_to_fockbasis(out, evecs, nrows)"]
-        #Free everything at end
-        if self.a_terms != 0:
-            end_str += ["PyDataMem_FREE(&skew[0,0])"]
-        end_str += ["PyDataMem_FREE(&evecs[0,0])"]
-        end_str += ["PyDataMem_FREE(eigvals)"]
-        end_str += ["PyDataMem_FREE(eig_vec)"]
-        end_str += ["PyDataMem_FREE(out)"]
-        end_str += ["return arr_out"]
-        return end_str
-
-
-
-def cython_preamble(use_omp=False):
-    call_str = "from qutip.solve._brtools cimport (cop_super_mult, br_term_mult)"
-    """
-    Returns list of code segments for Cython preamble.
-    """
-    return ["""#!python
-#cython: language_level=3
-# This file is generated automatically by QuTiP.
-# (C) 2011 and later, QuSTaR
-import numpy as np
-cimport numpy as np
-cimport cython
-np.import_array()
-cdef extern from "numpy/arrayobject.h" nogil:
-    void PyDataMem_NEW_ZEROED(size_t size, size_t elsize)
-    void PyArray_ENABLEFLAGS(np.ndarray arr, int flags)
-    void PyDataMem_FREE(void * ptr)
-from qutip.core.cy.interpolate cimport interp, zinterp
-from qutip.core.cy.math cimport erf, zerf
-cdef double pi = 3.14159265358979323
-from qutip.solve._brtools cimport (dense_add_mult, ZHEEVR, dense_to_eigbasis,
-        vec_to_eigbasis, vec_to_fockbasis, skew_and_dwmin,
-        diag_liou_mult, spec_func, farray_alloc)
-"""
-+call_str+"\n"+_math_header+"\n"]
-
-
-
-def cython_checks():
-    """
-    List of strings that turn off Cython checks.
-    """
-    return ["""
-@cython.cdivision(True)
-@cython.boundscheck(False)
-@cython.wraparound(False)"""]
+        return R, ekets

@@ -49,7 +49,7 @@ from ..ui.progressbar import BaseProgressBar, TextProgressBar
 from .br_codegen import BR_Codegen
 from ._brtensor import bloch_redfield_tensor
 from ._rhs_generate import td_format_check
-from .solver import SolverOptions, Result, config, _solver_safety_check
+from .solver_base import SolverOptions, Result, config, _solver_safety_check
 from ._utilities import cython_build_cleanup
 
 

@@ -46,12 +46,12 @@ from ..core import data as _data
 from .. import settings as qset
 from ..core.cy.openmp.utilities import check_use_openmp
 from ..ui.progressbar import BaseProgressBar, TextProgressBar
-from .br_codegen import BR_Codegen
-from ._brtensor import bloch_redfield_tensor
-from ._rhs_generate import td_format_check
-from .solver import SolverOptions, Result, config, _solver_safety_check
-from ._utilities import cython_build_cleanup
-
+#from .br_codegen import BR_Codegen
+#from ._brtensor import bloch_redfield_tensor
+from .options import SolverOptions
+from .result import Result
+from .mesolve import MeSolver
+from .solver_base import Solver
 
 # -----------------------------------------------------------------------------
 # Solve the Bloch-Redfield master equation
@@ -367,251 +367,6 @@ def bloch_redfield_solve(R, ekets, rho0, tlist, e_ops=[], options=None):
     return result_list
 
 
-def _td_brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[], args={},
-                  use_secular=True, sec_cutoff=0.1, tol=qset.core['atol'],
-                  options=None, progress_bar=None, _safe_mode=True,
-                  verbose=False, _prep_time=0):
-
-    if psi0.isket:
-        rho0 = psi0.proj()
-    else:
-        rho0 = psi0
-    nrows = rho0.shape[0]
-
-    H_terms = []
-    H_td_terms = []
-    H_obj = []
-    A_terms = []
-    A_td_terms = []
-    C_terms = []
-    C_td_terms = []
-    CA_obj = []
-    spline_count = [0, 0]
-    coupled_ops = []
-    coupled_lengths = []
-    coupled_spectra = []
-
-    if isinstance(H, Qobj):
-        H_terms.append(H.full('f'))
-        H_td_terms.append('1')
-    else:
-        for kk, h in enumerate(H):
-            if isinstance(h, Qobj):
-                H_terms.append(h.full('f'))
-                H_td_terms.append('1')
-            elif isinstance(h, list):
-                H_terms.append(h[0].full('f'))
-                if isinstance(h[1], Cubic_Spline):
-                    H_obj.append(h[1].coeffs)
-                    spline_count[0] += 1
-                H_td_terms.append(h[1])
-            else:
-                raise Exception('Invalid Hamiltonian specification.')
-
-    for kk, c in enumerate(c_ops):
-        if isinstance(c, Qobj):
-            C_terms.append(c.full('f'))
-            C_td_terms.append('1')
-        elif isinstance(c, list):
-            C_terms.append(c[0].full('f'))
-            if isinstance(c[1], Cubic_Spline):
-                CA_obj.append(c[1].coeffs)
-                spline_count[0] += 1
-            C_td_terms.append(c[1])
-        else:
-            raise Exception('Invalid collapse operator specification.')
-
-    coupled_offset = 0
-    for kk, a in enumerate(a_ops):
-        if isinstance(a, list):
-            if isinstance(a[0], Qobj):
-                A_terms.append(a[0].full('f'))
-                A_td_terms.append(a[1])
-                if isinstance(a[1], tuple):
-                    if len(a[1]) != 2:
-                        raise Exception('Tuple must be len=2.')
-                    if isinstance(a[1][0], Cubic_Spline):
-                        spline_count[1] += 1
-                    if isinstance(a[1][1], Cubic_Spline):
-                        spline_count[1] += 1
-            elif isinstance(a[0], tuple):
-                if not isinstance(a[1], tuple):
-                    raise Exception('Invalid bath-coupling specification.')
-                if (len(a[0])+1) != len(a[1]):
-                    raise Exception('BR a_ops tuple lengths not compatible.')
-
-                coupled_ops.append(kk+coupled_offset)
-                coupled_lengths.append(len(a[0]))
-                coupled_spectra.append(a[1][0])
-                coupled_offset += len(a[0])-1
-                if isinstance(a[1][0], Cubic_Spline):
-                    spline_count[1] += 1
-
-                for nn, _a in enumerate(a[0]):
-                    A_terms.append(_a.full('f'))
-                    A_td_terms.append(a[1][nn+1])
-                    if isinstance(a[1][nn+1], Cubic_Spline):
-                        CA_obj.append(a[1][nn+1].coeffs)
-                        spline_count[1] += 1
-
-        else:
-            raise Exception('Invalid bath-coupling specification.')
-
-    string_list = []
-    for kk, _ in enumerate(H_td_terms):
-        string_list.append("H_terms[{0}]".format(kk))
-    for kk, _ in enumerate(H_obj):
-        string_list.append("H_obj[{0}]".format(kk))
-    for kk, _ in enumerate(C_td_terms):
-        string_list.append("C_terms[{0}]".format(kk))
-    for kk, _ in enumerate(CA_obj):
-        string_list.append("CA_obj[{0}]".format(kk))
-    for kk, _ in enumerate(A_td_terms):
-        string_list.append("A_terms[{0}]".format(kk))
-    # Add nrows to parameters
-    string_list.append('nrows')
-    for name, value in args.items():
-        if isinstance(value, np.ndarray):
-            raise TypeError('NumPy arrays not valid args for BR solver.')
-        else:
-            string_list.append(str(value))
-    parameter_string = ",".join(string_list)
-
-    if verbose:
-        print('BR prep time:', time.time()-_prep_time)
-    #
-    # generate and compile new cython code if necessary
-    #
-    if True:
-        config.tdname = "rhs" + str(os.getpid()) + str(config.cgen_num)
-        if verbose:
-            _st = time.time()
-        cgen = BR_Codegen(
-            h_terms=len(H_terms), h_td_terms=H_td_terms, h_obj=H_obj,
-            c_terms=len(C_terms), c_td_terms=C_td_terms, c_obj=CA_obj,
-            a_terms=len(A_terms), a_td_terms=A_td_terms,
-            spline_count=spline_count, coupled_ops=coupled_ops,
-            coupled_lengths=coupled_lengths, coupled_spectra=coupled_spectra,
-            config=config, sparse=False, use_secular=use_secular,
-            sec_cutoff=sec_cutoff, args=args)
-
-        cgen.generate(config.tdname + ".pyx")
-        code = compile('from ' + config.tdname + ' import cy_td_ode_rhs',
-                       '<string>', 'exec')
-        exec(code, globals())
-        config.tdfunc = cy_td_ode_rhs
-        if verbose:
-            print('BR compile time:', time.time()-_st)
-    initial_vector = stack_columns(rho0.data).to_array()
-
-    _ode = scipy.integrate.ode(config.tdfunc)
-    code = compile('_ode.set_f_params(' + parameter_string + ')',
-                   '<string>', 'exec')
-    _ode.set_integrator('zvode', method=options['method'],
-                        order=options['order'],
-                        atol=options['atol'], rtol=options['rtol'],
-                        nsteps=options['nsteps'],
-                        first_step=options['first_step'],
-                        min_step=options['min_step'],
-                        max_step=options['max_step'])
-    _ode.set_initial_value(initial_vector, tlist[0])
-    exec(code, locals())
-
-    #
-    # prepare output array
-    #
-    n_tsteps = len(tlist)
-    e_sops_data = []
-
-    output = Result()
-    output.solver = "brmesolve"
-    output.times = tlist
-
-    if options['store_states']:
-        output.states = []
-
-    if isinstance(e_ops, types.FunctionType):
-        n_expt_op = 0
-        expt_callback = True
-
-    elif isinstance(e_ops, list):
-        n_expt_op = len(e_ops)
-        expt_callback = False
-
-        if n_expt_op == 0:
-            # fall back on storing states
-            output.states = []
-            options['store_states'] = True
-        else:
-            output.expect = []
-            output.num_expect = n_expt_op
-            for op in e_ops:
-                e_sops_data.append(spre(op).data)
-                if op.isherm:
-                    output.expect.append(np.zeros(n_tsteps))
-                else:
-                    output.expect.append(np.zeros(n_tsteps, dtype=complex))
-
-    else:
-        raise TypeError("Expectation parameter must be a list or a function")
-
-    #
-    # start evolution
-    #
-    if type(progress_bar)==BaseProgressBar and verbose:
-        _run_time = time.time()
-
-    progress_bar.start(n_tsteps)
-
-    rho = Qobj(rho0)
-
-    dt = np.diff(tlist)
-    for t_idx, t in enumerate(tlist):
-        progress_bar.update(t_idx)
-
-        if not _ode.successful():
-            raise Exception("ODE integration error: Try to increase "
-                            "the allowed number of substeps by increasing "
-                            "the nsteps parameter in the Options class.")
-
-        rho_data = _data.dense.fast_from_numpy(_ode.y)
-        if options['store_states'] or expt_callback:
-            rho_data = _data.column_unstack_dense(rho_data, rho.shape[0])
-            rho = Qobj(rho_data, dims=rho.dims, isherm=True)
-
-            if options['store_states']:
-                output.states.append(rho)
-
-            if expt_callback:
-                # use callback method
-                e_ops(t, rho)
-
-        for m in range(n_expt_op):
-            if output.expect[m].dtype == complex:
-                output.expect[m][t_idx] =\
-                    _data.expect_super(e_sops_data[m], rho_data)
-            else:
-                output.expect[m][t_idx] =\
-                    _data.expect_super(e_sops_data[m], rho_data).real
-
-        if t_idx < n_tsteps - 1:
-            _ode.integrate(_ode.t + dt[t_idx])
-
-    progress_bar.finished()
-
-    if type(progress_bar)==BaseProgressBar and verbose:
-        print('BR runtime:', time.time()-_run_time)
-
-    if (True) and (config.tdname is not None):
-        cython_build_cleanup(config.tdname)
-
-    if options['store_final_state']:
-        rho.data = dense2D_to_fastcsr_fmode(unstack_columns(_ode.y), rho.shape[0], rho.shape[1])
-        output.final_state = Qobj(rho, dims=rho0.dims, isherm=True)
-
-    return output
-
-
 def to_QEvo(op, args, times):
     if isinstance(op, QobjEvo):
         return op
@@ -623,7 +378,7 @@ def to_QEvo(op, args, times):
         raise ValueError("Invalid time dependent format")
 
 
-class BrMeSolver(Mesolver):
+class BrMeSolver(MeSolver):
     def __init__(self, H, a_ops, c_ops=[], e_ops=None,
                  use_secular=True, sec_cutoff=0.0,
                  options=None, times=None, args=None, feedback_args=None,

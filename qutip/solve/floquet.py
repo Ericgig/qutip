@@ -50,7 +50,7 @@ from .. import (
 )
 from ..core import data as _data
 from ._rhs_generate import rhs_clear
-from .solver import (
+from .solver_base import (
     Result, _solver_safety_check
 )
 from ..solver import (

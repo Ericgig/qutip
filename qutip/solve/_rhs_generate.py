@@ -38,7 +38,7 @@ from types import FunctionType, BuiltinFunctionType
 from functools import partial
 
 from ..core import Qobj, Cubic_Spline
-from .solver import config, solver_safe
+from .solver_base import config, solver_safe
 
 
 def rhs_clear():

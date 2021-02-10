@@ -39,7 +39,7 @@ from .. import (
     Qobj, expect, spre, spost, stack_columns, unstack_columns, liouvillian,
 )
 from ..core import data as _data
-from .solver import Result, SolverOptions
+from .solver_base import Result, SolverOptions
 from ..parallel import serial_map
 from ..ui.progressbar import TextProgressBar
 from ..settings import settings

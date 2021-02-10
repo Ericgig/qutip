@@ -203,7 +203,6 @@ cdef class CQobjEvo:
 
 
 cdef class CQobjFunc(CQobjEvo):
-    cdef object base
     def __init__(self, base):
         self.base = base
         self.reset_shape()
@@ -222,7 +221,7 @@ cdef class CQobjFunc(CQobjEvo):
         return out
 
     cpdef Dense matmul_dense(self, double t, Dense matrix, Dense out=None):
-        cdef Data objdata = self.base(t).data
+        cdef Data objdata = self.call(t, data=True)
         if out is None:
             # out = _data.matmul(objdata, matrix)
             out = matmul_data_dense(objdata, matrix)
@@ -240,7 +239,7 @@ cdef class CQobjFunc(CQobjEvo):
         """
         cdef double complex out
         cdef int nrow
-        cdef Data objdata = self.base(t, data=True)
+        cdef Data objdata = self.call(t, data=True)
         if self.issuper:
             matrix = _data.column_stack(matrix)
             out = _data.expect_super(objdata, matrix)
@@ -257,7 +256,7 @@ cdef class CQobjFunc(CQobjEvo):
         """
         cdef double complex out
         cdef int nrow
-        cdef Data objdata = self.base(t, data=True)
+        cdef Data objdata = self.call(t, data=True)
         if self.issuper:
             matrix = _data.column_stack(matrix)
             out = _data.expect_super(objdata, matrix)

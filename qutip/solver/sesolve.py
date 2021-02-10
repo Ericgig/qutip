@@ -40,7 +40,7 @@ import numpy as np
 from time import time
 from .. import Qobj, QobjEvo
 from ..core.qobjevofunc import QobjEvoFunc
-from .solver import Solver
+from .solver_base import Solver
 from .options import SolverOptions
 
 

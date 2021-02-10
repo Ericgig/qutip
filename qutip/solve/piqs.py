@@ -56,7 +56,7 @@ from .. import (
     sigmax, sigmay, sigmaz, sigmap, sigmam,
 )
 from ..entropy import entropy_vn
-from .solver import SolverOptions, Result
+from .solver_base import SolverOptions, Result
 from ._piqs import Dicke as _Dicke
 from ._piqs import (
     jmm1_dictionary,
