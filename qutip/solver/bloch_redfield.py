@@ -31,36 +31,31 @@
 #    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ###############################################################################
 
-__all__ = ['brmesolve', 'bloch_redfield_solve']
+__all__ = ['brmesolve', 'BrMeSolver']
 
 import numpy as np
 import os
-import time
+from time import time
 import types
 import warnings
 import scipy.integrate
 from ..core import (
-    Qobj, spre, unstack_columns, stack_columns, expect, Cubic_Spline,
+    Qobj, spre, unstack_columns, stack_columns, expect, Cubic_Spline, QobjEvo, QobjEvoFunc
 )
 from ..core import data as _data
 from .. import settings as qset
 from ..core.cy.openmp.utilities import check_use_openmp
 from ..ui.progressbar import BaseProgressBar, TextProgressBar
-#from .br_codegen import BR_Codegen
-#from ._brtensor import bloch_redfield_tensor
 from .options import SolverOptions
 from .result import Result
 from .mesolve import MeSolver
-from .solver_base import Solver
-
+from .br_codegen import bloch_redfield
 # -----------------------------------------------------------------------------
 # Solve the Bloch-Redfield master equation
 #
-def brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[],
+def brmesolve(H, rho0, tlist, a_ops=[], e_ops=[], c_ops=[],
               args={}, use_secular=True, sec_cutoff=0.1,
-              # Shouldn't this be solver.atol?
-              tol=qset.core['atol'],
-              spectra_cb=None, options=None,
+              spectra_cb=None, options=None, feedback_args=None,
               progress_bar=None, _safe_mode=True, verbose=False):
     """
     Solves for the dynamics of a system using the Bloch-Redfield master equation,
@@ -84,14 +79,14 @@ def brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[],
 
     *Example*
 
-        a_ops = [[a+a.dag(), '0.2*exp(-t)*(w>=0)']]
+        a_ops = [[[a+a.dag(), 'exp(-t/2)'], '0.2*(w>=0)']]
 
     It is also possible to use Cubic_Spline objects for time-dependence.  In
     the case of a_ops, Cubic_Splines must be passed as a tuple:
 
     *Example*
 
-        a_ops = [ [a+a.dag(), (f(w), g(t))] ]
+        a_ops = [([a+a.dag(), g(t)], f(t,w)) ]
 
     where f(w) and g(t) are strings or Cubic_spline objects for the bath
     spectrum and time-dependence, respectively.
@@ -101,7 +96,7 @@ def brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[],
 
     *Example*
 
-              a_ops = [ [(a,a.dag()), (f(w), g1(t), g2(t))],... ]
+              a_ops = [ ([[a,g1(t)], [a.dag(),g2(t)]], f(t,w)),... ]
 
     where f(w) is the spectrum of the operators while g1(t) and g2(t)
     are the time-dependence of the operators `a` and `a.dag()`, respectively
@@ -112,7 +107,7 @@ def brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[],
         System Hamiltonian given as a Qobj or
         nested list in string-based format.
 
-    psi0: Qobj
+    rho0: Qobj
         Initial density matrix or state vector (ket).
 
     tlist : array_like
@@ -143,9 +138,6 @@ def brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[],
         Tolerance used for removing small values after
         basis transformation.
 
-    spectra_cb : list
-        DEPRECIATED. Do not use.
-
     options : :class:`qutip.solver.SolverOptions`
         Options for the solver.
 
@@ -161,210 +153,18 @@ def brmesolve(H, psi0, tlist, a_ops=[], e_ops=[], c_ops=[],
         either an array of expectation values, for operators given in e_ops,
         or a list of states for the times specified by `tlist`.
     """
-    _prep_time = time.time()
-    # This allows for passing a list of time-independent Qobj
-    # as allowed by mesolve
-    if isinstance(H, list):
-        if np.all([isinstance(h, Qobj) for h in H]):
-            H = sum(H)
+    use_brmesolve = bool(a_ops)
 
-    if isinstance(c_ops, Qobj):
-        c_ops = [c_ops]
+    if not use_brmesolve:
+        return mesolve(H, rho0, tlist, e_ops=e_ops, args=args, options=options,
+                       feedback_args=feedback_args, _safe_mode=_safe_mode)
 
-    if isinstance(e_ops, Qobj):
-        e_ops = [e_ops]
+    c_ops = c_ops if c_ops is not None else []
+    solver = BrMeSolver(H, a_ops, c_ops, e_ops, use_secular, sec_cutoff,
+                        options, times=tlist, args=args,
+                        feedback_args=feedback_args, _safe_mode=_safe_mode)
 
-    if isinstance(e_ops, dict):
-        e_ops_dict = e_ops
-        e_ops = [e for e in e_ops.values()]
-    else:
-        e_ops_dict = None
-
-    if not (spectra_cb is None):
-        warnings.warn("The use of spectra_cb is deprecated.", FutureWarning)
-        _a_ops = []
-        for kk, a in enumerate(a_ops):
-            _a_ops.append([a, spectra_cb[kk]])
-        a_ops = _a_ops
-
-    if _safe_mode:
-        _solver_safety_check(H, psi0, a_ops+c_ops, e_ops, args)
-
-    # check for type (if any) of time-dependent inputs
-    _, n_func, n_str = td_format_check(H, a_ops+c_ops)
-
-    if progress_bar is None:
-        progress_bar = BaseProgressBar()
-    elif progress_bar is True:
-        progress_bar = TextProgressBar()
-
-    if options is None:
-        options = SolverOptions()
-
-    #if (not options.rhs_reuse) or (not config.tdfunc):
-    #    # reset config collapse and time-dependence flags to default values
-    #    config.reset()
-
-    # check if should use OPENMP
-    #check_use_openmp(options)
-
-    if n_str == 0:
-
-        R, ekets = bloch_redfield_tensor(
-            H, a_ops, spectra_cb=None, c_ops=c_ops, use_secular=use_secular,
-            sec_cutoff=sec_cutoff)
-
-        output = Result()
-        output.solver = "brmesolve"
-        output.times = tlist
-
-        results = bloch_redfield_solve(
-            R, ekets, psi0, tlist, e_ops, options, progress_bar=progress_bar)
-
-        if e_ops:
-            output.expect = results
-        else:
-            output.states = results
-
-        return output
-
-    elif n_str != 0 and n_func == 0:
-        output = _td_brmesolve(
-            H, psi0, tlist, a_ops=a_ops, e_ops=e_ops, c_ops=c_ops, args=args,
-            use_secular=use_secular, sec_cutoff=sec_cutoff, tol=tol,
-            options=options, progress_bar=progress_bar, _safe_mode=_safe_mode,
-            verbose=verbose, _prep_time=_prep_time)
-
-        return output
-
-    else:
-        raise Exception('Cannot mix func and str formats.')
-
-
-def _ode_rhs(t, state, oper):
-    state = _data.dense.fast_from_numpy(state)
-    return _data.matmul(oper, state, dtype=_data.Dense).as_ndarray()[:, 0]
-
-
-# -----------------------------------------------------------------------------
-# Evolution of the Bloch-Redfield master equation given the Bloch-Redfield
-# tensor.
-#
-def bloch_redfield_solve(R, ekets, rho0, tlist, e_ops=[], options=None):
-    progress_bar=None
-    """
-    Evolve the ODEs defined by Bloch-Redfield master equation. The
-    Bloch-Redfield tensor can be calculated by the function
-    :func:`bloch_redfield_tensor`.
-
-    Parameters
-    ----------
-
-    R : :class:`qutip.qobj`
-        Bloch-Redfield tensor.
-
-    ekets : array of :class:`qutip.qobj`
-        Array of kets that make up a basis tranformation for the eigenbasis.
-
-    rho0 : :class:`qutip.qobj`
-        Initial density matrix.
-
-    tlist : *list* / *array*
-        List of times for :math:`t`.
-
-    e_ops : list of :class:`qutip.qobj` / callback function
-        List of operators for which to evaluate expectation values.
-
-    options : :class:`qutip.SolverOptions`
-        Options for the ODE solver.
-
-    Returns
-    -------
-
-    output: :class:`qutip.solver`
-
-        An instance of the class :class:`qutip.solver`, which contains either
-        an *array* of expectation values for the times specified by `tlist`.
-
-    """
-
-    if options is None:
-        options = SolverOptions()
-
-    if options['tidy']:
-        R.tidyup()
-
-    if progress_bar is None:
-        progress_bar = BaseProgressBar()
-    elif progress_bar is True:
-        progress_bar = TextProgressBar()
-
-    #
-    # check initial state
-    #
-    if rho0.isket:
-        # Got a wave function as initial state: convert to density matrix.
-        rho0 = rho0.proj()
-
-    #
-    # prepare output array
-    #
-    n_tsteps = len(tlist)
-    dt = tlist[1] - tlist[0]
-    result_list = []
-
-    #
-    # transform the initial density matrix and the e_ops opterators to the
-    # eigenbasis
-    #
-    rho_eb = rho0.transform(ekets).data
-    e_eb_ops = [e.transform(ekets) for e in e_ops]
-
-    for e_eb in e_eb_ops:
-        if e_eb.isherm:
-            result_list.append(np.zeros(n_tsteps, dtype=float))
-        else:
-            result_list.append(np.zeros(n_tsteps, dtype=complex))
-
-    #
-    # setup integrator
-    #
-    initial_vector = stack_columns(rho_eb).to_array()[:, 0]
-    r = scipy.integrate.ode(_ode_rhs)
-    r.set_f_params(R.data)
-    r.set_integrator('zvode', method=options['method'], order=options['order'],
-                     atol=options['atol'], rtol=options['rtol'],
-                     nsteps=options['nsteps'],
-                     first_step=options['first_step'],
-                     min_step=options['min_step'],
-                     max_step=options['max_step'])
-    r.set_initial_value(initial_vector, tlist[0])
-
-    #
-    # start evolution
-    #
-    dt = np.diff(tlist)
-    progress_bar.start(n_tsteps)
-    for t_idx, _ in enumerate(tlist):
-        progress_bar.update(t_idx)
-        if not r.successful():
-            break
-
-        rho_eb = unstack_columns(_data.dense.fast_from_numpy(r.y), rho0.shape)
-        rho_eb = Qobj(rho_eb, dims=rho0.dims)
-
-        # calculate all the expectation values, or output rho_eb if no
-        # expectation value operators are given
-        if e_ops:
-            for m, e in enumerate(e_eb_ops):
-                result_list[m][t_idx] = expect(e, rho_eb)
-        else:
-            result_list.append(rho_eb.transform(ekets, True))
-
-        if t_idx < n_tsteps - 1:
-            r.integrate(r.t + dt[t_idx])
-    progress_bar.finished()
-    return result_list
+    return solver.run(rho0, tlist, args)
 
 
 def to_QEvo(op, args, times):
@@ -381,8 +181,8 @@ def to_QEvo(op, args, times):
 class BrMeSolver(MeSolver):
     def __init__(self, H, a_ops, c_ops=[], e_ops=None,
                  use_secular=True, sec_cutoff=0.0,
-                 options=None, times=None, args=None, feedback_args=None,
-                 _safe_mode=False):
+                 options=None, times=None, args=None,
+                 feedback_args=None, _safe_mode=False):
         _time_start = time()
         self.stats = {}
         if e_ops is None:
@@ -404,7 +204,7 @@ class BrMeSolver(MeSolver):
 
         self.e_ops = e_ops
         self.options = options
-        atol = options["atol"]
+        atol = options.ode["atol"]
 
         constant_system = True
 
@@ -414,38 +214,24 @@ class BrMeSolver(MeSolver):
         c_evos = []
         for op in c_ops:
             c_evos.append(to_QEvo(op, args, times))
-            constant_system = constant_system and c_evos[-1].const
 
         a_evos = []
-        spectrum = []
         for (op, spec) in a_ops:
             if isinstance(spec, (tuple, list)):
                 raise ValueError("a_ops format changed from v5, use: "
                                  "a_ops=[([op, g(t)], f(w))]")
             if isinstance(op, tuple):
-                a_evos.append(to_QEvo(op[0]))
-                constant_system = constant_system and a_evos[-1].const
-                a_evos.append(to_QEvo(op[1]))
-                constant_system = constant_system and a_evos[-1].const
-                spectrum.append(build_spectrum(spec))
-                spectrum.append(build_spectrum(spec))
+                # TODO: Check if consistant with last version.
+                evo = to_QEvo(op[0], args, times) + to_QEvo(op[1], args, times)
             else:
-                spectrum.append(build_spectrum(spec))
-                a_evos.append(to_QEvo(op))
-                constant_system = constant_system and a_evos[-1].const
-                if not a_evos[-1].isherm:
-                    spectrum.append(build_spectrum(spec))
-                    a_evos.append(a_evos[-1].dag())
+                evo = to_QEvo(op, args, times)
+                if not evo(0).isherm:
+                    raise ValueError("a_ops must be Hermitian")
+            a_evos.append((evo, spec))
 
-        if constant_system:
-            R = bloch_redfield_tensor(H(0),
-                [(a(0), spec) for a, spec in zip(a_evos, spectrum)],
-                [c(0) for c in c_evos], use_secular, sec_cutoff, atol,
-                evecs=False, basis='original')
-            self._system = QobjEvo(R)
-        else:
-            self._system = BR_RHS(H, a_ops, spectrum, c_ops,
-                                  use_secular, sec_cutoff, atol)
+        self._system = bloch_redfield(H, a_evos, c_evos,
+            use_secular=use_secular, sec_cutoff=sec_cutoff, atol=atol
+        )
 
         self._evolver = self._get_evolver(options, args, feedback_args)
         self.stats["preparation time"] = time() - _time_start

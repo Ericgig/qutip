@@ -34,16 +34,30 @@ import os
 import numpy as np
 from qutip.settings import settings as qset
 
-from ..core import QobjEvoFunc, Qobj, QobjEvo, sprepost, liouvillian
+from ..core import QobjEvoFunc, Qobj, QobjEvo, sprepost, liouvillian, Cubic_Spline, coefficient
 from ..core.qobjevo import QobjEvoBase
-from ._brtools import bloch_redfield_tensor, CBR_RHS
+from ._brtools import (bloch_redfield_tensor, CBR_RHS, Spectrum, Spectrum_Str,
+                       Spectrum_array, Spectrum_func_t)
 from ..core import data as _data
 
 
 __all__ = ['bloch_redfield']
 
 def make_spectra(f):
-    return f
+    if isinstance(f, Spectrum):
+        return f
+    elif isinstance(f, str):
+        coeff = coefficient(f, args={"w":0})
+        return Spectrum_Str(coeff)
+    elif isinstance(f, (np.ndarray, Cubic_Spline)):
+        coeff = coefficient(f)
+        return Spectrum_array(coeff)
+    elif callable(f):
+        try:
+            f(0, 0)
+            return Spectrum_func_t(f)
+        except Exception:
+            return Spectrum(f)
 
 def bloch_redfield(H, a_ops, c_ops=[],
                    use_secular=True, sec_cutoff=0.1, atol=qset.core['atol']):
@@ -57,12 +71,12 @@ def bloch_redfield(H, a_ops, c_ops=[],
 
     if not any_td:
         H = H(0) if isinstance(H, QobjEvoBase) else H
-        c_ops = [(cop(0) if isinstance(cop, QobjEvoBase) else cop)
+        cops = [(cop(0) if isinstance(cop, QobjEvoBase) else cop)
                  for cop in c_ops]
         aops = [(aop(0) if isinstance(aop, QobjEvoBase) else aop,
                  make_spectra(spec))
                 for aop, spec in a_ops]
-        R, ekets = bloch_redfield_tensor(H, a_ops, c_ops, use_secular,
+        R, ekets = bloch_redfield_tensor(H, aops, cops, use_secular,
                                          sec_cutoff, atol)
         base = np.hstack([psi.full() for psi in ekets])
         S = Qobj(_data.adjoint(_data.create(base)), dims=H.dims)

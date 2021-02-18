@@ -46,6 +46,7 @@ from scipy.linalg cimport cython_blas as blas
 cimport cython
 
 from qutip.core.cy.cqobjevo cimport CQobjFunc, CQobjEvo
+from qutip.core.cy.coefficient cimport Coefficient
 from qutip.core.data cimport Data, CSR, Dense, dense, csr, idxint
 from qutip.core.data.add cimport add_csr
 from qutip.core.data.add import add
@@ -80,6 +81,71 @@ cdef extern from "<complex>" namespace "std" nogil:
     double complex sqrt(double complex x)
 
 cdef int use_zgeev = eigh_unsafe
+
+
+__all__ = ['Spectrum', 'Spectrum_Str', 'Spectrum_array', 'Spectrum_func_t',
+           'bloch_redfield_tensor', 'BR_tensor', 'CBR_RHS']
+
+
+@cython.overflowcheck(True)
+cdef size_t _mul_checked(size_t a, size_t b) except? -1:
+    return a * b
+
+
+cdef class Spectrum:
+    # wrapper to use Coefficient for spectrum function in string format
+    cdef object _func
+
+    def __init__(self, func):
+        self._func = func
+
+    cpdef _call_t(self, double t, double w):
+        return self._func(w)
+
+    def __call__(self, double w):
+        return self._func(w)
+
+
+cdef class Spectrum_Str(Spectrum):
+    # wrapper to use Coefficient for spectrum function in string format
+    cdef Coefficient _coeff
+
+    def __init__(self, coeff):
+        self._coeff = coeff
+
+    cpdef _call_t(self, double t, double w):
+        self._coeff.arguments({"w":w})
+        return real(self._coeff._call(t))
+
+    def __call__(self, double w):
+        self._coeff.arguments({"w":w})
+        return real(self._coeff._call(0))
+
+
+cdef class Spectrum_array(Spectrum):
+    # wrapper to use Coefficient for spectrum function in string format
+    cdef Coefficient _coeff
+
+    def __init__(self, coeff):
+        self._coeff = coeff
+
+    cpdef _call_t(self, double t, double w):
+        return real(self._coeff._call(w))
+
+    def __call__(self, double w):
+        return real(self._coeff._call(w))
+
+
+cdef class Spectrum_func_t(Spectrum):
+    # wrapper to use Coefficient for spectrum function in string format
+    def __init__(self, func):
+        self._func = func
+
+    cpdef _call_t(self, double t, double w):
+        return self._func(t, w)
+
+    def __call__(self, double w):
+        return self._func(0, w)
 
 
 @cython.boundscheck(False)
@@ -289,7 +355,9 @@ cdef Dense dense_to_eigbasis(Dense A, Dense evecs, double atol):
 @cython.wraparound(False)
 cpdef CSR liou_from_diag_ham(double[::1] diags):
     cdef unsigned int nrows = diags.shape[0]
-    cdef CSR out = csr.empty(nrows*nrows, nrows*nrows, nrows*nrows)
+    cdef CSR out = csr.empty(_mul_checked(nrows, nrows),
+                             _mul_checked(nrows, nrows),
+                             _mul_checked(nrows, nrows))
     cdef size_t row, col, row_out, nnz=0
     cdef double complex val1, val2, ans
 
@@ -581,7 +649,7 @@ def BR_tensor(object H, list a_ops, bool use_secular=True,
     cdef double[::1] evals = np.zeros(nrows, dtype=float)
 
     ZHEEVR(H0, &evals[0], evecs, nrows)
-    L = csr.zeros(nrows*nrows, nrows*nrows)
+    L = csr.zeros(_mul_checked(nrows, nrows), _mul_checked(nrows, nrows))
     ekets = [Qobj(np.asarray(evecs.as_ndarray()[:,k]), dims=ket_dims)
              for k in range(nrows)]
 
@@ -631,13 +699,14 @@ cdef class CBR_RHS(CQobjFunc):
         self.sec_cutoff = sec_cutoff
         self.nrows = H.shape[0]
         self.atol = atol
-        self.shape = self.nrows**2, self.nrows**2
+        self.shape = (_mul_checked(self.nrows, self.nrows),
+                      _mul_checked(self.nrows, self.nrows))
         self.dims = [self.H.dims, self.H.dims]
         self.issuper = True
         self.return_eigen = eigen
 
-        self.skew = <double[:self.nrows,:self.nrows]><double *>PyDataMem_NEW_ZEROED(self.nrows**2, sizeof(double))
-        self.spectrum = <double[:self.nrows,:self.nrows]><double *>PyDataMem_NEW_ZEROED(self.nrows**2, sizeof(double))
+        self.skew = <double[:self.nrows,:self.nrows]><double *>PyDataMem_NEW_ZEROED(_mul_checked(self.nrows, self.nrows), sizeof(double))
+        self.spectrum = <double[:self.nrows,:self.nrows]><double *>PyDataMem_NEW_ZEROED(_mul_checked(self.nrows, self.nrows), sizeof(double))
 
         self.isuppz = <int *>PyDataMem_NEW(2*self.nrows * sizeof(int))
         self.work = <complex *>PyDataMem_NEW(18*self.nrows * sizeof(complex))
@@ -674,9 +743,11 @@ cdef class CBR_RHS(CQobjFunc):
         elif self.has_c_op:
             out_fock = self.c_ops.call(t, data=True)
         else:
-            out_fock = csr.zeros(self.nrows**2, self.nrows**2)
+            out_fock = csr.zeros(_mul_checked(self.nrows, self.nrows),
+                                 _mul_checked(self.nrows, self.nrows))
 
-        out_eigen = csr.zeros(self.nrows**2, self.nrows**2)
+        out_eigen = csr.zeros(_mul_checked(self.nrows, self.nrows),
+                              _mul_checked(self.nrows, self.nrows))
         self.H_eigen(t)
         out_eigen = add_csr(liou_from_diag_ham(<double[:self.nrows]> self.eigvals), out_eigen)
         dw_min = skew_and_dwmin(self.eigvals, self.skew, self.nrows)
@@ -684,7 +755,9 @@ cdef class CBR_RHS(CQobjFunc):
         for i in range(len(self.a_ops)):
             for col in range(self.nrows):
                 for row in range(self.nrows):
-                    self.spectrum[row, col] = self.spectra[i](t, self.skew[row, col])
+                    self.spectrum[row, col] = \
+                        (<Spectrum> self.spectra[i])._call_t(t,
+                             self.skew[row, col])
             self.to_eigbasis(self.a_ops[i].call(t, data=True), self.op_eig)
             out_eigen = add_csr(out_eigen, _br_term(self.op_eig, self.skew,
                                                     self.spectrum,
@@ -730,7 +803,7 @@ cdef class CBR_RHS(CQobjFunc):
         for i in range(len(self.a_ops)):
             for col in range(nrows):
                 for row in range(nrows):
-                    self.spectrum[row, col] = self.spectra[i](t, self.skew[row, col])
+                    self.spectrum[row, col] = (<Spectrum> self.spectra[i])._call_t(t, self.skew[row, col])
             self.to_eigbasis(self.a_ops[i].call(t, data=True), self.op_eig)
             R_mat = _br_term(self.op_eig, self.skew, self.spectrum,
                              self.use_secular, dw_min*self.sec_cutoff)
@@ -825,7 +898,7 @@ cdef class CBR_RHS(CQobjFunc):
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef void br_term_mult(self, double t, Dense A, double dw_min,
-                           Dense vec, Dense out):
+                           Dense vec, Dense out) except *:
         cdef size_t kk
         cdef size_t I, J # vector index variables
         cdef int[2] ab, cd #matrix indexing variables
@@ -837,9 +910,9 @@ cdef class CBR_RHS(CQobjFunc):
         cdef vector[idxint] coo_rows, coo_cols
         cdef vector[double complex] coo_data
 
-        for I in range(nrows**2):
+        for I in range(_mul_checked(nrows, nrows)):
             vec2mat_index(nrows, I, ab)
-            for J in range(nrows**2):
+            for J in range(_mul_checked(nrows, nrows)):
                 vec2mat_index(nrows, J, cd)
                 dw = fabs(self.skew[ab[0], ab[1]] - self.skew[cd[0], cd[1]])
 
@@ -871,7 +944,7 @@ cdef class CBR_RHS(CQobjFunc):
 
         cdef CSR matrix = csr.from_coo_pointers(
             coo_rows.data(), coo_cols.data(), coo_data.data(),
-            nrows*nrows, nrows*nrows, coo_rows.size()
+            _mul_checked(nrows, nrows), _mul_checked(nrows, nrows), coo_rows.size()
         )
         matmul_csr_dense_dense(matrix, vec, scale=1, out=out)
 
