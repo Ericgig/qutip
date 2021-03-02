@@ -854,11 +854,14 @@ cdef class CBR_RHS(CQobjFunc):
     cpdef void to_eigbasis(self, Dense vec, Dense out):
         cdef size_t nrows = self.nrows
         if self.H_fortran:
+            # Z.dag @ rho @ Z
             ZGEMM(vec.data, self.evecs.data, nrows, nrows, nrows, nrows,
                   not vec.fortran, 0, 1., 0., self.temp.data)
             ZGEMM(self.evecs.data, self.temp.data, nrows, nrows, nrows, nrows,
                   2, 0, 1., 0., out.data)
         else:
+            # eigen solver gives Z* instead of Z if not H.fortran
+            # Z.T @ rho @ Z*
             ZGEMM(self.evecs.data, vec.data, nrows, nrows, nrows, nrows,
                   1, 1 + <int>vec.fortran, 1., 0., self.temp.data)
             ZGEMM(self.evecs.data, self.temp.data, nrows, nrows, nrows, nrows,
@@ -866,12 +869,15 @@ cdef class CBR_RHS(CQobjFunc):
 
     cpdef void vec_to_fockbasis(self, Dense out_eigen, Dense out):
         cdef size_t nrows = self.nrows
+        # out is fixed in fortran format
         if self.H_fortran:
+            # Z @ rho @ Z.dag
             ZGEMM(out_eigen.data, self.evecs.data, nrows, nrows, nrows, nrows,
                   0, 2, 1., 0., self.temp.data)
             ZGEMM(self.evecs.data, self.temp.data, nrows, nrows, nrows, nrows,
                   0, 0, 1., 1., out.data)
         else:
+            # Z* @ rho @ Z.T
             ZGEMM(out_eigen.data, self.evecs.data, nrows, nrows, nrows, nrows,
                   2, 1, 1., 0., self.temp.data)
             ZGEMM(self.temp.data, self.evecs.data, nrows, nrows, nrows, nrows,

@@ -49,6 +49,7 @@ from ..ui.progressbar import BaseProgressBar, TextProgressBar
 from .options import SolverOptions
 from .result import Result
 from .mesolve import MeSolver
+from .solver_base import _to_qevo
 from .br_codegen import bloch_redfield
 # -----------------------------------------------------------------------------
 # Solve the Bloch-Redfield master equation
@@ -167,17 +168,6 @@ def brmesolve(H, rho0, tlist, a_ops=[], e_ops=[], c_ops=[],
     return solver.run(rho0, tlist, args)
 
 
-def to_QEvo(op, args, times):
-    if isinstance(op, QobjEvo):
-        return op
-    elif isinstance(op, (list, Qobj)):
-        return QobjEvo(op, args=args, tlist=times)
-    elif callable(op):
-        return QobjEvoFunc(op, args=args)
-    else:
-        raise ValueError("Invalid time dependent format")
-
-
 class BrMeSolver(MeSolver):
     def __init__(self, H, a_ops, c_ops=[], e_ops=None,
                  use_secular=True, sec_cutoff=0.0,
@@ -208,12 +198,12 @@ class BrMeSolver(MeSolver):
 
         constant_system = True
 
-        H = to_QEvo(H, args, times)
+        H = _to_qevo(H, args, times)
         constant_system = constant_system and H.const
 
         c_evos = []
         for op in c_ops:
-            c_evos.append(to_QEvo(op, args, times))
+            c_evos.append(_to_qevo(op, args, times))
 
         a_evos = []
         for (op, spec) in a_ops:
@@ -222,9 +212,9 @@ class BrMeSolver(MeSolver):
                                  "a_ops=[([op, g(t)], f(w))]")
             if isinstance(op, tuple):
                 # TODO: Check if consistant with last version.
-                evo = to_QEvo(op[0], args, times) + to_QEvo(op[1], args, times)
+                evo = _to_qevo(op[0], args, times) + _to_qevo(op[1], args, times)
             else:
-                evo = to_QEvo(op, args, times)
+                evo = _to_qevo(op, args, times)
                 if not evo(0).isherm:
                     raise ValueError("a_ops must be Hermitian")
             a_evos.append((evo, spec))
