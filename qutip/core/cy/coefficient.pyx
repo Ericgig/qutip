@@ -14,8 +14,6 @@ import qutip
 
 cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
-    double         norm(double complex x)
-
 
 cdef class Coefficient:
     """`Coefficient` are the time-dependant scalar of a `[Qobj, coeff]` pair
@@ -31,8 +29,8 @@ cdef class Coefficient:
         # Cases where tlist or args are supported are managed in those classes
         return self
 
-    def __call__(self, double t, dict args={}):
-        """Return the coefficient value at `t` with given `args`. """
+    def __call__(self, double t, dict args=None):
+        """Update args and return the coefficient value at `t`. """
         if args:
             return (<Coefficient> self.replace(arguments=args))._call(t)
         return self._call(t)
@@ -57,16 +55,7 @@ cdef class Coefficient:
         return pickle.loads(pickle.dumps(self))
 
     def conj(self):
-        """ Return a conjugate Coefficient of this"""
         return ConjCoefficient(self)
-
-    def _cdc(self):
-        """ Return a Coefficient being the norm of this"""
-        return NormCoefficient(self)
-
-    def _shift(self):
-        """ Return a Coefficient with a time shift"""
-        return ShiftCoefficient(self, 0)
 
 
 @cython.auto_pickle(True)
@@ -261,11 +250,6 @@ cdef class InterCoefficient(Coefficient):
         else:
             return self.copy()
 
-    @property
-    def array(self):
-        # Fro QIP tests
-        return self.coeff_np
-
 
 cdef Coefficient add_inter(InterCoefficient left, InterCoefficient right):
     if np.array_equal(left.tlist_np, right.tlist_np):
@@ -323,11 +307,6 @@ cdef class StepCoefficient(Coefficient):
         else:
             return self.copy()
 
-    @property
-    def array(self):
-        # Fro QIP tests
-        return np.array(self.coeff_arr)
-
 
 @cython.auto_pickle(True)
 cdef class SumCoefficient(Coefficient):
@@ -340,10 +319,6 @@ cdef class SumCoefficient(Coefficient):
     def __init__(self, Coefficient first, Coefficient second):
         self.first = first
         self.second = second
-
-    cpdef void arguments(self, dict args) except *:
-        self.first.arguments(args)
-        self.second.arguments(args)
 
     cdef complex _call(self, double t) except *:
         return self.first._call(t) + self.second._call(t)
@@ -403,51 +378,3 @@ cdef class ConjCoefficient(Coefficient):
         return ConjCoefficient(
             self.base.replace(arguments=arguments, tlist=tlist)
         )
-
-
-@cython.auto_pickle(True)
-cdef class NormCoefficient(Coefficient):
-    """
-    Norm of a Coefficient.
-    Used as a shortcut of conj(coeff) * coeff
-    """
-    cdef Coefficient base
-
-    def __init__(self, Coefficient base):
-        self.base = base
-
-    def replace(self, *, arguments=None, tlist=None):
-        return NormCoefficient(
-            self.base.replace(arguments=arguments, tlist=tlist)
-        )
-
-    cdef complex _call(self, double t) except *:
-        return norm(self.base._call(t))
-
-    cpdef Coefficient copy(self):
-        return NormCoefficient(self.base.copy())
-
-
-@cython.auto_pickle(True)
-cdef class ShiftCoefficient(Coefficient):
-    """
-    Introduce a time shift in the Coefficient
-    """
-    cdef Coefficient base
-    cdef double _t0
-
-    def __init__(self, Coefficient base, double _t0):
-        self.base = base
-        self._t0 = _t0
-
-    def replace(self, *, arguments=None, tlist=None):
-        _t0 = arguments["_t0"] if "_t0" in arguments else self._t0
-        return ShiftCoefficient(
-            self.base.replace(arguments=arguments, tlist=tlist), _t0
-        )
-
-    cdef complex _call(self, double t) except *:
-        return self.base._call(t + self._t0)
-
-    cpdef Coefficient copy(self):
-        return ShiftCoefficient(self.base.copy(), self._t0)
