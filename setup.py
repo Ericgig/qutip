@@ -180,10 +180,11 @@ cy_exts = {
     ],
     'core.cy': [
         'coefficient',
-        'cqobjevo',
         'inter',
         'interpolate',
         'math',
+        'qobjevo',
+        '_element',
     ],
     'control': [
         'cy_grape',
