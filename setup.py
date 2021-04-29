@@ -201,6 +201,9 @@ cy_exts = {
     'solve.nonmarkov': [
         '_heom',
     ],
+    'solver.ode': [
+        'explicit_rk'
+    ]
 }
 
 # Extra link args
