@@ -198,6 +198,9 @@ cy_exts = {
         '_steadystate',
         '_stochastic',
     ],
+    'solver.ode': [
+        'herm_matmul',
+    ],
     'solve.nonmarkov': [
         '_heom',
     ],
