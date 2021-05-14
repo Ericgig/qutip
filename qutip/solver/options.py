@@ -254,7 +254,9 @@ class McOptions:
 
         "map_options": {
             'num_cpus': multiprocessing.cpu_count(),
-            'timeout':1e8,
-            'job_timeout':1e8
+            'timeout':1e6,
+            'job_timeout':1e6,
         },
+
+        "BitGenerator": "",
     }
