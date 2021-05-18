@@ -45,10 +45,9 @@ class Result:
         Number of collapse operators in simualation.
 """
     def __init__(self, e_ops, options, super_):
-        self.e_ops = e_ops
         self.times = []
 
-        self._raw_e_ops = e_ops
+        self._raw_e_ops = e_ops or []
         self._states = []
         self._expects = []
         self._last_state = None

@@ -185,14 +185,13 @@ class SeSolver(Solver):
 
     def __init__(self, H, e_ops=None, options=None, times=None, args=None):
         _time_start = time()
-        self.stats = {}
         self.e_ops = e_ops
         self.options = options
-
         self._system = -1j * QobjEvo(H, args=args, tlist=times)
-        if not self._system.isoper():
+        if not self._system.isoper:
             raise ValueError("The hamiltonian must be an operator")
 
+        self.stats = {}
         self.stats['solver'] = "Schrodinger Evolution"
         self.stats["preparation time"] = time() - _time_start
 

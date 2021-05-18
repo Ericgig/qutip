@@ -39,7 +39,7 @@ __all__ = ['mesolve', 'MeSolver']
 
 import numpy as np
 from time import time
-from .. import ( Qobj, QobjEvo, isket, issuper, liouvillian, ket2dm)
+from .. import (Qobj, QobjEvo, isket, liouvillian, ket2dm, lindblad_dissipator)
 from ..core import stack_columns, unstack_columns
 from ..core.data import to
 from .solver_base import Solver
@@ -288,13 +288,32 @@ class MeSolver(Solver):
         H = QobjEvo(H, args=args, tlist=times)
         c_evos = [QobjEvo(op, args=args, tlist=times) for op in c_ops]
 
-        self._system = liouvillian(H, c_evos)
+        self._system = H if H.issuper else liouvillian(H)
+        self._system += sum(c_op if c_op.issuper else lindblad_dissipator(c_op)
+                            for c_op in c_evos )
+
+        self.stats = {}
         self.stats['solver'] = "Master Equation Evolution"
         self.stats['num_collapse'] = len(c_ops)
         self.stats["preparation time"] = time() - _time_start
 
     def _prepare_state(self, state):
-        if self._system.dims[1] != state.dims:
+        if isket(state):
+            state = ket2dm(state)
+
+
+        if self.options.ode["State_data_type"]:
+            state = state.to(self.options.ode["State_data_type"])
+        self._state_qobj = state
+        self._state_dims = state.dims
+        self._state_shape = state.shape
+        self._state_type = state.type
+
+        if self._system.dims[1] == state.dims:
+            return stack_columns(state.data)
+        elif self._system.dims[1] == state.dims[0]:
+            return state.data
+        else:
             raise TypeError("".join([
                             "incompatible dimensions ",
                             repr(self._system.dims),
@@ -302,19 +321,14 @@ class MeSolver(Solver):
                             repr(state.dims),])
                            )
 
-        if isket(state):
-            state = ket2dm(state)
-        self._state_qobj = state
-        self._state_dims = state.dims
-        self._state_shape = state.shape
-        self._state_type = state.type
-
-        if self.options.ode["State_data_type"]:
-            state = state.to(self.options.ode["State_data_type"])
-        return stack_columns(state.data)
-
     def _restore_state(self, state, copy=True):
-        return Qobj(unstack_columns(state),
-                    dims=self._state_dims,
-                    type=self._state_type,
-                    copy=False)
+        if state.shape[1] == 1:
+            return Qobj(unstack_columns(state),
+                        dims=self._state_dims,
+                        type=self._state_type,
+                        copy=False)
+        else:
+            return Qobj(state,
+                        dims=self._state_dims,
+                        type=self._state_type,
+                        copy=copy)

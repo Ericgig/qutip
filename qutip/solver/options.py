@@ -130,7 +130,7 @@ class SolverOdeOptions:
 
         "Operator_data_type": "input",
 
-        "State_data_type": "dense",
+        "State_data_type": "",
         # Normalize the states received in feedback_args
         "feedback_normalize": True,
     }

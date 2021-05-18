@@ -37,8 +37,8 @@ __all__ = ['Solver']
 # import numpy as np
 # from ..core import data as _data
 
-from .. import Qobj, QobjEvo, QobjEvoFunc
-from qutip.core.qobjevo import QobjEvoBase
+from .. import Qobj, QobjEvo
+from .options import SolverOptions
 from .result import Result
 from .integrator import integrator_collection
 from ..ui.progressbar import get_progess_bar
@@ -157,11 +157,11 @@ class Solver:
         return integrator(self._system, self.options)
 
     @property
-    def option(self):
+    def options(self):
         return self._options
 
-    @option.setter
-    def option(self, new):
+    @options.setter
+    def options(self, new):
         if new is None:
             new = self.optionsclass()
         if not isinstance(new, self.optionsclass):

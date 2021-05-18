@@ -35,17 +35,12 @@ import numpy as np
 from numpy.testing import assert_allclose
 from types import FunctionType
 
-# disable the MC progress bar
-import os
-
 from qutip import *
 from qutip.solver import *
 from qutip.random_objects import rand_ket
 import pickle
 import pytest
-all_ode_method = evolver_collection.list_keys('methods', time_dependent=True)
-
-os.environ['QUTIP_GRAPHICS'] = "NO"
+all_ode_method = integrator_collection.list_keys('methods', time_dependent=True)
 
 
 def fidelitycheck(out1, out2, rho0vec):
@@ -123,8 +118,10 @@ class TestMESolveDecay:
         H = self.a.dag() * self.a
         psi0 = basis(self.N, 9)  # initial state
         c_op_list = [cte_c_ops]
+        options = SolverOptions(progress_bar=None)
         medata = mesolve(H, psi0, self.tlist, c_op_list, [H],
-                         args={"kappa": self.kappa})
+                         args={"kappa": self.kappa},
+                         options=options)
         expt = medata.expect[0]
         actual_answer = 9.0 * np.exp(-self.kappa * self.tlist)
         assert_allclose(actual_answer, expt, me_error)
@@ -137,7 +134,7 @@ class TestMESolveDecay:
         H = self.a.dag() * self.a
         psi0 = basis(self.N, 9)  # initial state
         c_op_list = [c_ops]
-        options = SolverOptions(method=method)
+        options = SolverOptions(method=method, progress_bar=None)
         medata = mesolve(H, psi0, self.tlist, c_op_list, [H],
                          args={"kappa": self.kappa}, options=options)
         expt = medata.expect[0]
@@ -150,8 +147,10 @@ class TestMESolveDecay:
         H = self.a.dag() * self.a
         psi0 = basis(self.N, 9)  # initial state
         c_op_list = [c_ops, c_ops_1]
+        options = SolverOptions(progress_bar=None)
         medata = mesolve(H, psi0, self.tlist, c_op_list, [H],
-                         args={"kappa": self.kappa})
+                         args={"kappa": self.kappa},
+                         options=options)
         expt = medata.expect[0]
         actual_answer = 9.0 * np.exp(-2 * self.kappa *
                                      (1.0 - np.exp(-self.tlist)))
@@ -162,8 +161,10 @@ class TestMESolveDecay:
         me_error = 5e-6
         psi0 = basis(self.N, 9)  # initial state
         c_op_list = [c_ops]
+        options = SolverOptions(progress_bar=None)
         medata = mesolve(H, psi0, self.tlist, c_op_list, [self.ada],
-                         args={"kappa": self.kappa})
+                         args={"kappa": self.kappa},
+                         options=options)
         expt = medata.expect[0]
         actual_answer = 9.0 * np.exp(-self.kappa *
                                      (1.0 - np.exp(-self.tlist)))
@@ -179,8 +180,10 @@ class TestMESolveDecay:
             c_op_list = [c_ops + c_ops]
         else:
             c_op_list = [[c_ops, c_ops]]
+        options = SolverOptions(progress_bar=None)
         medata = mesolve(H, psi0, self.tlist, c_op_list, [self.ada],
-                         args={"kappa": self.kappa})
+                         args={"kappa": self.kappa},
+                         options=options)
         expt = medata.expect[0]
         actual_answer = 9.0 * np.exp(-4 * self.kappa *
                                      (1.0 - np.exp(-self.tlist)))
@@ -194,12 +197,14 @@ class TestMESolveDecay:
         psi0 = basis(self.N, 9)  # initial state
         rho0vec = operator_to_vector(psi0*psi0.dag())
         E0 = sprepost(qeye(self.N), qeye(self.N))
-
+        options = SolverOptions(progress_bar=None)
         c_op_list = [c_ops]
         out1 = mesolve(H, psi0, self.tlist, c_op_list, [],
-                       args={"kappa": self.kappa})
+                       args={"kappa": self.kappa},
+                       options=options)
         out2 = mesolve(H, E0, self.tlist, c_op_list, [],
-                       args={"kappa": self.kappa})
+                       args={"kappa": self.kappa},
+                       options=options)
 
         fid = fidelitycheck(out1, out2, rho0vec)
         assert max(abs(1.0-fid)) < me_error
@@ -213,18 +218,22 @@ class TestMESolveDecay:
         psi0 = basis(self.N, 9)  # initial state
         rho0vec = operator_to_vector(psi0*psi0.dag())
         E0 = sprepost(qeye(self.N), qeye(self.N))
-
+        options = SolverOptions(progress_bar=None)
         c_op_list = [c_ops]
         out1 = mesolve(L, psi0, self.tlist, c_op_list, [],
-                       args={"kappa": self.kappa})
+                       args={"kappa": self.kappa},
+                       options=options)
         out2 = mesolve(L, E0, self.tlist, c_op_list, [],
-                       args={"kappa": self.kappa})
+                       args={"kappa": self.kappa},
+                       options=options)
 
         fid = fidelitycheck(out1, out2, rho0vec)
         assert max(abs(1.0-fid)) < me_error
 
     def test_mesolver_pickling(self):
-        solver_obj = MeSolver(self.ada, c_ops=[self.a], e_ops=[self.ada])
+        options = SolverOptions(progress_bar=None)
+        solver_obj = MeSolver(self.ada, c_ops=[self.a], e_ops=[self.ada],
+                              options=options)
         copy = pickle.loads(pickle.dumps(solver_obj))
         e1 = solver_obj.run(basis(self.N, 9), [0, 1, 2, 3], {}).expect
         e2 = solver_obj.run(basis(self.N, 9), [0, 1, 2, 3], {}).expect
@@ -233,7 +242,7 @@ class TestMESolveDecay:
     @pytest.mark.parametrize('method',
                              all_ode_method, ids=all_ode_method)
     def test_mesolver_steping(self, method):
-        options = SolverOptions(method=method)
+        options = SolverOptions(method=method, progress_bar=None)
         solver_obj = MeSolver(self.ada,
                               c_ops=[[self.a,
                                      lambda t, args: np.sqrt(args['kappa'] *
@@ -265,71 +274,13 @@ def testME_SesolveFallback(super_):
         H = liouvillian(H)
 
     times = np.linspace(0.0, 0.1, 3)
-    opts = SolverOptions(store_states=False, store_final_state=True)
-    result = mesolve(H, state0, times, [], e_ops=[a], options=opts)
+    options = SolverOptions(store_states=False, store_final_state=True,
+                            progress_bar=None)
+    result = mesolve(H, state0, times, [], e_ops=[a], options=options)
     if super_ == "ket":
         assert result.final_state.dims == psi0.dims
     else:
         assert result.final_state.dims == ket2dm(psi0).dims
-
-
-@pytest.mark.parametrize('method',
-                         all_ode_method, ids=all_ode_method)
-def testMESolveHFeedback(method):
-    "mesolve: state feedback"
-    tol = 1e-3
-    options = SolverOptions(method=method)
-    def f(t, args):
-        return np.sqrt(args["state"][1,1])
-
-    H = [qeye(2), [destroy(2)+create(2), f]]
-    res = mesolve(H, basis(2, 1), tlist=np.linspace(0, 10, 21),
-                  c_ops=[qeye(2)], e_ops=[num(2)], options=options,
-                  args={"state": ket2dm(basis(2, 1))},
-                  feedback_args={'state': Qobj})
-    assert max(abs(res.expect[0][-5:])) < tol
-
-    def f(t, args):
-        return np.sqrt(args["e"])
-
-    H = [qeye(2), [destroy(2)+create(2), f]]
-    res = mesolve(H, basis(2, 1), tlist=np.linspace(0, 10, 21),
-                  c_ops=[qeye(2)], e_ops=[num(2)], options=options,
-                  args={"e": 1.}, feedback_args={'e': num(2)})
-    assert max(abs(res.expect[0][-5:])) < tol
-
-
-@pytest.mark.parametrize('method',
-                         all_ode_method, ids=all_ode_method)
-def testMESolveDecayFeedback(method):
-    "mesolve: state feedback"
-    #
-    tol = 1e-3
-    options = SolverOptions(method=method, nsteps=10000)
-    def f(t, args):
-        return np.sqrt(args["state"][2,2])
-
-    H = qeye(3)
-    b12 = basis(3, 1) * basis(3, 2).dag()
-    res = mesolve(H, basis(3, 2), tlist=np.linspace(0, 10, 51),
-                  c_ops=[[destroy(3), f], b12],
-                  e_ops=[num(3), ket2dm(basis(3, 2))],
-                  options=options,
-                  args={"state": ket2dm(basis(3, 2))},
-                  feedback_args={'state': Qobj})
-    assert abs(res.expect[0][-1]) > 0.5
-    assert abs(res.expect[1][-1]) < tol
-
-    def f(t, args):
-        return np.sqrt(args["e"])
-
-    res = mesolve(H, basis(3, 1), tlist=np.linspace(0, 10, 51),
-                  c_ops=[[destroy(3), f], b12],
-                  e_ops=[num(3), ket2dm(basis(3, 2))],
-                  options=options,
-                  args={"e": 1.}, feedback_args={'e': ket2dm(basis(3, 2))})
-    assert abs(res.expect[0][-1]) > 0.5
-    assert abs(res.expect[1][-1]) < tol
 
 
 class TestJCModelEvolution:
@@ -350,11 +301,10 @@ class TestJCModelEvolution:
         if rate > 0.0:
             c_op_list.append(np.sqrt(rate) * sigmaz())
 
-        output = mesolve(
-            H, psi0, tlist, c_op_list, [sigmax(), sigmay(), sigmaz()])
-        expt_list = output.expect[0], output.expect[1], output.expect[2]
+        output = mesolve(H, psi0, tlist, c_op_list,
+                         e_ops=[sigmax(), sigmay(), sigmaz()])
 
-        return expt_list[0], expt_list[1], expt_list[2]
+        return output.expect[0], output.expect[1], output.expect[2]
 
     def jc_steadystate(self, N, wc, wa, g, kappa, gamma,
                        pump, psi0, use_rwa, tlist):
@@ -365,11 +315,11 @@ class TestJCModelEvolution:
 
         if use_rwa:
             # use the rotating wave approxiation
-            H = wc * a.dag(
-            ) * a + wa * sm.dag() * sm + g * (a.dag() * sm + a * sm.dag())
+            H = (wc * a.dag() * a + wa * sm.dag() * sm
+                 + g * (a.dag() * sm + a * sm.dag()))
         else:
-            H = wc * a.dag() * a + wa * sm.dag() * sm + g * (
-                a.dag() + a) * (sm + sm.dag())
+            H = (wc * a.dag() * a + wa * sm.dag() * sm
+                 + g * (a.dag() + a) * (sm + sm.dag()))
 
         # collapse operators
         c_op_list = []
@@ -434,7 +384,7 @@ class TestJCModelEvolution:
         if rate > 0.0:
             c_op_list.append(np.sqrt(rate) * sm.dag())
 
-        options = SolverOptions(store_states=True)
+        options = SolverOptions(store_states=True, progress_bar=None)
 
         # evolve and calculate expectation values
         output = mesolve(
@@ -603,7 +553,7 @@ class TestMESolveStepFuncCoeff:
     """
     # Runge-Kutta method (dop853) behave better with step function evolution
     # than multi-step methods (adams, qutip 4's default)
-    options = SolverOptions(method="dop853", nsteps=1e8)
+    options = SolverOptions(method="dop853", nsteps=1e8, progress_bar=None)
 
     def python_coeff(self, t, args):
         if t < np.pi/2:
