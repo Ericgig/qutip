@@ -220,7 +220,7 @@ modiffied
         Transform all component to a common data_type.
 
     """
-    def __init__(QobjEvo self, Q_object=[], args={},
+    def __init__(QobjEvo self, Q_object, args=None,
                  tlist=None, deepcopy=False, copy=True):
         if isinstance(Q_object, QobjEvo):
             self.dims = Q_object.dims.copy()
@@ -246,6 +246,7 @@ modiffied
         self._issuper = -1
         self._isoper = -1
         self._shift_dt = 0
+        args = args or {}
 
         use_step_func = args.get("_step_func_coeff", 0)
         cte = None

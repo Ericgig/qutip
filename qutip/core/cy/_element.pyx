@@ -372,11 +372,12 @@ cdef class _ProdElement(_BaseElement):
     cdef Data matmul(_ProdElement self, double t, Data state, Data out):
         cdef Data temp
         if not self.transform:
+            shape_0 = self.left.qobj(t).shape[0]
             if type(state) is Dense:
-                temp = dense.zeros(self.shape[0], state.shape[1],
+                temp = dense.zeros(shape_0, state.shape[1],
                                    (<Dense> state).fortran)
             else:
-                temp = _data.zeros[type(state)](self.shape[0], state.shape[1])
+                temp = _data.zeros[type(state)](shape_0, state.shape[1])
             temp = self.right.matmul(t, state, temp)
             out = self.left.matmul(t, temp, out)
             return out
