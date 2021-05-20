@@ -51,8 +51,7 @@ from .sesolve import sesolve
 # pass on to wavefunction solver or master equation solver depending on whether
 # any collapse operators were given.
 #
-def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
-            feedback_args=None, options=None, _safe_mode=True):
+def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None, options=None):
     """
     Master equation evolution of a density matrix for a given Hamiltonian and
     set of collapse operators, or a Liouvillian.
@@ -76,40 +75,7 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
 
     **Time-dependent operators**
 
-    For time-dependent problems, `H` and `c_ops` can be a QobjEvo or
-    specified in a nested-list format where each element in the list is a list
-    of length 2, containing an operator (:class:`qutip.qobj`) at the first
-    element and where the second element is either a string
-    (*list string format*), a callback function (*list callback format*)
-    that evaluates to the time-dependent coefficient for the corresponding
-    operator, or a NumPy array (*list array format*) which specifies the value
-    of the coefficient to the corresponding operator for each value of t in
-    `tlist`. See :class:`qutip.core.QobjEvo` for more detail on building time
-    dependent Quantum object.
-
-    Alternatively, `H` and individual `c_ops` can be a callback function with
-    the signature `f(t, args) -> Qobj` (*callback format*), which can return
-    the Hamiltonian or Liouvillian superoperator at any point in time.  If the
-    equation cannot be put in standard Lindblad form, then this time-dependence
-    format must be used.
-
-    *Examples*
-
-        H = [[H0, 'sin(w*t)'], [H1, 'sin(2*w*t)']]
-
-        H = [[H0, f0_t], [H1, f1_t]]
-
-        where f0_t and f1_t are python functions with signature f_t(t, args).
-
-        H = [[H0, np.sin(w*tlist)], [H1, np.sin(2*w*tlist)]]
-
-    In the *list string format* and *list callback format*, the string
-    expression and the callback function must evaluate to a real or complex
-    number (coefficient for the corresponding operator).
-
-    In all cases of time-dependent operators, `args` is a dictionary of
-    parameters that is used when evaluating operators. It is passed to the
-    callback functions as their second argument.
+    For time-dependent problems, `H` and `c_ops` can be a QobjEvo
 
     **Additional options**
 
@@ -130,9 +96,10 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
     Parameters
     ----------
 
-    H : :class:`qutip.Qobj`
-        System Hamiltonian, or a callback function for time-dependent
-        Hamiltonians, or alternatively a system Liouvillian.
+    H : :class:`Qobj`, :class:`QobjEvo`
+        System Hamiltonian as a Qobj or QobjEvo for time-dependent Hamiltonians.
+        list of [:class:`Qobj`, :class:`Coefficient`] or callable that can be
+        made into :class:`QobjEvo` are also accepted.
 
     rho0 : :class:`qutip.Qobj`
         initial density matrix or state vector (ket).
@@ -140,42 +107,32 @@ def mesolve(H, rho0, tlist, c_ops=None, e_ops=None, args=None,
     tlist : *list* / *array*
         list of times for :math:`t`.
 
-    c_ops : None / list of :class:`qutip.Qobj`
-        single collapse operator, or list of collapse operators, or a list
-        of Liouvillian superoperators.
+    c_ops : list of :class:`qutip.Qobj`, :class:`QobjEvo`
+        Single collapse operator, or list of collapse operators, or a list
+        of Liouvillian superoperators. If none are needed, use an empty list.
 
-    e_ops : None / list of :class:`qutip.Qobj` / callback function single
-        single operator or list of operators for which to evaluate
-        expectation values.
+    e_ops : list of :class:`qutip.Qobj` / callback function
+        Single operator or list of operators for which to evaluate
+        expectation values or callable or list of callable.
+        Callable signature must be, `f(t: float, state: Qobj)`.
+        See :func:`expect` for more detail of operator expectation.
 
     args : None / *dictionary*
         dictionary of parameters for time-dependent Hamiltonians and
         collapse operators.
 
-    feedback_args : None / *dictionary*
-        dictionary of args that dependent on the states.
-        With `feedback_args = {key: Qobj}`
-        args[key] will be updated to be the state as a Qobj at every use of
-        the system.
-        `feedback_args = {key: op}` will make args[key] == expect(op, state)
-
     options : None / :class:`qutip.SolverOptions`
         with options for the solver.
-
-    progress_bar : None / BaseProgressBar
-        Optional instance of BaseProgressBar, or a subclass thereof, for
-        showing the progress of the simulation.
 
     Returns
     -------
     result: :class:`qutip.Result`
 
         An instance of the class :class:`qutip.Result`, which contains
-        either an *array* `result.expect` of expectation values for the times
-        specified by `tlist`, or an *array* `result.states` of state vectors or
-        density matrices corresponding to the times in `tlist` [if `e_ops` is
-        an empty list], or nothing if a callback function was given in place of
-        operators for which to calculate the expectation values.
+        a *list of array* `result.expect` of expectation values for the times
+        specified by `tlist`, and/or a *list* `result.states` of state vectors
+        or density matrices corresponding to the times in `tlist` [if `e_ops`
+        is an empty list of `store_states=True` in options].
 
     """
     c_ops = c_ops if c_ops is not None else []
@@ -210,42 +167,31 @@ class MeSolver(Solver):
 
     Parameters
     ----------
-    MeSolver(H, c_ops, e_ops=None, options=None,
-             times=None, args=None, feedback_args=None,
-             _safe_mode=False)
+    H : :class:`Qobj`, :class:`QobjEvo`
+        System Hamiltonian as a Qobj or QobjEvo for time-dependent Hamiltonians.
+        list of [:class:`Qobj`, :class:`Coefficient`] or callable that can be
+        made into :class:`QobjEvo` are also accepted.
 
-    H : :class:`qutip.qobj`, :class:`qutip.qobjevo`, *list*, *callable*
-        System Hamiltonian as a Qobj, list of Qobj and coefficient, QobjEvo,
-        or a callback function for time-dependent Hamiltonians.
-        list format and options can be found in QobjEvo's description.
-        Alternatively a system Liouvillian.
-
-    c_ops : list of :class:`qutip.Qobj`
-        single collapse operator, or list of collapse operators, or a list
+    c_ops : list of :class:`qutip.Qobj`, :class:`QobjEvo`
+        Single collapse operator, or list of collapse operators, or a list
         of Liouvillian superoperators. If none are needed, use an empty list.
 
-    e_ops : None / list of :class:`qutip.qobj` or callback function
-        single operator or list of operators for which to evaluate
-        expectation values.
-        For list operator evolution, the overlap is computed:
-            tr(e_ops[i].dag()*op(t))
+    e_ops : :class:`qutip.qobj`, callable, or list.
+        Single operator or list of operators for which to evaluate
+        expectation values or callable or list of callable.
+        Callable signature must be, `f(t: float, state: Qobj)`.
+        See :func:`expect` for more detail of operator expectation.
 
     options : SolverOptions
         Options for the solver
 
     times : array_like
         List of times at which the numpy-array coefficients are applied.
-        Does not need to be the same times as those used for the evolution.
+        Used when the hamiltonian is passed as a list with array for coeffients.
 
     args : dict
         dictionary that contain the arguments for the coeffients
-
-    feedback_args : None / *dictionary*
-        dictionary of args that dependent on the states.
-        With `feedback_args = {key: Qobj}`
-        args[key] will be updated to be the state as a Qobj at every use of
-        the system.
-        `feedback_args = {key: op}` will make args[key] == expect(op, state)
+        Used when the hamiltonian is passed as a list or callable.
 
     methods
     -------
@@ -276,7 +222,6 @@ class MeSolver(Solver):
         can be used.
 
     """
-    _super = True
     name = "mesolve"
 
     def __init__(self, H, c_ops, e_ops=None, options=None,
@@ -301,18 +246,14 @@ class MeSolver(Solver):
         if isket(state):
             state = ket2dm(state)
 
-
         if self.options.ode["State_data_type"]:
             state = state.to(self.options.ode["State_data_type"])
-        self._state_qobj = state
-        self._state_dims = state.dims
-        self._state_shape = state.shape
-        self._state_type = state.type
+        info = state.dims, state.type, state.isherm
 
         if self._system.dims[1] == state.dims:
-            return stack_columns(state.data)
+            return stack_columns(state.data), info
         elif self._system.dims[1] == state.dims[0]:
-            return state.data
+            return state.data, info
         else:
             raise TypeError("".join([
                             "incompatible dimensions ",
@@ -321,14 +262,10 @@ class MeSolver(Solver):
                             repr(state.dims),])
                            )
 
-    def _restore_state(self, state, copy=True):
+    def _restore_state(self, state, info, copy=True):
+        dims, type, herm = info
         if state.shape[1] == 1:
             return Qobj(unstack_columns(state),
-                        dims=self._state_dims,
-                        type=self._state_type,
-                        copy=False)
+                        dims=dims, type=type, isherm=herm, copy=False)
         else:
-            return Qobj(state,
-                        dims=self._state_dims,
-                        type=self._state_type,
-                        copy=copy)
+            return Qobj(state, dims=dims, type=type, copy=copy)

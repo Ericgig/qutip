@@ -1,6 +1,8 @@
 """ Class for solve function results"""
 import numpy as np
+import scipy.linalg
 from ..core import Qobj, QobjEvo, spre, issuper, expect
+from qutip import qdiags
 
 __all__ = ["Result", "MultiTrajResult", "MultiTrajResultAveraged"]
 
@@ -12,6 +14,14 @@ class _Expect_Caller:
 
     def __call__(self, t, state):
         return expect(self.oper, state)
+
+
+def _normalize_prop(state):
+    # normalization for propagator in sesolve
+    # each column is normalized as a ket.
+    norms = scipy.linalg.norm(state.full(), axis=0)
+    norms[norms <= 1e-15] = 1.
+    return state @ qdiags(1/norms, 0)
 
 
 class Result:
@@ -39,26 +49,37 @@ class Result:
         Diverse statistics of the evolution.
 
     num_expect : int
-        Number of expectation value operators in simulation.
+        Number of expectation value operators.
 
     num_collapse : int
-        Number of collapse operators in simualation.
+        Number of collapse operators.
 """
-    def __init__(self, e_ops, options, super_):
+    def __init__(self, e_ops, options, sample_state):
         self.times = []
 
         self._raw_e_ops = e_ops or []
         self._states = []
         self._expects = []
         self._last_state = None
-        self._super = super_
+        self._state_dims = sample_state.dims
+        if sample_state.isket:
+            self._state_type = 'ket'
+        elif sample_state.isoper and sample_state.norm()-1 <= 1e-8:
+            # Normalization trace = 1
+            self._state_type = 'dm'
+        elif sample_state.isoper:
+            # Expecting a propagator for the Schrodinger equation.
+            # Normalization: each column is normalized to 1
+            self._state_type = 'prop'
+        else:
+            self._state_type = 'other'
 
-        self._read_e_ops(super_)
+        self._read_e_ops()
         self._read_options(options)
         self.collapse = None
         self.stats = {"num_expect": self._e_num}
 
-    def _read_e_ops(self, _super):
+    def _read_e_ops(self):
         self._e_ops_dict = False
         self._e_num = 0
         self._e_ops = []
@@ -77,8 +98,8 @@ class Result:
             if isinstance(e, Qobj):
                 self._e_ops.append(_Expect_Caller(e))
             elif isinstance(e, QobjEvo):
-                if not issuper(e.cte) and _super:
-                    e = spre(e)
+                # if not e.issuper and self._state_type == 'dm':
+                #    e = spre(e)
                 self._e_ops.append(e.expect)
             elif callable(e):
                 self._e_ops.append(e)
@@ -92,19 +113,18 @@ class Result:
         else:
             self._store_states = self._e_num == 0
         self._store_final_state = options['store_final_state']
-        if self._super:
-            self._normalize_outputs = options['normalize_output'] in ['dm', True, 'all']
-        else:
-            self._normalize_outputs = options['normalize_output'] in ['ket', True, 'all']
+        _norm_keys = {
+            'ket': ['ket', True, 'all'],
+            'dm': ['dm', True, 'all'],
+            'prop': [True, 'all'],
+        }.get(self._state_type, [])
+        self._normalize_outputs = options['normalize_output'] in _norm_keys
 
     def _normalize(self, state):
-        if state.shape[1] == 1:
-            return state * (1/state.norm())
-        elif state.shape[1] == state.shape[0] and self._super:
-            return state * (1/state.norm())
+        if self._state_type = 'prop':
+            return _normalize_prop(state)
         else:
-            # TODO add normalization for propagator evolution.
-            pass
+            return state * (1 / state.norm())
 
     def add(self, t, state):
         """

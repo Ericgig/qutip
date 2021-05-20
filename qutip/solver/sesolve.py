@@ -62,11 +62,10 @@ def sesolve(H, psi0, tlist, e_ops=None, args=None, options=None):
 
     Parameters
     ----------
-
-    H : :class:`qutip.qobj`, :class:`qutip.qobjevo`, *list*, *callable*
-        system Hamiltonian as a Qobj, list of Qobj and coefficient, QobjEvo,
-        or a callback function for time-dependent Hamiltonians.
-        list format and options can be found in QobjEvo's description.
+    H : :class:`Qobj`, :class:`QobjEvo`
+        System Hamiltonian as a Qobj or QobjEvo for time-dependent Hamiltonians.
+        list of [:class:`Qobj`, :class:`Coefficient`] or callable that can be
+        made into :class:`QobjEvo` are also accepted.
 
     psi0 : :class:`qutip.qobj`
         initial state vector (ket)
@@ -75,40 +74,29 @@ def sesolve(H, psi0, tlist, e_ops=None, args=None, options=None):
     tlist : *list* / *array*
         list of times for :math:`t`.
 
-    e_ops : None / list of :class:`qutip.qobj` / callback function
-        single operator or list of operators for which to evaluate
-        expectation values.
-        For list operator evolution, the overlap is computed:
-            tr(e_ops[i].dag()*op(t))
+    e_ops : :class:`qutip.qobj`, callable, or list.
+        Single operator or list of operators for which to evaluate
+        expectation values or callable or list of callable.
+        Callable signature must be, `f(t: float, state: Qobj)`.
+        See :func:`expect` for more detail of operator expectation.
 
     args : None / *dictionary*
         dictionary of parameters for time-dependent Hamiltonians
-
-    feedback_args : None / *dictionary*
-        dictionary of args that dependent on the states.
-        With `feedback_args = {key: Qobj}`
-        args[key] will be updated to be the state as a Qobj at every use of
-        the system.
-        `feedback_args = {key: op}` will make args[key] == expect(op, state)
 
     options : None / :class:`qutip.SolverOptions`
         with options for the ODE solver.
 
     Returns
     -------
+    result: :class:`qutip.Result`
 
-    output: :class:`qutip.solver`
-
-        An instance of the class :class:`qutip.solver`, which contains either
-        an *array* of expectation values for the times specified by `tlist`, or
-        an *array* or state vectors corresponding to the
-        times in `tlist` [if `e_ops` is an empty list], or
-        nothing if a callback function was given inplace of operators for
-        which to calculate the expectation values.
-
+        An instance of the class :class:`qutip.Result`, which contains
+        a *list of array* `result.expect` of expectation values for the times
+        specified by `tlist`, and/or a *list* `result.states` of state vectors
+        or density matrices corresponding to the times in `tlist` [if `e_ops`
+        is an empty list of `store_states=True` in options].
     """
     solver = SeSolver(H, e_ops, options, tlist, args)
-
     return solver.run(psi0, tlist, args)
 
 
@@ -119,37 +107,27 @@ class SeSolver(Solver):
 
     Parameters
     ----------
-    SeSolver(H, e_ops=None, options=None,
-             times=None, args=None, feedback_args=None,
-             _safe_mode=False)
+    H : :class:`Qobj`, :class:`QobjEvo`
+        System Hamiltonian as a Qobj or QobjEvo for time-dependent Hamiltonians.
+        list of [:class:`Qobj`, :class:`Coefficient`] or callable that can be
+        made into :class:`QobjEvo` are also accepted.
 
-    H : :class:`qutip.qobj`, :class:`qutip.qobjevo`, *list*, *callable*
-        System Hamiltonian as a Qobj, list of Qobj and coefficient, QobjEvo,
-        or a callback function for time-dependent Hamiltonians.
-        list format and options can be found in QobjEvo's description.
+    e_ops : :class:`qutip.qobj`, callable, or list.
+        Single operator or list of operators for which to evaluate
+        expectation values or callable or list of callable.
+        Callable signature must be, `f(t: float, state: Qobj)`.
+        See :func:`expect` for more detail of operator expectation.
 
-    e_ops : None / list of :class:`qutip.qobj` or callback function
-        single operator or list of operators for which to evaluate
-        expectation values.
-        For list operator evolution, the overlap is computed:
-            tr(e_ops[i].dag()*op(t))
-
-    options : SolverOptions
+    options : :class:`SolverOptions`
         Options for the solver
 
     times : array_like
         List of times at which the numpy-array coefficients are applied.
-        Does not need to be the same times as those used for the evolution.
+        Used when the hamiltonian is passed as a list with array for coeffients.
 
     args : dict
         dictionary that contain the arguments for the coeffients
-
-    feedback_args : None / *dictionary*
-        dictionary of args that dependent on the states.
-        With `feedback_args = {key: Qobj}`
-        args[key] will be updated to be the state as a Qobj at every use of
-        the system.
-        `feedback_args = {key: op}` will make args[key] == expect(op, state)
+        Used when the hamiltonian is passed as a list or callable.
 
     methods
     -------
@@ -208,16 +186,14 @@ class SeSolver(Solver):
                             " and ",
                             repr(state.dims),])
                            )
-        self._state_qobj = state
-        self._state_dims = state.dims
-        self._state_type = state.type
 
         if self.options.ode["State_data_type"]:
             state = state.to(self.options.ode["State_data_type"])
-        return state.data
+        return state.data, (state.dims, state.type)
 
-    def _restore_state(self, state, copy=True):
+    def _restore_state(self, state, info, copy=True):
+        dims, type = info
         return Qobj(state,
-                    dims=self._state_dims,
-                    type=self._state_type,
+                    dims=dims,
+                    type=type,
                     copy=copy)

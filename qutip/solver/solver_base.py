@@ -78,33 +78,51 @@ class Solver:
         Alternatively, function[s] with the signature f(t, state) -> expect
         can be used.
 
+    stats: dict
+        Diverse statistics of the evolution.
+
     """
-    _super = None
+    # sesolve, mesolve, etc. used when choosing the
     name = ""
+
+    # State, time and Integrator of the stepper functionnality
     _t = 0
     _state = None
     _integrator = False
+
+    # Class of option used by the solver
     optionsclass = SolverOptions
 
     def __init__(self, e_ops, args, feedback_args):
         raise NotImplementedError
 
+    def _prepare_state(self, state):
+        # Do the dims checks
+        # prepare the data from the Qobj (reshape, update type)
+        # return state.data, info
+        raise NotImplementedError
+
+    def _restore_state(self, state, info, copy=True):
+        # rebuild the Qobj from the state's data
+        # info pass dims, type, etc., from _prepare_state to _restore_state
+        raise NotImplementedError
+
     def run(self, state0, tlist, args={}):
-        state0 = self._prepare_state(state0)
+        _data0, info = self._prepare_state(state0)
         _integrator = self._get_integrator()
         if args:
             _integrator.update_args(args)
         _time_start = time()
-        _integrator.set_state(tlist[0], state0)
+        _integrator.set_state(tlist[0], _data0)
         self.stats["preparation time"] += time() - _time_start
-        res = Result(self.e_ops, self.options.results, self._super)
-        res.add(tlist[0], self._state_qobj)
+        res = Result(self.e_ops, self.options.results, state0)
+        res.add(tlist[0], state0)
 
         progress_bar = get_progess_bar(self.options['progress_bar'])
         progress_bar.start(len(tlist)-1, **self.options['progress_kwargs'])
         for t, state in _integrator.run(tlist):
             progress_bar.update()
-            res.add(t, self._restore_state(state, False))
+            res.add(t, self._restore_state(state, info, False))
         progress_bar.finished()
 
         self.stats['run time'] = progress_bar.total_time()
@@ -115,7 +133,7 @@ class Solver:
 
     def start(self, state0, t0):
         _time_start = time()
-        self._state = self._prepare_state(state0)
+        self._state, self.info = self._prepare_state(state0)
         self._t = t0
         self._integrator = self._get_integrator()
         self._integrator.set_state(self._t, self._state)
@@ -128,7 +146,7 @@ class Solver:
             self._integrator.update_args(args)
             self._integrator.set_state(self._t, self._state)
         self._t, self._state = self._integrator.step(t, copy=False)
-        return self._restore_state(self._state)
+        return self._restore_state(self._state, self.info)
 
     def _get_integrator(self):
         method = self.options.ode["method"]
