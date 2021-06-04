@@ -32,7 +32,7 @@
 ###############################################################################
 """
 This module provides functions for parallel execution of loops and function
-mappings, using the builtin Python module multiprocessing or the loky parallel execution library. 
+mappings, using the builtin Python module multiprocessing or the loky parallel execution library.
 """
 __all__ = ['parallel_map', 'serial_map', 'loky_pmap', 'get_map']
 
@@ -103,12 +103,14 @@ def serial_map(task, values, task_args=None, task_kwargs=None,
     for n, value in enumerate(values):
         if time.time() > end_time:
             break
-        progress_bar.update(n)
         result = task(value, *task_args, **task_kwargs)
         if reduce_func is not None:
-            reduce_func(result)
+            remaining_ntraj = reduce_func(result)
         else:
             results.append(result)
+        if remaining_ntraj and remaining_ntraj <= 0:
+            end_time = 0
+        progress_bar.update(n)
     progress_bar.finished()
 
     return results
@@ -171,9 +173,11 @@ def parallel_map(task, values, task_args=None, task_kwargs=None,
             remaining_time = min(end_time - time.time(), job_time)
             result = job.get(remaining_time)
             if reduce_func is not None:
-                reduce_func(result)
+                remaining_ntraj = reduce_func(result)
             else:
                 results.append(result)
+            if remaining_ntraj and remaining_ntraj <= 0:
+                job_time = 0
             progress_bar.update()
 
     except KeyboardInterrupt as e:
@@ -253,9 +257,11 @@ def loky_pmap(task, values, task_args=None, task_kwargs=None,
             remaining_time = min(end_time - time.time(), job_time)
             result = job.result(remaining_time)
             if reduce_func is not None:
-                reduce_func(result)
+                remaining_ntraj = reduce_func(result)
             else:
                 results.append(result)
+            if remaining_ntraj and remaining_ntraj <= 0:
+                job_time = 0
             progress_bar.update()
 
     except KeyboardInterrupt as e:

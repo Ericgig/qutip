@@ -171,100 +171,58 @@ class McSolver(Solver):
     """
     ... TODO
     """
+    _traj_solver_class = _OneTrajMcSolver
+    _super = False
+    name = "mcsolve"
+    optionsclass = SolverOptions
+
     def __init__(self, H, c_ops, e_ops=None, options=None,
-                 times=None, args=None, feedback_args=None,
-                 _safe_mode=False):
+                 times=None, args=None, seed=None):
         _time_start = time()
         self.stats = {}
-        e_ops = e_ops or []
-        options = options or SolverOptions()
-        args = args or {}
-        feedback_args = feedback_args or {}
         if not isinstance(options, SolverOptions):
             raise ValueError("options must be an instance of "
                              "qutip.solver.SolverOptions")
 
-        self._safe_mode = _safe_mode
-        self._super = False
-        self._state = None
-        self._state0 = None
-        self._t = 0
-        self.seed_sequence = SeedSequence()
-        self._traj_solver = False
+        self.seed_sequence = SeedSequence(seed)
+        self.traj_solvers = []
+        self.result = None
 
-        self.e_ops = e_ops
+        self.e_ops = e_ops or []
         self.options = options
 
-        self.c_ops = [QobjEvo(op, args=args, tlist=times) for c_op in c_ops]
-        self.n_ops = [c_op.dag() * c_op for c_op in self.c_ops]
+        self._c_ops = [QobjEvo(op, args=args, tlist=times) for c_op in c_ops]
+        self._n_ops = [c_op.dag() * c_op for c_op in self._c_ops]
         self._system = -1j* QobjEvo(H, args=args, tlist=times)
-        for n_evo in self.n_ops:
+        for n_evo in self._n_ops:
             self._system -= 0.5 * n_evo
 
         self.stats['solver'] = "MonteCarlo Evolution"
         self.stats['num_collapse'] = len(c_ops)
         self.stats["preparation time"] = time() - _time_start
 
-    def _read_seed(self, seed, ntraj=1):
-        if seed is None:
-            seeds = self.seed_sequence.spawn(ntraj)
-        elif not isinstance(seed, list):
-            seeds = SeedSequence(seed).spawn(ntraj)
-        elif isinstance(seed, SeedSequence):
-            seeds = seed.spawn(ntraj)
-        elif isinstance(seed, list) and len(seed) >= ntraj:
-            seeds = seed
-        else:
-            raise ValueError("A seed list must be longer than ntraj")
-        return seeds
+    def _check_state_dims(self, state):
+        if not state.isket:
+            raise TypeError("The unitary solver requires psi0 to be "
+                            "a ket as initial state "
+                            "or a unitary as initial operator.")
 
-    def start(self, state0, t0, seed=None):
-        """Prepare the Solver for stepping."""
-        seed = self._read_seed(seed, 1)[0]
-        self._traj_solver = _OneTrajMcSolver(self)
-        self._traj_solver.start(state0, t0, Generator(self.bit_gen(seed)))
-
-    def step(self, t, args={}):
-        """Get the state at `t`"""
-        if not self._traj_solver:
-            raise RuntimeError("The `start` method must called first")
-        return self._traj_solver.step(t, args)
-
-    def run(self, state0, tlist, args={},
-            ntraj=1, timeout=0, target_tol=None, seed=None):
-        """
-        Compute ntraj trajectories starting from `state0`.
-        """
-        if self.options.mcsolve['keep_runs_results']:
-            self.result = MultiTrajResult(len(self.c_ops))
-        else:
-            self.result = MultiTrajResultAveraged(len(self.c_ops))
-        self.result._to_dm = not self._super
-        self.result._traj_solver = _OneTrajMcSolver(self)
-        self.result.stats['run time'] = 0
-        self.add_trajs(ntraj, timeout, target_tol, seed)
-        return self.result
-
-    def add_trajectories(self, ntraj=1, timeout=0, target_tol=None, seed=None):
-        """
-        Add ntraj more trajectories.
-        """
-        start_time = time()
-        seeds = sel._read_seed(seed, ntraj)
-        map_func = get_map(self.options.mcsolve)
-        map_func(self.traj_solver.run, seeds,
-                 (self.result.times,), {},
-                 reduce_func=self.result.add,
-                 map_kw=self.options.mcsolve['map_options'],
-                 progress_bar=self.options["progress_bar"],
-                 progress_bar_kwargs=self.options["progress_kwargs"]
-                )
-        self.result.stats['run time'] += time() - start_time
-        self.result.stats.update(self.stats)
-        return self.result
+        if self._system.dims[1] != state.dims[0]:
+            raise TypeError("".join([
+                            "incompatible dimensions ",
+                            repr(self._system.dims),
+                            " and ",
+                            repr(state.dims),])
+                           )
 
 
-class _OneTrajMcSolver(McSolver):
+
+class _OneTrajMcSolver(Solver):
+    """
+    ... TODO
+    """
+    _super = False
+    name = "mcsolve"
     def __init__(self, mcsolver):
         self._system = mcsolver._system
         self._c_ops = mcsolver._c_ops
@@ -284,9 +242,7 @@ class _OneTrajMcSolver(McSolver):
             self.bit_gen = np_rng.PCG64
 
         self._integrator = self._get_evolver(options)
-
         self.collapses = []
-
         self.norm_func = _data.norm.l2
 
     def prob_func(self, state):
@@ -309,9 +265,10 @@ class _OneTrajMcSolver(McSolver):
         self._state_type = state.type
         self._state_qobj = state
 
-        # TODO: with #1420, it should be changed to `in to._str2type`
-        if self.options.ode["State_data_type"] in to.dtypes:
+        try:
             state = state.to(self.options.ode["State_data_type"])
+        expect (ValueError, TypeError):
+            pass
         self._state0 = state.data
         return state.data
 
