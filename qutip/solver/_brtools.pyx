@@ -83,14 +83,28 @@ cdef extern from "<complex>" namespace "std" nogil:
 cdef int use_zgeev = eigh_unsafe
 
 
-__all__ = ['Spectrum', 'Spectrum_Str', 'Spectrum_array', 'Spectrum_func_t',
-           'bloch_redfield_tensor', 'BR_tensor', 'CBR_RHS']
+__all__ = ['make_spectra', 'bloch_redfield_tensor', 'BR_tensor', 'CBR_RHS']
 
 
 @cython.overflowcheck(True)
 cdef size_t _mul_checked(size_t a, size_t b) except? -1:
     return a * b
 
+def make_spectra(f):
+    if isinstance(f, Spectrum):
+        return f
+    elif isinstance(f, str):
+        coeff = coefficient(f, args={"w":0})
+        return Spectrum_Str(coeff)
+    elif isinstance(f, (np.ndarray, Cubic_Spline)):
+        coeff = coefficient(f)
+        return Spectrum_array(coeff)
+    elif callable(f):
+        try:
+            f(0, 0)
+            return Spectrum_func_t(f)
+        except Exception:
+            return Spectrum(f)
 
 cdef class Spectrum:
     # wrapper to use Coefficient for spectrum function in string format
@@ -315,6 +329,94 @@ cdef double complex * ZGEMM(double complex * A, double complex * B,
     return C
 
 
+cdef void _to_eigbasis(Dense evecs, Dense fock, bint H_fortran,
+                       Dense out=None, Dense temp=None):
+    # evecs is usually dense or diagonal
+    # Use ZGEMM instead of dense.matmul since it can do A.dag @ B in one
+    # operation without making copy of the array.
+    cdef size_t nrows = evecs.shape[0]
+    if evecs.shape[0] != evecs.shape[1]:
+        raise ValueError
+    if fock.shape[0] != evecs.shape[0] or fock.shape[1] != evecs.shape[1]:
+        raise ValueError
+    if out is None:
+        out = data.dense.empty(evecs.shape[0], evecs.shape[1], H_fortran)
+    elif out.shape[0] != evecs.shape[0] or out.shape[1] != evecs.shape[1]:
+        raise ValueError
+    if temp is None:
+        temp = data.dense.zeros(evecs.shape[0], evecs.shape[1])
+    elif temp.shape[0] != evecs.shape[0] or temp.shape[1] != evecs.shape[1]:
+        raise ValueError
+
+    if H_fortran a == out.fortran:
+        # Z.dag @ rho @ Z
+        ZGEMM(fock.data, evecs.data, nrows, nrows, nrows, nrows,
+              not fock.fortran, 0, 1., 0., temp.data)
+        ZGEMM(evecs.data, temp.data, nrows, nrows, nrows, nrows,
+              2, 0, 1., 0., out.data)
+    else:
+        # eigen solver gives Z* instead of Z if not H.fortran
+        # Z.T @ rho @ Z*
+        ZGEMM(evecs.data, fock.data, nrows, nrows, nrows, nrows,
+              1, 1 + <int>fock.fortran, 1., 0., temp.data)
+        ZGEMM(evecs.data, temp.data, nrows, nrows, nrows, nrows,
+              1, 2, 1., 0., out.data)
+
+
+cpdef void _to_fockbasis(Dense evecs, Dense eigen, bint H_fortran,
+                         Dense out=None, Dense temp=None):
+    # evecs is usually dense or diagonal
+    # Use ZGEMM instead of dense.matmul since it can do A.dag @ B in one
+    # operation without making copy of the array.
+    cdef size_t nrows = evecs.shape[0]
+    if evecs.shape[0] != evecs.shape[1]:
+        raise ValueError
+    if eigen.shape[0] != evecs.shape[0] or eigen.shape[1] != evecs.shape[1]:
+        raise ValueError
+    if out is None:
+        out = data.dense.empty(evecs.shape[0], evecs.shape[1], H_fortran)
+    elif out.shape[0] != evecs.shape[0] or out.shape[1] != evecs.shape[1]:
+        raise ValueError
+    if temp is None:
+        temp = data.dense.zeros(evecs.shape[0], evecs.shape[1])
+    elif temp.shape[0] != evecs.shape[0] or temp.shape[1] != evecs.shape[1]:
+        raise ValueError
+    if H_fortran == out.fortran:
+        # Z @ rho @ Z.dag
+        ZGEMM(eigen.data, evecs.data, nrows, nrows, nrows, nrows,
+              not eigen.fortran, 2, 1., 0., temp.data)
+        ZGEMM(evecs.data, temp.data, nrows, nrows, nrows, nrows,
+              0, 0, 1., 1., out.data)
+    else:
+        # Z* @ rho @ Z.T
+        ZGEMM(eigen.data, evecs.data, nrows, nrows, nrows, nrows,
+              1 + eigen.fortran, 1, 1., 0., temp.data)
+        ZGEMM(temp.data, evecs.data, nrows, nrows, nrows, nrows,
+              2, 1, 1., 1., out.data)
+
+
+cpdef Data _superop_to_eigenbasis(Data evecs, Data fock, bint H_fortran):
+    # kron only available as CSR...
+    cdef size_t nrows = evecs.shape[0]
+    cdef data.Data S
+    if not H_fortran:
+        S = data.kron(evecs.adjoint(), evecs.transpose())
+    else:
+        S = data.kron(evecs.transpose(), evecs.adjoint())
+    return data.matmul(S, data.matmul(fock, S.adjoint()))
+
+
+cpdef Data _superop_to_fockbasis(Data evecs, Data eig, bint H_fortran):
+    # kron only available as CSR...
+    cdef size_t nrows = evecs.shape[0]
+    cdef data.Data S
+    if not H_fortran:
+        S = data.kron(evecs.adjoint(), evecs.transpose())
+    else:
+        S = data.kron(evecs.transpose(), evecs.adjoint())
+    return data.matmul(S.adjoint(), data.matmul(eig, S))
+
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
@@ -326,7 +428,7 @@ cdef inline void vec2mat_index(int nrows, int index, int[2] out) nogil:
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef double skew_and_dwmin(double * evals, double[:,::1] skew,
-                                unsigned int nrows) nogil:
+                           unsigned int nrows) nogil:
     cdef double diff
     dw_min = DBL_MAX
     cdef size_t ii, jj
@@ -376,21 +478,6 @@ cpdef CSR liou_from_diag_ham(double[::1] diags):
             else:
                 out.row_index[row_out + col + 1] = nnz
     return out
-
-
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cpdef CSR cop_super_term(Dense cop, Dense evecs,
-                         double complex alpha, double atol):
-    cdef size_t kk, nrows=evecs.shape[0]
-    cdef Dense cop_eig = dense_to_eigbasis(cop, evecs, atol)
-    cdef CSR c = csr.from_dense(cop_eig)
-    cdef size_t nnz = csr.nnz(c)
-    imul_csr(c, alpha)
-    cdef CSR cdc = matmul_csr(c.adjoint(), c)
-    cdef CSR iden = csr.identity(nrows)
-    cdef CSR out = add_csr(kron_csr(c.conj(), c), kron_csr(iden, cdc), scale=-0.5)
-    return add_csr(out, kron_csr(cdc.transpose(), iden), scale=-0.5)
 
 
 @cython.boundscheck(False)
@@ -669,15 +756,15 @@ def BR_tensor(object H, list a_ops, bool use_secular=True,
     return R, ekets
 
 
-cdef class CBR_RHS(CQobjFunc):
-    cdef CQobjEvo H
-    cdef CQobjEvo c_ops
+cdef class _BlochRedfieldElement(_BaseElement):
+    cdef QobjEvo H
     cdef list a_ops
     cdef list spectra
-    cdef bint use_secular, H_fortran, has_c_op, return_eigen
+    cdef bint use_secular, H_fortran, return_eigen
     cdef double sec_cutoff, atol
     cdef size_t nrows
 
+    cdef object np_datas
     cdef double[:, ::1] skew
     cdef double[:, ::1] spectrum
     cdef int * isuppz
@@ -687,13 +774,9 @@ cdef class CBR_RHS(CQobjFunc):
     cdef double * eigvals
     cdef readonly Dense evecs, out, eig_vec, temp, op_eig
 
-    def __init__(self, H, a_ops, spectra, c_ops, use_secular, sec_cutoff, atol,
-                 eigen=False):
-        self.H = H.compiled_qobjevo
-        self.has_c_op = c_ops is not None
-        if c_ops is not None:
-            self.c_ops = c_ops.compiled_qobjevo
-        self.a_ops = [op.compiled_qobjevo for op in a_ops]
+    def __init__(self, H, a_ops, spectra, use_secular, sec_cutoff, atol, eigen=False):
+        self.H = H
+        self.a_ops = a_ops
         self.spectra = spectra
         self.use_secular = use_secular
         self.sec_cutoff = sec_cutoff
@@ -705,30 +788,32 @@ cdef class CBR_RHS(CQobjFunc):
         self.issuper = True
         self.return_eigen = eigen
 
-        self.skew = <double[:self.nrows,:self.nrows]><double *>PyDataMem_NEW_ZEROED(_mul_checked(self.nrows, self.nrows), sizeof(double))
-        self.spectrum = <double[:self.nrows,:self.nrows]><double *>PyDataMem_NEW_ZEROED(_mul_checked(self.nrows, self.nrows), sizeof(double))
+        # Allocate some array
+        # Let numpy manage memory
+        self.np_datas = [
+            np.zeros((self.nrows, self.nrows), dtype=np.float64),
+            np.zeros((self.nrows, self.nrows), dtype=np.float64),
+            np.zeros(2 * self.nrows, dtype=np.int32),
+            np.zeros(18 * self.nrows, dtype=np.complex128),
+            np.zeros(24 * self.nrows, dtype=np.float64),
+            np.zeros(10 * self.nrows, dtype=np.int32),
+            np.zeros(self.nrows, dtype=np.float64),
+        ]
 
-        self.isuppz = <int *>PyDataMem_NEW(2*self.nrows * sizeof(int))
-        self.work = <complex *>PyDataMem_NEW(18*self.nrows * sizeof(complex))
-        self.rwork = <double *>PyDataMem_NEW(24*self.nrows * sizeof(double))
-        self.iwork = <int *>PyDataMem_NEW(10*self.nrows * sizeof(int))
-        self.eigvals = <double *>PyDataMem_NEW(self.nrows * sizeof(double))
+        self.skew = self.np_datas[0]
+        self.spectrum = self.np_datas[1]
+
+        self.isuppz = <int *>&self.np_datas[2][0]
+        self.work = <complex *>&self.np_datas[3][0]
+        self.rwork = <double *>&self.np_datas[4][0]
+        self.iwork = <int *>&self.np_datas[5][0]
+        self.eigvals = <double *>&self.np_datas[6][0]
 
         self.eig_vec = dense.zeros(self.nrows, self.nrows, fortran=True)
         self.out = dense.zeros(self.nrows, self.nrows, fortran=True)
         self.temp = dense.zeros(self.nrows, self.nrows, fortran=True)
         self.evecs = dense.zeros(self.nrows, self.nrows, fortran=True)
         self.op_eig = dense.zeros(self.nrows, self.nrows, fortran=True)
-
-    def __dealloc__(self):
-        PyDataMem_FREE(self.work)
-        PyDataMem_FREE(self.rwork)
-        PyDataMem_FREE(self.iwork)
-        PyDataMem_FREE(self.isuppz)
-        PyDataMem_FREE(self.eigvals)
-
-        PyDataMem_FREE(&self.skew[0,0])
-        PyDataMem_FREE(&self.spectrum[0,0])
 
     def call(self, double t, bint data=False, bint return_eigen=False):
         cdef size_t i
@@ -779,6 +864,10 @@ cdef class CBR_RHS(CQobjFunc):
                 return R_out
             return Qobj(R_out, dims=self.dims, type="super", copy=False)
 
+    cpdef Data matmul(self, double t, Data matrix):
+        cdef Dense mat = to(Dense, matrix)
+        return self.matmul_dense(t, mat.reorder(True))
+
     cpdef Dense matmul_dense(self, double t, Dense vec_fock, Dense out_fock=None):
         cdef size_t i, col, row, nrows = self.nrows
         cdef double dw_min
@@ -823,11 +912,11 @@ cdef class CBR_RHS(CQobjFunc):
         cdef char uplo = b'L'
         cdef double vl = 1, vu = 1, abstol = 0
         cdef int il = 1, iu = 1, nrows = self.nrows
-        cdef int lwork = 18*nrows
-        cdef int lrwork = 24*nrows
-        cdef int liwork = 10*nrows
+        cdef int lwork = 18 * nrows
+        cdef int lrwork = 24 * nrows
+        cdef int liwork = 10 * nrows
         cdef int info = 0, M = 0
-        cdef Dense H = self.H.call(t, data=True)
+        cdef Dense H = self.H._call(t)
         self.H_fortran = H.fortran
         zheevr(&jobz, &rnge, &uplo, &nrows, H.data, &nrows, &vl, &vu, &il, &iu,
                &abstol, &M, self.eigvals, self.evecs.data, &nrows, self.isuppz,
@@ -850,56 +939,6 @@ cdef class CBR_RHS(CQobjFunc):
                 out.data[nnz] = (-1j * vec.data[nnz] *
                                  (self.eigvals[jj] - self.eigvals[ii]))
                 nnz += 1
-
-    cpdef void to_eigbasis(self, Dense vec, Dense out):
-        cdef size_t nrows = self.nrows
-        if self.H_fortran:
-            # Z.dag @ rho @ Z
-            ZGEMM(vec.data, self.evecs.data, nrows, nrows, nrows, nrows,
-                  not vec.fortran, 0, 1., 0., self.temp.data)
-            ZGEMM(self.evecs.data, self.temp.data, nrows, nrows, nrows, nrows,
-                  2, 0, 1., 0., out.data)
-        else:
-            # eigen solver gives Z* instead of Z if not H.fortran
-            # Z.T @ rho @ Z*
-            ZGEMM(self.evecs.data, vec.data, nrows, nrows, nrows, nrows,
-                  1, 1 + <int>vec.fortran, 1., 0., self.temp.data)
-            ZGEMM(self.evecs.data, self.temp.data, nrows, nrows, nrows, nrows,
-                  1, 2, 1., 0., out.data)
-
-    cpdef void vec_to_fockbasis(self, Dense out_eigen, Dense out):
-        cdef size_t nrows = self.nrows
-        # out is fixed in fortran format
-        if self.H_fortran:
-            # Z @ rho @ Z.dag
-            ZGEMM(out_eigen.data, self.evecs.data, nrows, nrows, nrows, nrows,
-                  0, 2, 1., 0., self.temp.data)
-            ZGEMM(self.evecs.data, self.temp.data, nrows, nrows, nrows, nrows,
-                  0, 0, 1., 1., out.data)
-        else:
-            # Z* @ rho @ Z.T
-            ZGEMM(out_eigen.data, self.evecs.data, nrows, nrows, nrows, nrows,
-                  2, 1, 1., 0., self.temp.data)
-            ZGEMM(self.temp.data, self.evecs.data, nrows, nrows, nrows, nrows,
-                  2, 1, 1., 1., out.data)
-
-    cpdef Data D_to_eigenbasis(self, CSR R_eigen, Data C_fock):
-        cdef size_t nrows = self.nrows
-        cdef CSR S, c = csr.from_dense(self.evecs)
-        if not self.H_fortran:
-            S = kron_csr(c.adjoint(), c.transpose())
-        else:
-            S = kron_csr(c.transpose(), c.adjoint())
-        return add(matmul_csr(S, matmul(C_fock, S.adjoint())), R_eigen)
-
-    cpdef Data R_to_fockbasis(self, CSR R_eigen, Data C_fock):
-        cdef size_t nrows = self.nrows
-        cdef CSR S, c = csr.from_dense(self.evecs)
-        if not self.H_fortran:
-            S = kron_csr(c.adjoint(), c.transpose())
-        else:
-            S = kron_csr(c.transpose(), c.adjoint())
-        return add(matmul_csr(S.adjoint(), matmul_csr(R_eigen, S)), C_fock)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -957,7 +996,3 @@ cdef class CBR_RHS(CQobjFunc):
     @property
     def eigen_values(self):
         return np.array(<double[:self.nrows]> self.eigvals)
-
-    cpdef Data matmul(self, double t, Data matrix):
-        cdef Dense mat = to(Dense, matrix)
-        return self.matmul_dense(t, mat.reorder(True))
