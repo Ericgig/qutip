@@ -793,27 +793,14 @@ cdef class _BlochRedfieldElement(_BaseElement):
         self.np_datas = [
             np.zeros((self.nrows, self.nrows), dtype=np.float64),
             np.zeros((self.nrows, self.nrows), dtype=np.float64),
-            np.zeros(2 * self.nrows, dtype=np.int32),
-            np.zeros(18 * self.nrows, dtype=np.complex128),
-            np.zeros(24 * self.nrows, dtype=np.float64),
-            np.zeros(10 * self.nrows, dtype=np.int32),
-            np.zeros(self.nrows, dtype=np.float64),
         ]
-
-        self.skew = self.np_datas[0]
-        self.spectrum = self.np_datas[1]
-
-        self.isuppz = <int *>&self.np_datas[2][0]
-        self.work = <complex *>&self.np_datas[3][0]
-        self.rwork = <double *>&self.np_datas[4][0]
-        self.iwork = <int *>&self.np_datas[5][0]
-        self.eigvals = <double *>&self.np_datas[6][0]
 
         self.eig_vec = dense.zeros(self.nrows, self.nrows, fortran=True)
         self.out = dense.zeros(self.nrows, self.nrows, fortran=True)
-        self.temp = dense.zeros(self.nrows, self.nrows, fortran=True)
-        self.evecs = dense.zeros(self.nrows, self.nrows, fortran=True)
         self.op_eig = dense.zeros(self.nrows, self.nrows, fortran=True)
+
+        self.skew = self.np_datas[0]
+        self.spectrum = self.np_datas[1]
 
     def call(self, double t, bint data=False, bint return_eigen=False):
         cdef size_t i
