@@ -1,207 +1,151 @@
-
-
-from qutip.core.cy.qobjevo cimport QobjEvo
-from scipy.linalg.cython_lapack cimport zheevr, zgeev
-from qutip.core.data cimport Data, CSR, Dense, dense, csr, idxint
-import numpy as np
-cimport numpy as cnp
-from qutip.core.data.eigen import eigs
+cimport cython
 import qutip.core.data as _data
+from qutip.core.cy.qobjevo cimport QobjEvo
+from qutip.core.cy._element cimport _BaseElement
+from qutip.core.diagoper cimport _DiagonalizedOperatorHermitian
+from cython.parallel import prange
+cimport openmp
 
-def isDiagonal(M):
-    test = M.reshape(-1)[:-1].reshape(M.shape[i]-1, M.shape[j]+1)
-    return not np.any(test[:, 1:])
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef double complex * ZGEMM(double complex * A, double complex * B,
-                            int Arows, int Acols, int Brows, int Bcols,
-                            int transA=0, int transB=0, double complex alpha=1,
-                            double complex beta=0, double complex * C=NULL):
-    if C == NULL:
-        C = <double complex *>PyDataMem_NEW((Acols*Brows)*sizeof(double complex))
-    cdef char tA, tB
-    if transA == 0:
-        tA = b'N'
-    elif transA == 1:
-        tA = b'T'
-    elif transA == 2:
-        tA = b'C'
+cpdef CSR _br_term_sparse(Data A, double[:, ::1] skew, double[:, ::1] spectrum,
+                          bint use_secular, double cutoff):
+
+    cdef size_t nrows = A.shape[0]
+    cdef size_t a, b, c, d, k # matrix indexing variables
+    cdef double complex elem, ac_elem, bd_elem
+    cdef double complex[:,:] A_mat
+    cdef vector[idxint] coo_rows, coo_cols
+    cdef vector[double complex] coo_data
+
+    if type(A) is Dense:
+        A_mat = A.as_ndarray()
     else:
-        raise Exception('Invalid transA value.')
-    if transB == 0:
-        tB = b'N'
-    elif transB == 1:
-        tB = b'T'
-    elif transB == 2:
-        tB = b'C'
-    else:
-        raise Exception('Invalid transB value.')
+        A_mat = A.to_array()
 
-    zgemm(&tA, &tB, &Arows, &Bcols, &Brows, &alpha,
-          A, &Arows, B, &Brows, &beta, C, &Arows)
-    return C
+    for a in prange(nrows, nogil=True, schedule='dynamic'):
+      for b in range(nrows):
+        for c in range(nrows):
+          for d in range(nrows):
+            if (not use_secular) or (
+                fabs(skew[a,b]] - skew[c,d]) < cutoff
+            ):
+                elem = (A_mat[a, c] * A_mat[d, b]) * 0.5
+                elem *= (spectrum[c, a] + spectrum[d, b])
+
+                if a == c:
+                    ac_elem = 0
+                    for k in range(nrows):
+                        ac_elem += A_mat[d, k] * A_mat[k, b] * spectrum[d, k]
+                    elem -= 0.5 * ac_elem
+
+                if b == d:
+                    bd_elem = 0
+                    for k in range(nrows):
+                        bd_elem += A_mat[a, k] * A_mat[k, c] * spectrum[c, k]
+                    elem -= 0.5 * bd_elem
+
+                if elem != 0:
+                    coo_rows.push_back(a * nrows + b)
+                    coo_cols.push_back(c * nrows + d)
+                    coo_data.push_back(elem)
+
+    return csr.from_coo_pointers(
+        coo_rows.data(), coo_cols.data(), coo_data.data(),
+        nrows*nrows, nrows*nrows, coo_rows.size())
 
 
-cdef class EigenH():
-    cdef int nrows
+
+
+
+
+
+
+
+
+
+
+cdef class _BlochRedfieldElement(_BaseElement):
+    cdef _DiagonalizedOperatorHermitian H
+    cdef QobjEvo a_ops
+    cdef Spectrum spectra
+    cdef bint use_secular
+    cdef double sec_cutoff, atol
+    cdef size_t nrows
+
     cdef object np_datas
-    cdef Dense evecs
+    cdef double[:, ::1] skew
+    cdef double[:, ::1] spectrum
 
-    cdef int * isuppz
-    cdef int * iwork
-    cdef complex * work
-    cdef double * rwork
-    cdef double * eigvals
+    cdef readonly Dense evecs, out, eig_vec, temp, op_eig
 
-    def __init__(self, nrows):
-        self.nrows = nrows
-        self.np_datas = [
-            np.zeros(2 * self.nrows, dtype=np.int32),
-            np.zeros(18 * self.nrows, dtype=np.complex128),
-            np.zeros(24 * self.nrows, dtype=np.float64),
-            np.zeros(10 * self.nrows, dtype=np.int32),
-            np.zeros(self.nrows, dtype=np.float64),
-        ]
-        self.isuppz = <int *> cnp.PyArray_GETPTR2(self.np_datas[0], 0, 0)
-        self.work = <complex *> cnp.PyArray_GETPTR2(self.np_datas[1], 0, 0)
-        self.rwork = <double *> cnp.PyArray_GETPTR2(self.np_datas[2], 0, 0)
-        self.iwork = <int *> cnp.PyArray_GETPTR2(self.np_datas[3], 0, 0)
-        self.eigvals = <double *> cnp.PyArray_GETPTR2(self.np_datas[4], 0, 0)
+    def __init__(self, H, a_op, spectra, use_secular, sec_cutoff, atol):
+        if isinstance(H, _DiagonalizedOperator):
+            self.H = H
+        else:
+            self.H = _DiagonalizedOperatorHermitian(H)
+        self.a_op = a_op
+        self.nrows = a_op.shape[0]
+        self.shape = (_mul_checked(self.nrows, self.nrows),
+                      _mul_checked(self.nrows, self.nrows))
+        self.dims = [a_op.dims, a_op.dims]
 
-        self.evecs = dense.zeros(self.nrows, self.nrows, fortran=True)
+        self.spectra = spectra
+        self.sec_cutoff = sec_cutoff
+        self.atol = atol
 
-    def __call__(self, Dense data):
-        cdef char jobz = b'V'
-        cdef char rnge = b'A'
-        cdef char uplo = b'L'
-        cdef double vl=1, vu=1, abstol=0
-        cdef int il=1, iu=1, nrows=self.nrows
-        cdef int lwork = 18 * nrows
-        cdef int lrwork = 24 * nrows, liwork = 10 * nrows
-        cdef int info=0, M=0
+        # Allocate some array
+        # Let numpy manage memory
+        self.np_datas = np.zeros((self.nrows, self.nrows), dtype=np.float64)
+        self.spectrum = self.np_datas
 
-        zheevr(&jobz, &rnge, &uplo, &self.nrows, data.data, &nrows, &vl, &vu, &il, &iu,
-               &abstol, &M, self.eigvals, self.evecs.data, &nrows,
-               self.isuppz, self.work, &lwork,
-               self.rwork, &lrwork, self.iwork, &liwork, &info)
+    cpdef Data data(self, double t):
+        cdef size_t i
+        cdef double cutoff = self.sec_cutoff * self.H.dw_min(t)
+        cdef double[:, :] skew = self.H.skew(t)
+        self._compute_spectrum(t)
 
-        if info != 0:
-            if info < 0:
-                raise Exception("Error in parameter : %s" & abs(info))
-            else:
-                raise Exception("Algorithm failed to converge")
+        A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
+        BR_eig = _br_term(A_eig, self.skew, self.spectrum, cutoff)
+        return self.H.to_fockbasis(t, BR_eig)
 
-        return self.np_datas[4], self.evecs
+    cpdef object qobj(self, double t):
+        return Qobj(self.data(t), dims=self.dims, type="super",
+                     copy=False, superrep="super")
 
+    cpdef double complex coeff(self, double t) except *:
+        return 1.
 
-cdef class _DiagonalizedOperatorDense:
-    """
-    Diagonalized time dependent operator.
-    """
-    cdef:
-        double t
-        bint isconstant, isherm
-        QobjEvo oper
-        int nrows
-        double[:] eigvals
-        Dense evecs, temp
+    cdef _compute_spectrum(self, double t):
+        for col in range(self.nrows):
+            for row in range(self.nrows):
+                self.spectrum[row, col] = \
+                    self.spectra._call_t(t, self.skew[row, col])
 
-    def __init__(self, QobjEvo oper, bint isherm):
-        if oper.shape[0] != oper.shape[1]:
-            raise ValueError
-        self.oper = oper.to(Dense)
-        self.isconstant = oper.isconstant
-        if oper.isconstant:
-            self._compute_eigen(0)
-        self.nrows = oper.shape[0]
-        self.t = np.nan
-        self.isherm = isherm
+    cdef Data matmul_data_t(_BaseElement self, double t, Data state,
+                            Data out=None):
+        cdef size_t i
+        cdef double cutoff = self.sec_cutoff * self.H.dw_min(t)
+        cdef double[:, :] skew = self.H.skew(t)
+        self._compute_spectrum(t)
 
-        self.evecs = dense.zeros(self.nrows, self.nrows, fortran=True)
-        self.temp = dense.zeros(self.nrows, self.nrows, fortran=True)
+        A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
+        state_eig = self.H.to_eigbasis(t, state)
+        BR_eig = _br_term(A_eig, self.skew, self.spectrum, cutoff)
+        out_eig = _data.matmul(BR_eig, state_eig)
+        return _data.add(self.H.to_fockbasis(t, out_eig), out)
 
-    cpdef double[:] diagonal(self, double t):
-        """
-        Return the diagonal of the diagonalized operation: the eigenvalues.
-        """
-        if self.isconstant or t == self.t:
-            return self.eigvals
-        self._compute_eigen(t)
-        return self.eigvals
+    def linear_map(self, f, anti=False):
+        return _MapElement(self, [f])
 
-    cpdef Dense eigenstates(self, double t):
-        """
-        Return the eigenstates of the diagonalized operation.
-        """
-        if self.isconstant or t == self.t:
-            return self.evecs
-        self._compute_eigen(t)
-        return self.evecs
-
-    cdef void _compute_eigen(self, double t) except *:
-        self.t = t
-        op_data = self.oper._call(t)
-        # This lose to preallocating buffer and calling zheevr directly
-        # Also the `eigh` output are arrays which limits the non-Dense type...
-        # TODO: Should we fix this as dense and use zheevr?
-        # Or should we have `eigs`'s `eigenvectors` output as a Data layer?
-        self.eigvals, evecs = eigs(op_data, True, True)
-        self.evecs = Dense(evecs, copy=True)
-
-    cpdef Dense _to_eigbasis(self, Dense fock, Dense out=None):
-        # evecs is usually dense or diagonal
-        # Use ZGEMM instead of dense.matmul since it can do A.dag @ B in one
-        # operation without making copy of the array.
-        cdef size_t nrows = evecs.shape[0]
-        if evecs.shape[0] != evecs.shape[1]:
-            raise ValueError
-        if fock.shape[0] != evecs.shape[0] or fock.shape[1] != evecs.shape[1]:
-            raise ValueError
-        if out is None:
-            out = data.dense.empty(evecs.shape[0], evecs.shape[1], True)
-        elif out.shape[0] != evecs.shape[0] or out.shape[1] != evecs.shape[1]:
-            raise ValueError
-
-        # Z.dag @ rho @ Z
-        ZGEMM(fock.data, self.evecs.data, nrows, nrows, nrows, nrows,
-              not fock.fortran, 0, 1., 0., self.temp.data)
-        ZGEMM(self.evecs.data, self.temp.data, nrows, nrows, nrows, nrows,
-              2, 0, 1., 0., out.data)
-        return out
-
-    cpdef Dense _to_fockbasis(self, Dense eigen, Dense out=None):
-        # evecs is usually dense or diagonal
-        # Use ZGEMM instead of dense.matmul since it can do A.dag @ B in one
-        # operation without making copy of the array.
-        cdef size_t nrows = evecs.shape[0]
-        if evecs.shape[0] != evecs.shape[1]:
-            raise ValueError
-        if eigen.shape[0] != evecs.shape[0] or eigen.shape[1] != evecs.shape[1]:
-            raise ValueError
-        if out is None:
-            out = data.dense.empty(evecs.shape[0], evecs.shape[0], True)
-        elif out.shape[0] != evecs.shape[0] or out.shape[1] != evecs.shape[0]:
-            raise ValueError
-
-        # Z @ rho @ Z.dag
-        ZGEMM(eigen.data, self.evecs.data, nrows, nrows, nrows, nrows,
-              not eigen.fortran, 2, 1., 0., self.temp.data)
-        ZGEMM(self.evecs.data, self.temp.data, nrows, nrows, nrows, nrows,
-              0, 0, 1., 1., out.data)
-        return out
-
-    cpdef Data _superop_to_eigenbasis(self, Data fock):
-        # kron only available as CSR...
-        cdef size_t nrows = self.evecs.shape[0]
-        cdef _data.Data S
-        S = _data.kron(self.evecs.transpose(), self.evecs.adjoint())
-        return _data.matmul(S, _data.matmul(fock, S.adjoint()))
-
-    cpdef Data _superop_to_fockbasis(self, Data eig):
-        # kron only available as CSR...
-        cdef size_t nrows = self.evecs.shape[0]
-        cdef _data.Data S
-        S = _data.kron(self.evecs.transpose(), self.evecs.adjoint())
-        return _data.matmul(S.adjoint(), _data.matmul(eig, S))
+    def replace_arguments(self, args, cache=None):
+        if cache is None:
+            return _FuncElement(self._func, {**self._args, **args})
+        for old, new in cache:
+            if old is self:
+                return new
+        new = _FuncElement(self._func, {**self._args, **args})
+        cache.append((self, new))
+        return new

@@ -59,8 +59,7 @@ def make_spectra(f):
         except Exception:
             return Spectrum(f)
 
-def bloch_redfield(H, a_ops, c_ops=[],
-                   use_secular=True, sec_cutoff=0.1, atol=qset.core['atol']):
+def bloch_redfield(H, a_ops, c_ops=[], use_secular=True, sec_cutoff=0.1, atol=qset.core['atol']):
     ops = [H] + [op for op, spec in a_ops] + c_ops
     if not all(isinstance(op, (Qobj, QobjEvoBase)) for op in ops):
         raise TypeError("Operators must be Qobj of QobjEvo")

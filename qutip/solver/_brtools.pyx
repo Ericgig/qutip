@@ -106,6 +106,7 @@ def make_spectra(f):
         except Exception:
             return Spectrum(f)
 
+
 cdef class Spectrum:
     # wrapper to use Coefficient for spectrum function in string format
     cdef object _func
@@ -160,6 +161,59 @@ cdef class Spectrum_func_t(Spectrum):
 
     def __call__(self, double w):
         return self._func(0, w)
+
+
+cdef class _eigensolver():
+    #
+    cdef int nrows
+    cdef object np_datas
+    cdef Dense evecs
+
+    cdef int * isuppz
+    cdef int * iwork
+    cdef complex * work
+    cdef double * rwork
+    cdef double * eigvals
+
+    def __init__(self, nrows):
+        self.nrows = nrows
+        self.np_datas = [
+            np.zeros(2 * self.nrows, dtype=np.int32),
+            np.zeros(18 * self.nrows, dtype=np.complex128),
+            np.zeros(24 * self.nrows, dtype=np.float64),
+            np.zeros(10 * self.nrows, dtype=np.int32),
+            np.zeros(self.nrows, dtype=np.float64),
+        ]
+        self.isuppz = <int *> cnp.PyArray_GETPTR2(self.np_datas[0], 0, 0)
+        self.work = <complex *> cnp.PyArray_GETPTR2(self.np_datas[1], 0, 0)
+        self.rwork = <double *> cnp.PyArray_GETPTR2(self.np_datas[2], 0, 0)
+        self.iwork = <int *> cnp.PyArray_GETPTR2(self.np_datas[3], 0, 0)
+        self.eigvals = <double *> cnp.PyArray_GETPTR2(self.np_datas[4], 0, 0)
+
+        self.evecs = dense.zeros(self.nrows, self.nrows, fortran=True)
+
+    def __call__(self, Dense data):
+        cdef char jobz = b'V'
+        cdef char rnge = b'A'
+        cdef char uplo = b'L'
+        cdef double vl=1, vu=1, abstol=0
+        cdef int il=1, iu=1, nrows=self.nrows
+        cdef int lwork = 18 * nrows
+        cdef int lrwork = 24 * nrows, liwork = 10 * nrows
+        cdef int info=0, M=0
+
+        zheevr(&jobz, &rnge, &uplo, &self.nrows, data.data, &nrows, &vl, &vu, &il, &iu,
+               &abstol, &M, self.eigvals, self.evecs.data, &nrows,
+               self.isuppz, self.work, &lwork,
+               self.rwork, &lrwork, self.iwork, &liwork, &info)
+
+        if info != 0:
+            if info < 0:
+                raise Exception("Error in parameter : %s" & abs(info))
+            else:
+                raise Exception("Algorithm failed to converge")
+
+        return self.np_datas[4], self.evecs
 
 
 @cython.boundscheck(False)
@@ -754,232 +808,3 @@ def BR_tensor(object H, list a_ops, bool use_secular=True,
 
     R = Qobj(L, dims=sop_dims, type='super', copy=False)
     return R, ekets
-
-
-cdef class _BlochRedfieldElement(_BaseElement):
-    cdef QobjEvo H
-    cdef list a_ops
-    cdef list spectra
-    cdef bint use_secular, H_fortran, return_eigen
-    cdef double sec_cutoff, atol
-    cdef size_t nrows
-
-    cdef object np_datas
-    cdef double[:, ::1] skew
-    cdef double[:, ::1] spectrum
-    cdef int * isuppz
-    cdef int * iwork
-    cdef complex * work
-    cdef double * rwork
-    cdef double * eigvals
-    cdef readonly Dense evecs, out, eig_vec, temp, op_eig
-
-    def __init__(self, H, a_ops, spectra, use_secular, sec_cutoff, atol, eigen=False):
-        self.H = H
-        self.a_ops = a_ops
-        self.spectra = spectra
-        self.use_secular = use_secular
-        self.sec_cutoff = sec_cutoff
-        self.nrows = H.shape[0]
-        self.atol = atol
-        self.shape = (_mul_checked(self.nrows, self.nrows),
-                      _mul_checked(self.nrows, self.nrows))
-        self.dims = [self.H.dims, self.H.dims]
-        self.issuper = True
-        self.return_eigen = eigen
-
-        # Allocate some array
-        # Let numpy manage memory
-        self.np_datas = [
-            np.zeros((self.nrows, self.nrows), dtype=np.float64),
-            np.zeros((self.nrows, self.nrows), dtype=np.float64),
-        ]
-
-        self.eig_vec = dense.zeros(self.nrows, self.nrows, fortran=True)
-        self.out = dense.zeros(self.nrows, self.nrows, fortran=True)
-        self.op_eig = dense.zeros(self.nrows, self.nrows, fortran=True)
-
-        self.skew = self.np_datas[0]
-        self.spectrum = self.np_datas[1]
-
-    def call(self, double t, bint data=False, bint return_eigen=False):
-        cdef size_t i
-        cdef double dw_min, cutoff
-        cdef CSR out_eigen
-        cdef Data out_fock, R_out
-
-        if False and self.has_c_op and self.eigen:
-            pass
-            # TODO: Better to use `cop_super_term`
-            # and compute c_ops directly in eigen basis?
-        elif self.has_c_op:
-            out_fock = self.c_ops.call(t, data=True)
-        else:
-            out_fock = csr.zeros(_mul_checked(self.nrows, self.nrows),
-                                 _mul_checked(self.nrows, self.nrows))
-
-        out_eigen = csr.zeros(_mul_checked(self.nrows, self.nrows),
-                              _mul_checked(self.nrows, self.nrows))
-        self.H_eigen(t)
-        out_eigen = add_csr(liou_from_diag_ham(<double[:self.nrows]> self.eigvals), out_eigen)
-        dw_min = skew_and_dwmin(self.eigvals, self.skew, self.nrows)
-        cutoff = self.sec_cutoff * dw_min
-        for i in range(len(self.a_ops)):
-            for col in range(self.nrows):
-                for row in range(self.nrows):
-                    self.spectrum[row, col] = \
-                        (<Spectrum> self.spectra[i])._call_t(t,
-                             self.skew[row, col])
-            self.to_eigbasis(self.a_ops[i].call(t, data=True), self.op_eig)
-            out_eigen = add_csr(out_eigen, _br_term(self.op_eig, self.skew,
-                                                    self.spectrum,
-                                                    self.use_secular, cutoff)
-                               )
-        if return_eigen:
-            R_out = self.D_to_eigenbasis(out_eigen, out_fock)
-            if not data:
-                out = Qobj(R_out, dims=self.dims, type="super", copy=False)
-                ekets = [Qobj(np.asarray(self.evecs.as_ndarray()[:,k]),
-                              dims=[self.dims[0], [1] * len(self.dims[0])])
-                         for k in range(self.nrows)]
-                return R_out, ekets
-            else:
-                return R_out, self.evecs.copy()
-        else:
-            R_out = self.R_to_fockbasis(out_eigen, out_fock)
-            if data:
-                return R_out
-            return Qobj(R_out, dims=self.dims, type="super", copy=False)
-
-    cpdef Data matmul(self, double t, Data matrix):
-        cdef Dense mat = to(Dense, matrix)
-        return self.matmul_dense(t, mat.reorder(True))
-
-    cpdef Dense matmul_dense(self, double t, Dense vec_fock, Dense out_fock=None):
-        cdef size_t i, col, row, nrows = self.nrows
-        cdef double dw_min
-        cdef CSR R_mat
-        if not vec_fock.fortran:
-            vec_fock = vec_fock.reorder(1)
-        # c_ops is done first in the "outside" basis
-        if self.has_c_op:
-            out_fock = self.c_ops.matmul_dense(t, vec_fock, out=out_fock)
-        elif out_fock is None:
-            out_fock = mul_dense(vec_fock, 0)
-
-        self.H_eigen(t)
-        dw_min = skew_and_dwmin(self.eigvals, self.skew, nrows)
-
-        self.to_eigbasis(vec_fock, self.eig_vec)
-        self.apply_liou(self.eig_vec, self.out)
-
-        column_stack_dense(self.eig_vec, True)
-        column_stack_dense(self.out, True)
-
-        for i in range(len(self.a_ops)):
-            for col in range(nrows):
-                for row in range(nrows):
-                    self.spectrum[row, col] = (<Spectrum> self.spectra[i])._call_t(t, self.skew[row, col])
-            self.to_eigbasis(self.a_ops[i].call(t, data=True), self.op_eig)
-            R_mat = _br_term(self.op_eig, self.skew, self.spectrum,
-                             self.use_secular, dw_min*self.sec_cutoff)
-            matmul_csr_dense_dense(R_mat, self.eig_vec, scale=1, out=self.out)
-
-        column_unstack_dense(self.eig_vec, True)
-        column_unstack_dense(self.out, True)
-
-        self.vec_to_fockbasis(self.out, out_fock)
-        return out_fock
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void H_eigen(self, double t):
-        cdef char jobz = b'V'
-        cdef char rnge = b'A'
-        cdef char uplo = b'L'
-        cdef double vl = 1, vu = 1, abstol = 0
-        cdef int il = 1, iu = 1, nrows = self.nrows
-        cdef int lwork = 18 * nrows
-        cdef int lrwork = 24 * nrows
-        cdef int liwork = 10 * nrows
-        cdef int info = 0, M = 0
-        cdef Dense H = self.H._call(t)
-        self.H_fortran = H.fortran
-        zheevr(&jobz, &rnge, &uplo, &nrows, H.data, &nrows, &vl, &vu, &il, &iu,
-               &abstol, &M, self.eigvals, self.evecs.data, &nrows, self.isuppz,
-               self.work, &lwork, self.rwork, &lrwork, self.iwork, &liwork,
-               &info)
-        if info != 0:
-            if info < 0:
-                raise Exception("Error in parameter : %s" & abs(info))
-            else:
-                raise Exception("Algorithm failed to converge")
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void apply_liou(self, Dense vec, Dense out):
-        cdef unsigned int nnz = 0
-        cdef size_t ii, jj
-        imul_dense(out, 0)
-        for ii in range(self.nrows):
-            for jj in range(self.nrows):
-                out.data[nnz] = (-1j * vec.data[nnz] *
-                                 (self.eigvals[jj] - self.eigvals[ii]))
-                nnz += 1
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cdef void br_term_mult(self, double t, Dense A, double dw_min,
-                           Dense vec, Dense out) except *:
-        cdef size_t kk
-        cdef size_t I, J # vector index variables
-        cdef int[2] ab, cd #matrix indexing variables
-        cdef int nrows = self.nrows
-        cdef double dw, cutoff = dw_min * self.sec_cutoff
-        self.to_eigbasis(A, self.op_eig)
-        cdef double complex[::1, :] A_eig = self.op_eig.to_array()
-        cdef complex elem, ac_elem, bd_elem
-        cdef vector[idxint] coo_rows, coo_cols
-        cdef vector[double complex] coo_data
-
-        for I in range(_mul_checked(nrows, nrows)):
-            vec2mat_index(nrows, I, ab)
-            for J in range(_mul_checked(nrows, nrows)):
-                vec2mat_index(nrows, J, cd)
-                dw = fabs(self.skew[ab[0], ab[1]] - self.skew[cd[0], cd[1]])
-
-                if (not self.use_secular) or (dw < cutoff):
-                    elem = (A_eig[ab[0], cd[0]] * A_eig[cd[1], ab[1]]) * 0.5
-                    elem *= (self.spectrum[cd[0], ab[0]] +
-                             self.spectrum[cd[1], ab[1]])
-
-                    if (ab[0]==cd[0]):
-                        ac_elem = 0
-                        for kk in range(nrows):
-                            ac_elem += (A_eig[cd[1], kk] *
-                                        A_eig[kk, ab[1]] *
-                                        self.spectrum[cd[1], kk])
-                        elem -= 0.5 * ac_elem
-
-                    if (ab[1]==cd[1]):
-                        bd_elem = 0
-                        for kk in range(nrows):
-                            bd_elem += (A_eig[ab[0], kk] *
-                                        A_eig[kk, cd[0]] *
-                                        self.spectrum[cd[0], kk])
-                        elem -= 0.5 * bd_elem
-
-                    if (elem != 0):
-                        coo_rows.push_back(I)
-                        coo_cols.push_back(J)
-                        coo_data.push_back(elem)
-
-        cdef CSR matrix = csr.from_coo_pointers(
-            coo_rows.data(), coo_cols.data(), coo_data.data(),
-            _mul_checked(nrows, nrows), _mul_checked(nrows, nrows), coo_rows.size()
-        )
-        matmul_csr_dense_dense(matrix, vec, scale=1, out=out)
-
-    @property
-    def eigen_values(self):
-        return np.array(<double[:self.nrows]> self.eigvals)
