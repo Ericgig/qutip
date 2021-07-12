@@ -66,6 +66,71 @@ cpdef Dense neg_dense(Dense matrix):
     return out
 
 
+cdef void _check_shape(Data left, Data right) nogil except *:
+    if left.shape[0] != right.shape[0] or left.shape[1] != right.shape[1]:
+        raise ValueError(
+            "incompatible matrix shapes "
+            + str(left.shape)
+            + " and "
+            + str(right.shape)
+        )
+
+cpdef Dense point_multiplication_dense(Dense left, Dense right):
+    """
+    Element-wise product of the matrices:
+        out[i,j] = left[i,j] * right[i,j]
+    """
+    return Dense(left.as_ndarray(), right.as_ndarray())
+
+cpdef CSR point_multiplication_csr(CSR left, CSR right):
+    """
+    Element-wise product of the matrices:
+        out[i,j] = first[i,j] * right[i,j]
+    """
+    _check_shape(left, right)
+    cdef CSR out
+    cdef idxint ptr_left, ptr_left_max, col_left, left_nnz = csr.nnz(left)
+    cdef idxint ptr_right, ptr_right_max, col_right, right_nnz = csr.nnz(right)
+    cdef idxint nnz=0, row, ncols = left.shape[1]
+    cdef idxint worst_nnz = min(left_nnz + right_nnz)
+
+    # Fast paths for zero matrices.
+    if right_nnz == 0 or left_nnz == 0:
+        return csr.zeros(left.shape[0], left.shape[1])
+    # Main path.
+    out = csr.empty(left.shape[0], left.shape[1], worst_nnz)
+
+    out.row_index[0] = 0
+    ptr_left_max = ptr_right_max = 0
+    for row in range(left.shape[0]):
+        ptr_left = ptr_left_max
+        ptr_left_max = left.row_index[row + 1]
+        ptr_right = ptr_right_max
+        ptr_right_max = right.row_index[row + 1]
+        col_left = (left.col_index[ptr_left]
+                    if ptr_left < ptr_left_max else ncols + 1)
+        col_right = (right.col_index[ptr_right]
+                     if ptr_right < ptr_right_max else ncols + 1)
+        while ptr_left < ptr_left_max or ptr_right < ptr_right_max:
+            if col_left == col_right:
+                out.data[nnz] = left.data[ptr_left] * right.data[ptr_right]
+                out.col_index[nnz] = col_left
+                nnz += 1
+                ptr_left += 1
+                ptr_right += 1
+            elif col_left < col_right:
+                ptr_left += 1
+            else:
+                ptr_right += 1
+            col_left = (left.col_index[ptr_left]
+                        if ptr_left < ptr_left_max else ncols + 1)
+            col_right = (right.col_index[ptr_right]
+                         if ptr_right < ptr_right_max else ncols + 1)
+
+        out.row_index[row + 1] = nnz
+    return out
+
+
 from .dispatch import Dispatcher as _Dispatcher
 import inspect as _inspect
 
@@ -120,6 +185,23 @@ neg.__doc__ =\
 neg.add_specialisations([
     (CSR, CSR, neg_csr),
     (Dense, Dense, neg_dense),
+], _defer=True)
+
+point_multiplication = _Dispatcher(
+    _inspect.Signature([
+        _inspect.Parameter('left', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        _inspect.Parameter('right', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    ]),
+    name='point_multiplication',
+    module=__name__,
+    inputs=('left', 'right'),
+    out=True,
+)
+point_multiplication.__doc__ =\
+    """Element-wise matrix multiplication."""
+point_multiplication.add_specialisations([
+    (CSR, CSR, CSR, point_multiplication_csr),
+    (Dense, Dense, Dense, point_multiplication_dense),
 ], _defer=True)
 
 del _inspect, _Dispatcher
