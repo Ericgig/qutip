@@ -47,7 +47,7 @@ import scipy.linalg
 
 cnp.import_array()
 
-def _prep_cubic_spline(array, tlist):
+def _prep_cubic_spline(array, tlist, boundaries=(0, 0)):
     """ Prepare coefficients for interpalation of array.
     boudary conditions assumed: second derivative null at the extremities.
 
@@ -71,9 +71,11 @@ def _prep_cubic_spline(array, tlist):
     M[1,:] = 2.
     dt_cte = True
     dt0 = tlist[1]-tlist[0]
-    for i in range(1,n_t-1):
-        dt1 = tlist[i]-tlist[i-1]
-        dt2 = tlist[i+1]-tlist[i]
+    x[0] = boundaries[0] * 2
+    x[-1] = boundaries[1] * 2
+    for i in range(1, n_t-1):
+        dt1 = tlist[i] - tlist[i-1]
+        dt2 = tlist[i+1] - tlist[i]
         if ((dt2 - dt0) > 10e-10):
             dt_cte = False
         M[0,i+1] =  dt1 / (dt1+dt2)

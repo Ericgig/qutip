@@ -22,11 +22,10 @@ from ..settings import settings as qset
 from ..optionsclass import optionsclass
 from .data import Data
 from .interpolate import Cubic_Spline
-from .cy.coefficient import (InterpolateCoefficient, InterCoefficient,
+from .cy.coefficient import (InterCoefficient, StrFunctionCoefficient,
                              StepCoefficient, FunctionCoefficient,
                              ConjCoefficient, NormCoefficient,
-                             ShiftCoefficient, StrFunctionCoefficient,
-                             Coefficient)
+                             ShiftCoefficient, Coefficient)
 
 
 __all__ = ["coefficient", "CompilationOptions", "Coefficient",
@@ -82,7 +81,11 @@ def coefficient(base, *, tlist=None, args={}, args_ctypes={},
         return base
 
     if isinstance(base, Cubic_Spline):
-        return InterpolateCoefficient(base)
+        return InterCoefficient(
+            base.array,
+            [base.a, base.b],
+            boundaries=base.bounds
+        )
 
     elif isinstance(base, np.ndarray):
         if len(base.shape) != 1:
