@@ -43,47 +43,42 @@ from ..core import data as _data
 
 __all__ = ['bloch_redfield']
 
-def make_spectra(f):
-    if isinstance(f, Spectrum):
-        return f
-    elif isinstance(f, str):
-        coeff = coefficient(f, args={"w":0})
-        return Spectrum_Str(coeff)
-    elif isinstance(f, (np.ndarray, Cubic_Spline)):
-        coeff = coefficient(f)
-        return Spectrum_array(coeff)
-    elif callable(f):
-        try:
-            f(0, 0)
-            return Spectrum_func_t(f)
-        except Exception:
-            return Spectrum(f)
-
 def _legacy_read_a_op(a_ops):
+    const = coefficient("1")
     parsed_a_ops = []
     for op, spec in a_ops:
         if isinstance(op, Qobj):
             if isinstance(spec, str):
                 parsed_a_ops.append((op, coefficient(spec, args={'w':0})))
+            elif callable(spec):
+                parsed_a_ops.append((op, Spectrum(const, spec)))
             elif isinstance(spec, tuple):
                 if isinstance(spec[0], str):
                     freq_responce = coefficient(spec[0], args={'w':0})
                 elif isinstance(spec[0], Cubic_Spline):
-                    freq_responce = Coeff_t2w(coefficient(spec[0]))
+                    freq_responce = coefficient(spec[0])
                 else:
                     raise Exception('Invalid bath-coupling specification.')
-                if isinstance(spec[0], str):
-                    time_responce = coefficient(spec[0], args={'w':0})
-                elif isinstance(spec[0], Cubic_Spline):
-                    time_responce = coefficient(spec[0])
+                if isinstance(spec[1], str):
+                    time_responce = coefficient(spec[1], args={'w':0})
+                elif isinstance(spec[1], Cubic_Spline):
+                    time_responce = coefficient(spec[1])
                 else:
                     raise Exception('Invalid bath-coupling specification.')
-                parsed_a_ops.append((op, freq_responce * time_responce))
+                parsed_a_ops.append((op, Spectrum(time_coeff, freq_coeff))
         elif isinstance(op, tuple):
             qobj1, qobj2 = op
-
-            
-
+            if isinstance(spec[0], str):
+                freq_responce = coefficient(spec[0], args={'w':0})
+            elif isinstance(spec[0], Cubic_Spline):
+                freq_responce = coefficient(spec[0])
+            else:
+                raise Exception('Invalid bath-coupling specification.')
+            parsed_a_ops.append(
+                (QobjEvo([[qobj1, spec[1]], [qobj1, spec[2]]]),
+                 Spectrum(const, spec))
+            )
+    return parsed_a_ops
 
 
 def bloch_redfield(H, a_ops, c_ops=[],
