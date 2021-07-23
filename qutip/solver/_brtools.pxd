@@ -1,16 +1,25 @@
+#cython: language_level=3
+from qutip.core.cy.qobjevo cimport QobjEvo
+from qutip.core.cy.coefficient cimport Coefficient
 
+cdef SpectraCoefficient(Coefficient):
+    cdef Coefficient coeff_t
+    cdef Coefficient coeff_w
+    cdef double w
 
 cdef Data matmul_var(Data left, Data right, int transleft, int transright,
                      double complex alpha=*, Data out=*)
 
-cdef class _DiagonalizedOperator:
+cdef class _EigenBasisTransform:
     cdef:
         QobjEvo _oper
         int size
-        bint isconstant, _isherm
+        bint isconstant
         double _t
         object _eigvals  # np.ndarray
         Data _evecs, _inv
+        object _skew
+        double _dw_min
 
     cpdef object diagonal(self, double t)
     cpdef Data evecs(self, double t)
@@ -20,9 +29,5 @@ cdef class _DiagonalizedOperator:
     cdef Data _S_conv_inv(self, double t)
     cpdef void to_eigbasis(self, Data fock)
     cpdef void from_eigbasis(self, Data eig)
-
-cdef class _DiagonalizedOperatorHermitian(_DiagonalizedOperator):
-    double[:, :] _skew
-    double _dw_min
-    cdef double[:, :] skew(self, double t)
+    cdef object skew(self, double t)
     cdef double dw_min(self, double t)

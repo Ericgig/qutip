@@ -3,43 +3,11 @@ import qutip.core.data as _data
 from qutip.core.cy.qobjevo cimport QobjEvo
 from qutip.core.cy.coefficient cimport Coefficient
 from qutip.core.cy._element cimport _BaseElement
-from qutip.core.diagoper cimport _DiagonalizedOperatorHermitian
+from qutip.core.diagoper cimport _EigenBasisTransform
 from cython.parallel import prange
 cimport openmp
 from libcpp.vector cimport vector
 from libc.float cimport DBL_MAX
-
-
-cdef SpectraCoefficient(Coefficient):
-    """Spectrum Coefficient composed of 2 coefficients, 1 for the
-    time dependence and one for the frequency denpendence.
-    """
-    cdef Coefficient coeff_t
-    cdef Coefficient coeff_w
-    cdef double w
-
-    def __init__(self, Coefficient coeff_w, Coefficient coeff_t=None, double w=0):
-        self.coeff_t = coeff_t
-        self.coeff_w = coeff_w
-        self.w = w
-
-    cdef complex _call(self, double t) except *:
-        if self.coeff_t is None:
-            return self.coeff_w(self.w)
-        return self.coeff_t(t) * self.coeff_w(self.w)
-
-    cpdef Coefficient copy(self):
-        """Return a copy of the :obj:`Coefficient`."""
-        return SpectraCoefficient(self.coeff_t, self.coeff_w, self.w)
-
-    def replace(self, *, _args=None, w=None, **kwargs):
-        if w is not None:
-            return SpectraCoefficient(self.coeff_t, self.coeff_w, w)
-        if _args:
-            kwargs.update(_args)
-        if 'w' in kwargs:
-            return SpectraCoefficient(self.coeff_t, self.coeff_w, kwargs['w'])
-        return self
 
 
 @cython.boundscheck(False)
@@ -180,7 +148,7 @@ cpdef CSR _br_term_sparse(Data A, double[:, ::1] spectrum,
 
 
 cdef class _BlochRedfieldElement(_BaseElement):
-    cdef _DiagonalizedOperatorHermitian H
+    cdef _EigenBasisTransform H
     cdef QobjEvo a_ops
     cdef Coefficient spectra
     cdef bint use_secular
@@ -194,10 +162,10 @@ cdef class _BlochRedfieldElement(_BaseElement):
     cdef readonly Dense evecs, out, eig_vec, temp, op_eig
 
     def __init__(self, H, a_op, spectra, sec_cutoff):
-        if isinstance(H, _DiagonalizedOperatorHermitian):
+        if isinstance(H, _EigenBasisTransform):
             self.H = H
         else:
-            self.H = _DiagonalizedOperatorHermitian(H)
+            self.H = _EigenBasisTransform(H)
         self.a_op = a_op
         self.nrows = a_op.shape[0]
         self.shape = (self.nrows * self.nrows, self.nrows * self.nrows)
@@ -250,11 +218,14 @@ cdef class _BlochRedfieldElement(_BaseElement):
                             Data out=None):
         cdef size_t i
         cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
+        cdef Data A_eig, state_eig, BR_eig, out_eig
 
         A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
         state_eig = self.H.to_eigbasis(t, state)
         BR_eig = self._br_term(A_eig, cutoff)
         out_eig = _data.matmul(BR_eig, state_eig)
+        if out is None:
+            return self.H.to_fockbasis(t, out_eig)
         return _data.add(self.H.to_fockbasis(t, out_eig), out)
 
     def linear_map(self, f, anti=False):
@@ -285,8 +256,29 @@ cdef class _BlochRedfieldElement(_BaseElement):
         return new
 
 
-def brtensor(object H, list a_ops, bool use_secular=True,
-             double sec_cutoff=0.1, fock_basis=False, legacy_a_ops=False
+cdef class _BlochRedfieldEigenElement(_BlochRedfieldElement):
+    cpdef Data data(self, double t):
+        cdef size_t i
+        cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
+        A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
+        BR_eig = self._br_term(A_eig, cutoff)
+        return BR_eig
+
+    cdef Data matmul_data_t(_BaseElement self, double t, Data state_eig,
+                            Data out=None):
+        cdef size_t i
+        cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
+
+        A_eig = self.H.to_eigbasis(t, self.a_op._call(t
+        BR_eig = self._br_term(A_eig, cutoff)
+        out_eig = _data.matmul(BR_eig, state_eig)
+        if out is None:
+            return out_eig
+        return _data.add(out_eig, out)
+
+
+def brtensor(H, a_ops, bool use_secular=True,
+             double sec_cutoff=0.1, fock_basis=False
              use_sparse=False):
     """
     Calculates the Bloch-Redfield tensor for a system given
@@ -299,25 +291,18 @@ def brtensor(object H, list a_ops, bool use_secular=True,
     H : :class:`qutip.Qobj`, :class:`qutip.QobjEvo`
         System Hamiltonian.
 
-    a_ops : list of (a_op, spectra)
-        Nested list of system operators that couple to the environment,
-        and the corresponding bath spectra.
+    a_op : :class:`qutip.Qobj`, :class:`qutip.QobjEvo`
+        The operator coupling to the environment. Must be hermitian.
 
-        a_op : :class:`qutip.Qobj`, :class:`qutip.QobjEvo`
-            The operator coupling to the environment. Must be hermitian.
+    spectra : :class:`Coefficient`
+        The corresponding bath spectra.
+        Must be a `Coefficient` using an 'w' args. The `SpectraCoefficient`
+        can be used to use array based coefficient.
 
-        spectra : :class:`Coefficient`, callable
-            The corresponding bath spectra.
-            Can be a `Coefficient` using an 'w' args or a function of the
-            frequence. The `SpectraCoefficient` can be used to use array based
-            coefficient.
-            Example:
+        Example:
 
-            a_ops = [
-                (a+a.dag(), coefficient('w>0', args={"w": 0})),
-                (QobjEvo([b+b.dag(), f(t)]), g(w)),
-                (c+c.dag(), SpectraCoefficient(coefficient(Cubic_Spline))),
-            ]
+            coefficient('w>0', args={"w": 0})
+            SpectraCoefficient(coefficient(Cubic_Spline))
 
     use_secular : bool {True}
         Flag that indicates if the secular approximation should
@@ -330,9 +315,6 @@ def brtensor(object H, list a_ops, bool use_secular=True,
         Whether to return the tensor in the input basis or the diagonalized
         basis.
 
-    legacy_a_ops : bool {False}
-        Whether to use the v4's brmesolve's a_ops specification.
-
     Returns
     -------
 
@@ -342,15 +324,17 @@ def brtensor(object H, list a_ops, bool use_secular=True,
         Hamiltonian basis and the eigenvectors of the Hamiltonian as hstacked
         column.
     """
-    if legacy_a_ops:
-        a_ops = _legacy_read_a_op(a_ops)
 
     if isinstance(H, Qobj):
         H = QobjEvo(H)
         any_Qevo = False
     else:
         any_Qevo = True
-    Hdiag = _DiagonalizedOperatorHermitian(H, use_sparse=use_sparse)
+
+    if isinstance(H, _EigenBasisTransform):
+        Hdiag = H
+    else:
+        Hdiag = _EigenBasisTransform(H, sparse=sparse)
 
     sec_cutoff = sec_cutoff if use_secular else np.inf
     R = QobjEvo.__new__(QobjEvo)
@@ -358,83 +342,15 @@ def brtensor(object H, list a_ops, bool use_secular=True,
     R.shape = (H.shape[0]**2, H.shape[0]**2)
     R._issuper = True
     R.elements = []
-    for op, spectra in a_ops:
-        any_Qevo = any_Qevo or isinstance(op, QobjEvo)
+    any_Qevo = any_Qevo or isinstance(op, QobjEvo)
+    if fock_basis:
         R.elements = [
             _BlochRedfieldElement(Hdiag, QobjEvo(op), spectra, sec_cutoff)
         ]
-    if not any_Qevo:
+    else:
+        R.elements = [
+            _BlochRedfieldEigenElement(Hdiag, QobjEvo(op), spectra, sec_cutoff)
+        ]
+    if Hdiag.isconstant and isinstance(a_op, Qobj):
         R = R(0)
-    if fock_basis:
-        return R
-    evecs = QobjEvo(Hdiag.evecs)
-    return sprepost(inv(evecs), evecs) @ R, evecs
-
-
-def bloch_redfield_tensor(object H, list a_ops, list c_ops=[],
-                          bool use_secular=True, double sec_cutoff=0.1,
-                          fock_basis=False, legacy_a_ops=False):
-    """
-    Calculates the Bloch-Redfield tensor for a system given
-    a set of operators and corresponding spectral functions that describes the
-    system's coupling to its environment.
-
-    Parameters
-    ----------
-
-    H : :class:`qutip.Qobj`, :class:`qutip.QobjEvo`
-        System Hamiltonian.
-
-    a_ops : list of (a_op, spectra)
-        Nested list of system operators that couple to the environment,
-        and the corresponding bath spectra.
-
-        a_op : :class:`qutip.Qobj`, :class:`qutip.QobjEvo`
-            The operator coupling to the environment. Must be hermitian.
-
-        spectra : :class:`Coefficient`, callable
-            The corresponding bath spectra.
-            Can be a `Coefficient` using an 'w' args or a function of the
-            frequence. The `SpectraCoefficient` can be used to use array based
-            coefficient.
-            Example:
-
-            a_ops = [
-                (a+a.dag(), coefficient('w>0', args={"w": 0})),
-                (QobjEvo([b+b.dag(), f(t)]), g(w)),
-                (c+c.dag(), SpectraCoefficient(coefficient(Cubic_Spline))),
-            ]
-
-    c_ops : list
-        List of system collapse operators.
-
-    use_secular : bool {True}
-        Flag that indicates if the secular approximation should
-        be used.
-
-    sec_cutoff : float {0.1}
-        Threshold for secular approximation.
-
-    fock_basis : bool {False}
-        Whether to return the tensor in the input basis or the diagonalized
-        basis.
-
-    legacy_a_ops : bool {False}
-        Whether to use the v4's brmesolve's a_ops specification.
-
-    Returns
-    -------
-
-    R, [evecs]: :class:`qutip.Qobj`, tuple of :class:`qutip.Qobj`
-        If ``fock_basis``, return the Bloch Redfield tensor in the outside
-        basis. Otherwise return the Bloch Redfield tensor in the diagonalized
-        Hamiltonian basis and the eigenvectors of the Hamiltonian as hstacked
-        column.
-    """
-    L = liouvillian(H, c_ops)
-    R = brtensor(H, a_ops, use_secular,
-                 sec_cutoff, fock_basis, legacy_a_ops)
-    if not fock_basis:
-        R, ekets = R
-        return R + L, ekets
-    return R + L
+    return R
