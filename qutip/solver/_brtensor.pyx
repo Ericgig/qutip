@@ -1,9 +1,15 @@
+#cython: language_level=3
 cimport cython
+from libc.math cimport fabs
 import qutip.core.data as _data
+from qutip.core.data cimport Dense, CSR, Data, idxint, csr
 from qutip.core.cy.qobjevo cimport QobjEvo
 from qutip.core.cy.coefficient cimport Coefficient
-from qutip.core.cy._element cimport _BaseElement
-from qutip.core.diagoper cimport _EigenBasisTransform
+from qutip.core.cy._element cimport _BaseElement, _MapElement
+from qutip.solver._brtools cimport SpectraCoefficient, _EigenBasisTransform
+from qutip import Qobj
+import numpy as np
+
 from cython.parallel import prange
 cimport openmp
 from libcpp.vector cimport vector
@@ -17,6 +23,7 @@ cpdef Data _br_term_data(Data A, double[:, ::1] spectrum,
     # TODO: need point multiply to as dispatch to implement...
     # TODO: cutoff not applied.
     raise NotImplementedError
+    """
     cdef Data B, C, AB, id
     cdef double complex cutoff_arr
     cdef int nrow = A.shape[0]
@@ -40,6 +47,7 @@ cpdef Data _br_term_data(Data A, double[:, ::1] spectrum,
     out = _data.add(out, _data.kron(AB.transpose(), id), 0.5)
     out = _data.add(out, _data.kron(id, AB), 0.5)
     return _data.element_wise_multiply(out, C)
+    """
 
 
 @cython.boundscheck(False)
@@ -49,7 +57,7 @@ cpdef Dense _br_term_dense(Data A, double[:, ::1] spectrum,
 
     cdef size_t nrows = A.shape[0]
     cdef size_t a, b, c, d, k # matrix indexing variables
-    cdef double complex elem, ac_elem, bd_elem
+    cdef double complex elem
     cdef double complex[:,:] A_mat, ac_term, bd_term
     cdef object np2term
     cdef Dense out
@@ -69,24 +77,25 @@ cpdef Dense _br_term_dense(Data A, double[:, ::1] spectrum,
 
     for a in range(nrows):
         for b in range(nrows):
-            if fabs(skew[a,b]) < cutoff:
+            if fabs(skew[a, b]) < cutoff:
                 for k in range(nrows):
-                    ac_elem[a, b] += A_mat[a, k] * A_mat[k, b] * spectrum[a, k]
-                    bd_elem[a, b] += A_mat[a, k] * A_mat[k, b] * spectrum[b, k]
+                    ac_term[a, b] += A_mat[a, k] * A_mat[k, b] * spectrum[a, k]
+                    bd_term[a, b] += A_mat[a, k] * A_mat[k, b] * spectrum[b, k]
 
-    for a in prange(nrows, nogil=True, schedule='dynamic'):
+    for a in range(nrows): # prange(nrows, nogil=True, schedule='dynamic'):
         for b in range(nrows):
             for c in range(nrows):
                 for d in range(nrows):
+                    elem = 0.
                     if fabs(skew[a, b] - skew[c, d]) < cutoff:
-                        elem = (A_mat[a, c] * A_mat[d, b]) * 0.5
-                        elem *= (spectrum[c, a] + spectrum[d, b])
+                        elem = (A_mat[a, c] * A_mat[d, b] * 0.5 *
+                                (spectrum[c, a] + spectrum[d, b]))
 
                     if a == c:
-                        elem -= 0.5 * ac_elem[d, b]
+                        elem = elem - 0.5 * ac_term[d, b]
 
                     if b == d:
-                        elem -= 0.5 * bd_elem[a, c]
+                        elem = elem - 0.5 * bd_term[a, c]
 
                     out_array[a * nrows + b, c * nrows + d] = elem
     return out
@@ -101,7 +110,6 @@ cpdef CSR _br_term_sparse(Data A, double[:, ::1] spectrum,
     cdef size_t a, b, c, d, k # matrix indexing variables
     cdef double complex elem, ac_elem, bd_elem
     cdef double complex[:,:] A_mat, ac_term, bd_term
-    cdef double[:,:] spectrum
     cdef object np2term
     cdef vector[idxint] coo_rows, coo_cols
     cdef vector[double complex] coo_data
@@ -119,8 +127,8 @@ cpdef CSR _br_term_sparse(Data A, double[:, ::1] spectrum,
         for b in range(nrows):
             if fabs(skew[a,b]) < cutoff:
                 for k in range(nrows):
-                    ac_elem[a, b] += A_mat[a, k] * A_mat[k, b] * spectrum[a, k]
-                    bd_elem[a, b] += A_mat[a, k] * A_mat[k, b] * spectrum[b, k]
+                    ac_term[a, b] += A_mat[a, k] * A_mat[k, b] * spectrum[a, k]
+                    bd_term[a, b] += A_mat[a, k] * A_mat[k, b] * spectrum[b, k]
 
     for a in range(nrows):
         for b in range(nrows):
@@ -131,10 +139,10 @@ cpdef CSR _br_term_sparse(Data A, double[:, ::1] spectrum,
                         elem *= (spectrum[c, a] + spectrum[d, b])
 
                         if a == c:
-                            elem -= 0.5 * ac_elem[d, b]
+                            elem -= 0.5 * ac_term[d, b]
 
                         if b == d:
-                            elem -= 0.5 * bd_elem[a, c]
+                            elem -= 0.5 * bd_term[a, c]
 
                         if elem != 0:
                             coo_rows.push_back(a * nrows + b)
@@ -188,7 +196,7 @@ cdef class _BlochRedfieldElement(_BaseElement):
                 self.spectrum[row, col] = spec(t)
         return self.H.dw_min(t)
 
-    cdef Data _br_term(Data A_eig, double cutoff):
+    cdef Data _br_term(self, Data A_eig, double cutoff):
         # TODO: better swapping.
         # dense can run in parallel,
         # sparse can be great when cutoff is small and output is sparse.
@@ -214,8 +222,7 @@ cdef class _BlochRedfieldElement(_BaseElement):
     cpdef double complex coeff(self, double t) except *:
         return 1.
 
-    cdef Data matmul_data_t(_BaseElement self, double t, Data state,
-                            Data out=None):
+    cdef Data matmul_data_t(self, double t, Data state, Data out=None):
         cdef size_t i
         cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
         cdef Data A_eig, state_eig, BR_eig, out_eig
@@ -264,12 +271,11 @@ cdef class _BlochRedfieldEigenElement(_BlochRedfieldElement):
         BR_eig = self._br_term(A_eig, cutoff)
         return BR_eig
 
-    cdef Data matmul_data_t(_BaseElement self, double t, Data state_eig,
-                            Data out=None):
+    cdef Data matmul_data_t(self, double t, Data state_eig, Data out=None):
         cdef size_t i
         cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
 
-        A_eig = self.H.to_eigbasis(t, self.a_op._call(t
+        A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
         BR_eig = self._br_term(A_eig, cutoff)
         out_eig = _data.matmul(BR_eig, state_eig)
         if out is None:
@@ -277,9 +283,9 @@ cdef class _BlochRedfieldEigenElement(_BlochRedfieldElement):
         return _data.add(out_eig, out)
 
 
-def brtensor(H, a_ops, bool use_secular=True,
-             double sec_cutoff=0.1, fock_basis=False
-             use_sparse=False):
+def brtensor(H, a_op, spectra, use_secular=True,
+             sec_cutoff=0.1, fock_basis=False,
+             sparse=False):
     """
     Calculates the Bloch-Redfield tensor for a system given
     a set of operators and corresponding spectral functions that describes the
@@ -342,14 +348,14 @@ def brtensor(H, a_ops, bool use_secular=True,
     R.shape = (H.shape[0]**2, H.shape[0]**2)
     R._issuper = True
     R.elements = []
-    any_Qevo = any_Qevo or isinstance(op, QobjEvo)
+    any_Qevo = any_Qevo or isinstance(a_op, QobjEvo)
     if fock_basis:
         R.elements = [
-            _BlochRedfieldElement(Hdiag, QobjEvo(op), spectra, sec_cutoff)
+            _BlochRedfieldElement(Hdiag, QobjEvo(a_op), spectra, sec_cutoff)
         ]
     else:
         R.elements = [
-            _BlochRedfieldEigenElement(Hdiag, QobjEvo(op), spectra, sec_cutoff)
+            _BlochRedfieldEigenElement(Hdiag, QobjEvo(a_op), spectra, sec_cutoff)
         ]
     if Hdiag.isconstant and isinstance(a_op, Qobj):
         R = R(0)

@@ -1,8 +1,9 @@
 #cython: language_level=3
 from qutip.core.cy.qobjevo cimport QobjEvo
 from qutip.core.cy.coefficient cimport Coefficient
+from qutip.core.data cimport Data
 
-cdef SpectraCoefficient(Coefficient):
+cdef class SpectraCoefficient(Coefficient):
     cdef Coefficient coeff_t
     cdef Coefficient coeff_w
     cdef double w
@@ -25,9 +26,9 @@ cdef class _EigenBasisTransform:
     cpdef Data evecs(self, double t)
     cpdef Data inv(self, double t)
     cdef void _compute_eigen(self, double t) except *
-    cdef Data _S_conv(self, double t)
-    cdef Data _S_conv_inv(self, double t)
-    cpdef void to_eigbasis(self, Data fock)
-    cpdef void from_eigbasis(self, Data eig)
+    cdef Data S_converter(self, double t)
+    cdef Data S_converter_inverse(self, double t)
+    cpdef Data to_eigbasis(self, double t, Data fock)
+    cpdef Data from_eigbasis(self, double t, Data eig)
     cdef object skew(self, double t)
     cdef double dw_min(self, double t)

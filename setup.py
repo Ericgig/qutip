@@ -63,7 +63,7 @@ INSTALL_REQUIRES = ['numpy>=1.12', 'scipy>=1.0', 'cython>=0.29.20']
 PACKAGES = ['qutip', 'qutip/ui', 'qutip/qip', 'qutip/qip/device',
             'qutip/qip/operations', 'qutip/qip/compiler',
             'qutip/qip/algorithms', 'qutip/control',
-            'qutip/solve', 'qutip/solve/nonmarkov',
+            'qutip/solve', 'qutip/solver', 'qutip/solve/nonmarkov',
             'qutip/_mkl', 'qutip/tests', 'qutip/tests/core',
             'qutip/tests/core/data', 'qutip/tests/solve',
             'qutip/core', 'qutip/core/cy',
@@ -77,6 +77,7 @@ PACKAGE_DATA = {
     'qutip/core/cy/openmp': ['*.pxd', '*.pyx'],
     'qutip/core/cy/openmp/src': ['*.hpp', '*.cpp'],
     'qutip/solve': ['*.pxd', '*.pyx'],
+    'qutip/solver': ['*.pxd', '*.pyx'],
     'qutip/solve/nonmarkov': ['*.pxd', '*.pyx'],
     'qutip/tests/qasm_files': ['*.qasm'],
     'qutip/control': ['*.pyx'],
@@ -197,6 +198,10 @@ cy_exts = {
         '_piqs',
         '_steadystate',
         '_stochastic',
+    ],
+    'solver': [
+        '_brtensor',
+        '_brtools',
     ],
     'solve.nonmarkov': [
         '_heom',
