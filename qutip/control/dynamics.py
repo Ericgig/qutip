@@ -64,7 +64,7 @@ import scipy.sparse as sp
 from qutip import Qobj
 from qutip.core import data as _data
 from qutip.core.data.eigen import eigh
-from qutip import settings
+from qutip.settings import settings
 # QuTiP control modules
 import qutip.control.errors as errors
 import qutip.control.tslotcomp as tslotcomp
@@ -1571,7 +1571,7 @@ class DynamicsUnitary(Dynamics):
             # and eigenvectors as a list of separate 2D kets
             _type = _data.CSR if self.sparse_eigen_decomp else _data.Dense
             eig_val, eig_vec = _data.eigs(_data.to(_type, H.data))
-            eig_vec = np.hstack(eig_vec)
+            eig_vec = eig_vec.to_array()
 
         else:
             H = self._dyn_gen[k]

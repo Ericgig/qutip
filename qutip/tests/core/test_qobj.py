@@ -76,6 +76,43 @@ def test_QobjData():
     assert isinstance(q2.data, qutip.core.data.Data)
 
 
+@pytest.mark.parametrize("original_data",
+                         [
+                            qutip.data.Dense(_random_not_singular(2)),
+                            qutip.data.csr.identity(2),
+                            qutip.Qobj(_random_not_singular(2)),
+                            _random_not_singular(2),
+                         ],
+                         ids=[
+                             "Dense",
+                             "CSR",
+                             "Qobj",
+                             "ndarray",
+                         ])
+@pytest.mark.parametrize("copy", [True, False],
+                         ids=["copy=True", "copy=False"])
+def test_QobjCopyArgument(original_data, copy):
+    """Tests that Qobj copy argument works properly when instantiating Qobj."""
+    qobj_data = qutip.Qobj(original_data, copy=copy).data
+
+    if isinstance(original_data, qutip.Qobj):
+        # Qobj copies the data of another Qobj, so we take `data` if
+        # original_data was a Qobj
+        original_data = original_data.data
+
+    if isinstance(original_data, np.ndarray):
+        # For numpy object we compare with data's data. This should be dense so
+        # we get its data as ndarray.
+        qobj_data = qobj_data.as_ndarray()
+
+        # We look at the memory and see if it is shared or not to asses wether 
+        # copy argument worked or not.
+        assert np.shares_memory(qobj_data, original_data) != copy
+
+    else:
+        assert (original_data is qobj_data) != copy
+
+
 def test_QobjType():
     "qutip.Qobj type"
     N = int(np.ceil(10.0 * np.random.random())) + 5
@@ -100,6 +137,19 @@ def test_QobjType():
     super_qobj = qutip.Qobj(super_data, dims=[[[3]], [[3]]])
     assert super_qobj.type == 'super'
     assert super_qobj.issuper
+    assert super_qobj.superrep == 'super'
+
+    super_data = np.random.random(N)
+    super_qobj = qutip.Qobj(super_data, dims=[[[3], [3]], [[1]]])
+    assert super_qobj.type == 'operator-ket'
+    assert super_qobj.isoperket
+    assert super_qobj.superrep == 'super'
+
+    super_data = np.random.random(N)
+    super_qobj = qutip.Qobj(super_data, dims=[[[1]], [[3], [3]]])
+    assert super_qobj.type == 'operator-bra'
+    assert super_qobj.isoperbra
+    assert super_qobj.superrep == 'super'
 
     operket_qobj = qutip.operator_to_vector(oper_qobj)
     assert operket_qobj.isoperket
@@ -385,6 +435,17 @@ def test_CheckMulType():
     assert opbra2.isoperbra
 
     assert opbra2.dag() == opket2
+
+
+def test_operator_ket_superrep():
+    sop = qutip.to_super(qutip.sigmax())
+    opket1 = qutip.operator_to_vector(qutip.fock_dm(2, 0))
+    opket2 = sop * opket1
+    assert opket1.superrep == opket2.superrep
+
+    opbra1 = qutip.operator_to_vector(qutip.fock_dm(2, 0)).dag()
+    opbra2 = opbra1 * sop
+    assert opbra1.superrep == opbra2.superrep
 
 
 def test_QobjConjugate():
