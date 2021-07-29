@@ -73,8 +73,8 @@ cdef Data _apply_trans(Data original, int trans):
         out = original
     elif trans == 1:
         out = original.transpose()
-    elif original == 2:
-        out = original.adjoin()
+    elif trans == 2:
+        out = original.adjoint()
     elif trans == 3:
         out = original.conj()
     return out
@@ -89,7 +89,7 @@ cdef char _fetch_trans_code(int trans):
         return b'C'
 
 
-cdef Data matmul_var(Data left, Data right, int transleft, int transright,
+cpdef Data matmul_var(Data left, Data right, int transleft, int transright,
                      double complex alpha=1, Data out=None):
     """
     matmul which product matrices can be transposed or adjoint.
@@ -98,8 +98,8 @@ cdef Data matmul_var(Data left, Data right, int transleft, int transright,
     trans[left, right]:
         0 : Normal
         1 : Transpose
-        2 : Conjugate
-        3 : Adjoint
+        2 : Adjoint
+        3 : Conjugate
     """
     # TODO : Should this be supported in data.matmul?
     #        Tensorflow support this option.
@@ -117,7 +117,11 @@ cdef Data matmul_var(Data left, Data right, int transleft, int transright,
     ):
         left = _apply_trans(left, transleft)
         right = _apply_trans(right, transright)
-        return _data.add(out, _data.matmul(left, right), alpha)
+        temp = _data.matmul(left, right)
+        if out:
+            return _data.add(out, temp, alpha)
+        else:
+            return _data.mul(temp, alpha)
 
     if out is None:
         out = _data.dense.empty(left.shape[0], right.shape[1], right.fortran)
@@ -165,8 +169,8 @@ class _eigen_qevo:
     def __call__(self, t, args):
         if args != self.args:
             self.args = args
-            self.qevo = QobjEvo(self, args=args)
-        data = eigs(self.qevo._call(t), True, True)
+            self.qevo = QobjEvo(self.qevo, args=args)
+        _, data = eigs(self.qevo._call(t), True, True)
         return Qobj(data, copy=False, dims=self.qevo.dims)
 
 
@@ -186,7 +190,7 @@ cdef class _EigenBasisTransform:
     def __init__(self, QobjEvo oper, bint sparse=False):
         if oper.dims[0] != oper.dims[1]:
             raise ValueError
-        if type(oper(0)) == _data.CSR and not sparse:
+        if type(oper(0).data) == _data.CSR and not sparse:
             oper = oper.to(Dense)
         self._oper = oper
         self.isconstant = oper.isconstant
@@ -239,10 +243,10 @@ cdef class _EigenBasisTransform:
             self._inv = self.evecs(t).adjoint()
         return self._inv
 
-    cdef Data S_converter(self, double t):
+    cpdef Data S_converter(self, double t):
         return _data.kron(self.evecs(t).transpose(), self.inv(t))
 
-    cdef Data S_converter_inverse(self, double t):
+    cpdef Data S_converter_inverse(self, double t):
         return _data.kron(self.inv(t).transpose(), self.evecs(t))
 
     cpdef Data to_eigbasis(self, double t, Data fock):
@@ -251,29 +255,29 @@ cdef class _EigenBasisTransform:
         # don't make unneeded copy of evecs.
         cdef Data temp
         if fock.shape[0] == self.size and fock.shape[1] == 1:
-            return matmul_var(self.evecs(t), fock, 3, 0)
+            return matmul_var(self.evecs(t), fock, 2, 0)
 
         elif fock.shape[0] == self.size**2 and fock.shape[1] == 1:
-            if type(fock) is Dense and fock.fortran:
-                fock = _data.column_unstack_dense(fock, True)
-                temp = _data.matmul(matmul_var(self.evecs(t), fock, 3, 0),
+            if type(fock) is Dense and (<Dense> fock).fortran:
+                fock = _data.column_unstack_dense(fock, self.size, True)
+                temp = _data.matmul(matmul_var(self.evecs(t), fock, 2, 0),
                                     self.evecs(t))
                 fock = _data.column_stack_dense(fock, True)
             else:
-                fock = _data.column_unstack(fock)
-                temp = _data.matmul(matmul_var(self.evecs(t), fock, 3, 0),
+                fock = _data.column_unstack(fock, self.size)
+                temp = _data.matmul(matmul_var(self.evecs(t), fock, 2, 0),
                                     self.evecs(t))
             if type(temp) is Dense:
                 return _data.column_stack_dense(temp, True)
             return _data.column_stack(temp)
 
         if fock.shape[0] == self.size and fock.shape[0] == fock.shape[1]:
-            return _data.matmul(matmul_var(self.evecs(t), fock, 3, 0),
+            return _data.matmul(matmul_var(self.evecs(t), fock, 2, 0),
                                 self.evecs(t))
 
         elif fock.shape[0] == self.size**2 and fock.shape[0] == fock.shape[1]:
             temp = self.S_converter_inverse(t)
-            return _data.matmul(matmul_var(temp, fock, 3, 0), temp)
+            return _data.matmul(matmul_var(temp, fock, 2, 0), temp)
 
         raise ValueError
 
@@ -283,37 +287,37 @@ cdef class _EigenBasisTransform:
             return _data.matmul(self.evecs(t), eig)
 
         elif eig.shape[0] == self.size**2 and eig.shape[1] == 1:
-            if type(eig) is Dense and eig.fortran:
-                eig = _data.column_unstack_dense(eig, True)
+            if type(eig) is Dense and (<Dense> eig).fortran:
+                eig = _data.column_unstack_dense(eig, self.size, True)
                 temp = matmul_var(_data.matmul(self.evecs(t), eig),
-                                  self.evecs(t), 0, 3)
+                                  self.evecs(t), 0, 2)
                 eig = _data.column_stack_dense(eig, True)
             else:
-                eig = _data.column_unstack(eig)
+                eig = _data.column_unstack(eig, self.size)
                 temp = matmul_var(_data.matmul(self.evecs(t), eig),
-                                  self.evecs(t), 0, 3)
+                                  self.evecs(t), 0, 2)
             if type(temp) is Dense:
                 return _data.column_stack_dense(temp, True)
             return _data.column_stack(temp)
 
         elif eig.shape[0] == self.size and eig.shape[0] == eig.shape[1]:
             temp = self.evecs(t)
-            return matmul_var(_data.matmul(temp, eig), temp, 0, 3)
+            return matmul_var(_data.matmul(temp, eig), temp, 0, 2)
 
         elif eig.shape[0] == self.size**2 and eig.shape[0] == eig.shape[1]:
             temp = self.S_converter_inverse(t)
-            return _data.matmul(temp, matmul_var(eig, temp, 0, 3))
+            return _data.matmul(temp, matmul_var(eig, temp, 0, 2))
 
         raise ValueError
 
-    cdef double dw_min(self, double t):
+    cpdef double dw_min(self, double t):
         """ dw_min = min(abs(skew[skew != 0]))"""
         self.skew(t)
         return self._dw_min
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef object skew(self, double t):
+    cpdef object skew(self, double t):
         """ skew[i, j] = w[i] - w[j]"""
         cdef size_t i, j
         cdef double dw
@@ -329,7 +333,8 @@ cdef class _EigenBasisTransform:
                     dw = eigvals[i] - eigvals[j]
                     self._skew[i, j] = dw
                     self._skew[j, i] = -dw
-                    self._dw_min = fmin(fabs(dw), self._dw_min)
+                    if dw != 0:
+                        self._dw_min = fmin(fabs(dw), self._dw_min)
         return self._skew
 
 

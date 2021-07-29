@@ -8,7 +8,7 @@ cdef class SpectraCoefficient(Coefficient):
     cdef Coefficient coeff_w
     cdef double w
 
-cdef Data matmul_var(Data left, Data right, int transleft, int transright,
+cpdef Data matmul_var(Data left, Data right, int transleft, int transright,
                      double complex alpha=*, Data out=*)
 
 cdef class _EigenBasisTransform:
@@ -26,9 +26,9 @@ cdef class _EigenBasisTransform:
     cpdef Data evecs(self, double t)
     cpdef Data inv(self, double t)
     cdef void _compute_eigen(self, double t) except *
-    cdef Data S_converter(self, double t)
-    cdef Data S_converter_inverse(self, double t)
+    cpdef Data S_converter(self, double t)
+    cpdef Data S_converter_inverse(self, double t)
     cpdef Data to_eigbasis(self, double t, Data fock)
     cpdef Data from_eigbasis(self, double t, Data eig)
-    cdef object skew(self, double t)
-    cdef double dw_min(self, double t)
+    cpdef object skew(self, double t)
+    cpdef double dw_min(self, double t)
