@@ -42,7 +42,6 @@ import numpy as np
 from functools import partial
 from .operators import qeye
 from .qobj import Qobj
-from .cy.qobjevo import QobjEvo
 from .superoperator import operator_to_vector, reshuffle
 from .dimensions import (
     flatten, enumerate_flat, unflatten, deep_remove, dims_to_tensor_shape,
@@ -52,9 +51,10 @@ from . import data as _data
 
 
 class _reverse_partial_tensor:
-    # Picklable lambda op: tensor(op, right)
+    """ Picklable lambda op: tensor(op, right) """
     def __init__(self, right):
         self.right = right
+
     def __call__(self, op):
         return tensor(op, self.right)
 
@@ -83,6 +83,7 @@ shape = [4, 4], type = oper, isHerm = True
      [ 0.+0.j  1.+0.j  0.+0.j  0.+0.j]
      [ 1.+0.j  0.+0.j  0.+0.j  0.+0.j]]
     """
+    from .cy.qobjevo import QobjEvo
     if not args:
         raise TypeError("Requires at least one input argument")
     if len(args) == 1 and isinstance(args[0], (Qobj, QobjEvo)):
@@ -104,8 +105,8 @@ shape = [4, 4], type = oper, isHerm = True
             return right.linear_map(partial(tensor, left))
         if isinstance(right, Qobj):
             return left.linear_map(_reverse_partial_tensor(right))
-        left_t = left.linear_map(_reverse_partial_tensor(qeye(right.dims[1])))
-        right_t = right.linear_map(partial(tensor, qeye(left.dims[0])))
+        left_t = left.linear_map(_reverse_partial_tensor(qeye(right.dims[0])))
+        right_t = right.linear_map(partial(tensor, qeye(left.dims[1])))
         return left_t @ right_t
 
     if not all(q.superrep == args[0].superrep for q in args[1:]):

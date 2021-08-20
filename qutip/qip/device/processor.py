@@ -293,12 +293,11 @@ class Processor(object):
                 else:
                     coeffs_list.append(np.zeros(full_tlist))
             if self.spline_kind == "step_func":
-                arg = {"_step_func_coeff": True}
                 coeffs_list.append(
-                    _fill_coeff(pulse.coeff, pulse.tlist, full_tlist, arg))
+                    _fill_coeff(pulse.coeff, pulse.tlist, full_tlist, True))
             elif self.spline_kind == "cubic":
                 coeffs_list.append(
-                    _fill_coeff(pulse.coeff, pulse.tlist, full_tlist, {}))
+                    _fill_coeff(pulse.coeff, pulse.tlist, full_tlist, False))
             else:
                 raise ValueError("Unknown spline kind.")
         return np.array(coeffs_list)
@@ -514,8 +513,6 @@ class Processor(object):
         c_ops: list of :class:`qutip.QobjEvo`
             A list of lindblad operators is also returned. if ``noisy==Flase``,
             it is always an empty list.
-        tlist: list of float
-            A list of the times from associated with the pulse.
         """
         # TODO test it for non array-like coeff
         # check validity
@@ -535,7 +532,6 @@ class Processor(object):
 
         qu_list = []
         c_ops = []
-        t_lists = []
         for pulse in dynamics:
             if noisy:
                 qu, new_c_ops = pulse.get_noisy_qobjevo(dims=self.dims)
@@ -543,19 +539,37 @@ class Processor(object):
             else:
                 qu = pulse.get_ideal_qobjevo(dims=self.dims)
             qu_list.append(qu)
-            tlist = pulse.get_full_tlist()
-            if tlist is not None:
-                t_lists.append(tlist)
 
         final_qu = _merge_qobjevo(qu_list)
 
-        self.tlist = np.unique(np.sort(np.hstack(t_lists)))
         final_qu.arguments(args)
 
         if noisy:
             return final_qu, c_ops
         else:
             return final_qu, []
+
+    def tlist(self, noisy):
+        """
+        Return the merged tlist of all the pulses.
+        
+        Parameters
+        ----------
+        noisy: bool, optional
+            If noise should be included. Default is False.
+        """
+        if not noisy:
+            dynamics = self.pulses
+        else:
+            dynamics = self.get_noisy_pulses(
+                device_noise=True, drift=True)
+
+        t_lists = []
+        for pulse in dynamics:
+            tlist = pulse.get_full_tlist()
+            if tlist is not None:
+                t_lists.append(tlist)
+        return np.unique(np.sort(np.hstack(t_lists)))
 
     def run_analytically(self, init_state=None, qc=None):
         """
@@ -708,7 +722,7 @@ class Processor(object):
 
         evo_result = solver(
             H=noisy_qobjevo, rho0=init_state,
-            tlist=self.tlist, **kwargs)
+            tlist=self.tlist(noisy), **kwargs)
         return evo_result
 
     def load_circuit(self, qc):
