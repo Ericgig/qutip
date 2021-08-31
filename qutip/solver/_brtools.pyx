@@ -12,17 +12,17 @@ from qutip.core.cy.coefficient cimport Coefficient
 from qutip.core.data cimport Data, Dense, idxint
 import qutip.core.data as _data
 from qutip.core import Qobj
-from scipy.linalg.cython_blas cimport zgemm
+from scipy.linalg cimport cython_blas as blas
 from qutip.core.data.eigen import eigs
 
 
-cnp.import_array()
+# cnp.import_array()
 
-cdef extern from "<complex>" namespace "std" nogil:
-    double complex conj(double complex x)
-    double         real(double complex x)
-    double cabs   "abs" (double complex x)
-    double complex sqrt(double complex x)
+# cdef extern from "<complex>" namespace "std" nogil:
+    # double complex conj(double complex x)
+    # double         real(double complex x)
+    # double cabs   "abs" (double complex x)
+    # double complex sqrt(double complex x)
 
 
 __all__ = ['SpectraCoefficient', '_EigenBasisTransform']
@@ -33,10 +33,8 @@ cdef class SpectraCoefficient(Coefficient):
     Change a Coefficient with `t` dependence to one with `w` dependence to use
     in bloch redfield tensor. Allow array based coefficients to be used as
     spectrum function.
-    If 2 coefficients are passed, the first one is the frequence responce and
-    the second is the time responce.
-
-
+    If 2 coefficients are passed, the first one is the frequence response and
+    the second is the time response.
     """
     def __init__(self, Coefficient coeff_w, Coefficient coeff_t=None, double w=0):
         self.coeff_t = coeff_t
@@ -74,9 +72,9 @@ cdef Data _apply_trans(Data original, int trans):
     elif trans == 1:
         out = original.transpose()
     elif trans == 2:
-        out = original.adjoint()
-    elif trans == 3:
         out = original.conj()
+    elif trans == 3:
+        out = original.adjoint()
     return out
 
 
@@ -89,75 +87,73 @@ cdef char _fetch_trans_code(int trans):
         return b'C'
 
 
-cpdef Data matmul_var(Data left, Data right, int transleft, int transright,
-                     double complex alpha=1, Data out=None):
+cpdef Data matmul_var_data(Data left, Data right,
+                           int transleft, int transright):
     """
-    matmul which product matrices can be transposed or adjoint.
+    matmul which input matrices can be transposed or adjoint.
     out = transleft(left) @ transright(right)
 
-    trans[left, right]:
+    with trans[left, right]:
         0 : Normal
         1 : Transpose
-        2 : Adjoint
-        3 : Conjugate
+        2 : Conjugate
+        3 : Adjoint
     """
-    # TODO : Should this be supported in data.matmul?
-    #        Tensorflow support this option.
+    # Should this be supported in data.matmul?
+    # A.dag() @ A is quite common.
     cdef int size
     cdef double complex beta
     cdef char left_code, right_code
-    if not (
+    if (
         type(left) is Dense
         and type(right) is Dense
-        and (type(out) is None or type(out) is Dense)
-        ) or not (
+        and left.shape[0] == left.shape[1]
+        and left.shape[0] == right.shape[0]
+        and left.shape[0] == right.shape[1]
+    ):
+        return matmul_var_Dense(left, right, transleft, transright)
+    left = _apply_trans(left, transleft)
+    right = _apply_trans(right, transright)
+    return _data.matmul(left, right)
+
+
+cdef Dense matmul_var_Dense(Dense left, Dense right,
+                            int transleft, int transright):
+    # The present implementation only support square matrices.
+    if not (
         left.shape[0] == left.shape[1]
         and left.shape[0] == right.shape[0]
         and left.shape[0] == right.shape[1]
     ):
-        left = _apply_trans(left, transleft)
-        right = _apply_trans(right, transright)
-        temp = _data.matmul(left, right)
-        if out:
-            return _data.add(out, temp, alpha)
-        else:
-            return _data.mul(temp, alpha)
+        raise ValueError("Only implemented for square operators")
+    cdef Dense out, a, b
+    cdef double complex alpha = 1., beta = 0.
+    cdef int tleft, tright, size = left.shape[0]
 
-    if out is None:
-        out = _data.dense.empty(left.shape[0], right.shape[1], right.fortran)
+    # Since fortran to C equivalent to transpose, fix the codes to fortran
+    tleft = transleft ^ (not left.fortran)
+    tright = transright ^ (not right.fortran)
 
-    transleft &= left.fortran
-    transright &= right.fortran
-    size = left.shape[0]
-
-    if transleft + transright == 5:
-        out = matmul_var(left, right, transleft, transright, alpha, out)
+    # blas.zgemm does not support adjoint.
+    if tleft + tright == 5:
+        # adjoint and conjugate, we can't use transpose to use zgemm
+        out = matmul_var_data(left, right, transleft-2, transright-2)
         return out.conj()
-
-    unavail = 3 - out.fortran
-    any_unavail = (transleft == unavail or transright == unavail)
-    if any_unavail:
-        transleft &= 1
-        transright &= 1
-
-    if out.fortran == any_unavail:
-        beta = 1
-        left_code = _fetch_trans_code(transleft)
-        right_code = _fetch_trans_code(transright)
-        zgemm(&left_code, &right_code, &size, &size, &size,
-              &alpha, (<Dense> left).data, &size, (<Dense> right).data, &size,
-              &beta, (<Dense> out).data, &size)
+    if tleft == 2 or tright == 2:
+        # A.dag @ B^op -> (B^T^op @ A.conj)^T
+        out = _data.dense.empty(left.shape[0], right.shape[1], False)
+        a, b = right, left
+        tleft, tright = tright ^ 1, tleft ^ 1
     else:
-        transleft &= 1
-        transright &= 1
-        beta = 1
-        left_code = _fetch_trans_code(transleft)
-        right_code = _fetch_trans_code(transright)
-        zgemm(&right_code, &left_code, &size, &size, &size,
-              &alpha, (<Dense> right).data, &size, (<Dense> left).data, &size,
-              &beta, (<Dense> out).data, &size)
-    if any_unavail:
-        out.fortran = not out.fortran
+        out = _data.dense.empty(left.shape[0], right.shape[1], True)
+        a, b = left, right
+
+    left_code = _fetch_trans_code(tleft)
+    right_code = _fetch_trans_code(tright)
+    blas.zgemm(&left_code, &right_code, &size, &size, &size,
+               &alpha, (<Dense> a).data, &size, (<Dense> b).data, &size,
+               &beta, (<Dense> out).data, &size)
+
     return out
 
 
@@ -192,36 +188,33 @@ cdef class _EigenBasisTransform:
             raise ValueError
         if type(oper(0).data) == _data.CSR and not sparse:
             oper = oper.to(Dense)
-        self._oper = oper
+        self.oper = oper
         self.isconstant = oper.isconstant
         self.size = oper.shape[0]
 
         if oper.isconstant:
-            self._eigvals, self._evecs = eigs(self._oper._call(0), True, True)
+            self._eigvals, self._evecs = eigs(self.oper._call(0), True, True)
         else:
             self._evecs = None
             self._eigvals = None
 
         self._t = np.nan
-        self._inv = None
-        self._skew = None
-        self._dw_min = -1
+        self._evecs_inv = None
 
     def as_Qobj(self):
         """Make an Qobj or QobjEvo of the eigenvectors."""
         if self.isconstant:
-            return Qobj(self.evecs(0), dims=self._oper.dims)
+            return Qobj(self.evecs(0), dims=self.oper.dims)
         else:
-            return QobjEvo(_eigen_qevo(self._oper))
+            return QobjEvo(_eigen_qevo(self.oper))
 
     cdef void _compute_eigen(self, double t) except *:
         if self._t != t and not self.isconstant:
             self._t = t
-            self._inv = None
-            self._dw_min = -1
-            self._eigvals, self._evecs = eigs(self._oper._call(t), True, True)
+            self._evecs_inv = None
+            self._eigvals, self._evecs = eigs(self.oper._call(t), True, True)
 
-    cpdef object diagonal(self, double t):
+    cpdef object eigenvalues(self, double t):
         """
         Return the diagonal of the diagonalized operation: the eigenvalues.
         """
@@ -235,19 +228,16 @@ cdef class _EigenBasisTransform:
         self._compute_eigen(t)
         return self._evecs
 
-    cpdef Data inv(self, double t):
-        """
-        Return the eigenstates of the diagonalized operation.
-        """
-        if self._inv is None:
-            self._inv = self.evecs(t).adjoint()
-        return self._inv
+    cdef Data _inv(self, double t):
+        if self._evecs_inv is None:
+            self._evecs_inv = self.evecs(t).adjoint()
+        return self._evecs_inv
 
-    cpdef Data S_converter(self, double t):
-        return _data.kron(self.evecs(t).transpose(), self.inv(t))
+    cdef Data _S_converter(self, double t):
+        return _data.kron(self.evecs(t).transpose(), self._inv(t))
 
-    cpdef Data S_converter_inverse(self, double t):
-        return _data.kron(self.inv(t).transpose(), self.evecs(t))
+    cdef Data _S_converter_inverse(self, double t):
+        return _data.kron(self._inv(t).transpose(), self.evecs(t))
 
     cpdef Data to_eigbasis(self, double t, Data fock):
         # For Hermitian operator, the inverse of evecs is the adjoint matrix.
@@ -255,29 +245,29 @@ cdef class _EigenBasisTransform:
         # don't make unneeded copy of evecs.
         cdef Data temp
         if fock.shape[0] == self.size and fock.shape[1] == 1:
-            return matmul_var(self.evecs(t), fock, 2, 0)
+            return matmul_var_data(self.evecs(t), fock, 3, 0)
 
         elif fock.shape[0] == self.size**2 and fock.shape[1] == 1:
             if type(fock) is Dense and (<Dense> fock).fortran:
                 fock = _data.column_unstack_dense(fock, self.size, True)
-                temp = _data.matmul(matmul_var(self.evecs(t), fock, 2, 0),
+                temp = _data.matmul(matmul_var_data(self.evecs(t), fock, 3, 0),
                                     self.evecs(t))
                 fock = _data.column_stack_dense(fock, True)
             else:
                 fock = _data.column_unstack(fock, self.size)
-                temp = _data.matmul(matmul_var(self.evecs(t), fock, 2, 0),
+                temp = _data.matmul(matmul_var_data(self.evecs(t), fock, 3, 0),
                                     self.evecs(t))
             if type(temp) is Dense:
                 return _data.column_stack_dense(temp, True)
             return _data.column_stack(temp)
 
         if fock.shape[0] == self.size and fock.shape[0] == fock.shape[1]:
-            return _data.matmul(matmul_var(self.evecs(t), fock, 2, 0),
+            return _data.matmul(matmul_var_data(self.evecs(t), fock, 3, 0),
                                 self.evecs(t))
 
         elif fock.shape[0] == self.size**2 and fock.shape[0] == fock.shape[1]:
-            temp = self.S_converter_inverse(t)
-            return _data.matmul(matmul_var(temp, fock, 2, 0), temp)
+            temp = self._S_converter_inverse(t)
+            return _data.matmul(matmul_var_data(temp, fock, 3, 0), temp)
 
         raise ValueError
 
@@ -289,105 +279,23 @@ cdef class _EigenBasisTransform:
         elif eig.shape[0] == self.size**2 and eig.shape[1] == 1:
             if type(eig) is Dense and (<Dense> eig).fortran:
                 eig = _data.column_unstack_dense(eig, self.size, True)
-                temp = matmul_var(_data.matmul(self.evecs(t), eig),
-                                  self.evecs(t), 0, 2)
+                temp = matmul_var_data(_data.matmul(self.evecs(t), eig),
+                                  self.evecs(t), 0, 3)
                 eig = _data.column_stack_dense(eig, True)
             else:
                 eig = _data.column_unstack(eig, self.size)
-                temp = matmul_var(_data.matmul(self.evecs(t), eig),
-                                  self.evecs(t), 0, 2)
+                temp = matmul_var_data(_data.matmul(self.evecs(t), eig),
+                                  self.evecs(t), 0, 3)
             if type(temp) is Dense:
                 return _data.column_stack_dense(temp, True)
             return _data.column_stack(temp)
 
         elif eig.shape[0] == self.size and eig.shape[0] == eig.shape[1]:
             temp = self.evecs(t)
-            return matmul_var(_data.matmul(temp, eig), temp, 0, 2)
+            return matmul_var_data(_data.matmul(temp, eig), temp, 0, 3)
 
         elif eig.shape[0] == self.size**2 and eig.shape[0] == eig.shape[1]:
-            temp = self.S_converter_inverse(t)
-            return _data.matmul(temp, matmul_var(eig, temp, 0, 2))
+            temp = self._S_converter_inverse(t)
+            return _data.matmul(temp, matmul_var_data(eig, temp, 0, 3))
 
         raise ValueError
-
-    cpdef double dw_min(self, double t):
-        """ dw_min = min(abs(skew[skew != 0]))"""
-        self.skew(t)
-        return self._dw_min
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef object skew(self, double t):
-        """ skew[i, j] = w[i] - w[j]"""
-        cdef size_t i, j
-        cdef double dw
-        cdef double[:] eigvals
-        self._compute_eigen(t)
-        if self._dw_min < 0:  # Check if already computed
-            eigvals = self._eigvals
-            self._skew = np.empty((self.size, self.size))
-            self._dw_min = DBL_MAX
-            for i in range(0, self.size):
-                self._skew[i, i] = 0.
-                for j in range(i, self.size):
-                    dw = eigvals[i] - eigvals[j]
-                    self._skew[i, j] = dw
-                    self._skew[j, i] = -dw
-                    if dw != 0:
-                        self._dw_min = fmin(fabs(dw), self._dw_min)
-        return self._skew
-
-
-
-
-
-
-
-"""
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cpdef Data _br_term_cross(Data A, Data B,
-                          double[:, ::1] skew, double[:, ::1] spectrum,
-                          bint use_secular, double cutoff):
-
-    cdef size_t kk, nrows=A.shape[0]
-    cdef size_t I, J # vector index variables
-    cdef int[2] ab, cd #matrix indexing variables
-    cdef complex[:,:] A_mat = A.to_array()
-    cdef complex[:,:] B_mat = B.to_array()
-    cdef complex elem, ac_elem, bd_elem
-    cdef vector[idxint] coo_rows, coo_cols
-    cdef vector[double complex] coo_data
-    cdef unsigned int nnz
-
-    for I in range(nrows**2):
-        vec2mat_index(nrows, I, ab)
-        for J in range(nrows**2):
-            vec2mat_index(nrows, J, cd)
-            if (not use_secular) or (
-                fabs(skew[ab[0],ab[1]] - skew[cd[0],cd[1]]) < (cutoff)
-            ):
-                elem = (A_mat[ab[0],cd[0]] * B_mat[cd[1],ab[1]]) * 0.5
-                elem *= (spectrum[cd[0],ab[0]] + spectrum[cd[1],ab[1]])
-
-                if ab[0] == cd[0]:
-                    ac_elem = 0
-                    for kk in range(nrows):
-                        ac_elem += A_mat[cd[1],kk] * B_mat[kk,ab[1]] * spectrum[cd[1],kk]
-                    elem -= 0.5*ac_elem
-
-                if ab[1] == cd[1]:
-                    bd_elem = 0
-                    for kk in range(nrows):
-                        bd_elem += A_mat[ab[0],kk] * B_mat[kk,cd[0]] * spectrum[cd[0],kk]
-                    elem -= 0.5*bd_elem
-
-                if (elem != 0):
-                    coo_rows.push_back(I)
-                    coo_cols.push_back(J)
-                    coo_data.push_back(elem)
-
-    return csr.from_coo_pointers(
-        coo_rows.data(), coo_cols.data(), coo_data.data(),
-        nrows*nrows, nrows*nrows, coo_rows.size())
-"""

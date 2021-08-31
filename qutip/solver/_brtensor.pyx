@@ -1,6 +1,6 @@
 #cython: language_level=3
 cimport cython
-from libc.math cimport fabs
+
 import qutip.core.data as _data
 from qutip.core.data cimport Dense, CSR, Data, idxint, csr
 from qutip.core.cy.qobjevo cimport QobjEvo
@@ -8,20 +8,22 @@ from qutip.core.cy.coefficient cimport Coefficient
 from qutip.core.cy._element cimport _BaseElement, _MapElement
 from qutip.solver._brtools cimport SpectraCoefficient, _EigenBasisTransform
 from qutip import Qobj
-import numpy as np
 
+import numpy as np
 from cython.parallel import prange
 cimport openmp
 from libcpp.vector cimport vector
 from libc.float cimport DBL_MAX
+from libc.math cimport fabs, fmin
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef Data _br_term_data(Data A, double[:, ::1] spectrum,
                          double[:, ::1] skew, double cutoff):
-    # TODO: need point multiply to as dispatch to implement...
-    # TODO: cutoff not applied.
+    # TODO:
+    #    Working with Data would allow brmesolve to run on gpu etc.
+    #    But it need the equivalent to einsum("ij,jk,jk->ik")...
     raise NotImplementedError
     """
     cdef Data B, C, AB, id
@@ -33,20 +35,23 @@ cpdef Data _br_term_data(Data A, double[:, ::1] spectrum,
     )
     cdef Data out = _data.kron(A.transpose(), B)
     out = _data.add(_data.kron(B.transpose(), A), out)
-    cutoff_arr = np.zeros((nrow*nrow, nrow*nrow), dtype=np.complex128)
+    AB = _data.matmul(A, B)
+    id = _data.identity[A.__class__](*A.shape)
+    out = _data.add(out, _data.kron(AB.transpose(), id), 0.5)
+    out = _data.add(out, _data.kron(id, AB), 0.5)
+
     if cutoff != DBL_MAX:
+        cutoff_arr = np.zeros((nrow*nrow, nrow*nrow), dtype=np.complex128)
         for a in prange(nrows, nogil=True, schedule='dynamic'):
             for b in range(nrows):
                 for c in range(nrows):
                     for d in range(nrows):
                         if fabs(skew[a, b] - skew[c, d]) < cutoff:
                             cutoff_arr[a * nrows + b, c * nrows + d] = 1.
-    C = A.__class__(_data.Dense(cutoff_arr, copy=False))
-    AB = _data.matmul(A, B)
-    id = _data.identity[A.__class__](*A.shape)
-    out = _data.add(out, _data.kron(AB.transpose(), id), 0.5)
-    out = _data.add(out, _data.kron(id, AB), 0.5)
-    return _data.element_wise_multiply(out, C)
+        C = A.__class__(_data.Dense(cutoff_arr, copy=False))
+        return _data.element_wise_multiply(out, C)
+    else:
+        return out
     """
 
 
@@ -166,10 +171,11 @@ cdef class _BlochRedfieldElement(_BaseElement):
     cdef readonly object np_datas
     cdef readonly double[:, ::1] skew
     cdef readonly double[:, ::1] spectrum
+    cdef readonly bint eig_basis
 
     cdef readonly Dense evecs, out, eig_vec, temp, op_eig
 
-    def __init__(self, H, a_op, spectra, sec_cutoff):
+    def __init__(self, H, a_op, spectra, sec_cutoff, eig_basis=False):
         if isinstance(H, _EigenBasisTransform):
             self.H = H
         else:
@@ -181,6 +187,7 @@ cdef class _BlochRedfieldElement(_BaseElement):
 
         self.spectra = spectra
         self.sec_cutoff = sec_cutoff
+        self.eig_basis = eig_basis
 
         # Allocate some array
         # Let numpy manage memory
@@ -189,12 +196,24 @@ cdef class _BlochRedfieldElement(_BaseElement):
 
     cpdef _compute_spectrum(self, double t):
         cdef Coefficient spec
-        self.skew = self.H.skew(t)
+        dw_min = DBL_MAX
+        eigvals = self.H.eigenvalues(t)
+        self.skew = np.empty((self.size, self.size))
+
+        for col in range(0, self.nrows):
+            self.skew[row, col] = 0.
+            for row in range(col, self.nrows):
+                dw = eigvals[row] - eigvals[col]
+                self.skew[row, col] = dw
+                self.skew[row, col] = -dw
+                if dw != 0:
+                    dw_min = fmin(fabs(dw), dw_min)
+
         for col in range(self.nrows):
             for row in range(self.nrows):
                 spec = self.spectra.replace_arguments(w=self.skew[row, col])
                 self.spectrum[row, col] = spec(t).real
-        return self.H.dw_min(t)
+        return dw_min
 
     cdef Data _br_term(self, Data A_eig, double cutoff):
         # TODO: better swapping.
@@ -208,13 +227,6 @@ cdef class _BlochRedfieldElement(_BaseElement):
         else:
             return _br_term_sparse(A_eig, self.spectrum, self.skew, cutoff)
 
-    cpdef Data data(self, double t):
-        cdef size_t i
-        cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
-        A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
-        BR_eig = self._br_term(A_eig, cutoff)
-        return self.H.from_eigbasis(t, BR_eig)
-
     cpdef object qobj(self, double t):
         return Qobj(self.data(t), dims=self.dims, type="super",
                     copy=False, superrep="super")
@@ -222,18 +234,30 @@ cdef class _BlochRedfieldElement(_BaseElement):
     cpdef double complex coeff(self, double t) except *:
         return 1.
 
+    cpdef Data data(self, double t):
+        cdef size_t i
+        cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
+        A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
+        BR_eig = self._br_term(A_eig, cutoff)
+        if self.eig_basis:
+            return BR_eig
+        return self.H.from_eigbasis(t, BR_eig)
+
     cdef Data matmul_data_t(self, double t, Data state, Data out=None):
         cdef size_t i
         cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
-        cdef Data A_eig, state_eig, BR_eig, out_eig
+        cdef Data A_eig, BR_eig
 
+        if not self.eig_basis:
+            state = self.H.to_eigbasis(t, state)
+        if not self.eig_basis and out is not None:
+            out = self.H.to_eigbasis(t, out)
         A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
-        state_eig = self.H.to_eigbasis(t, state)
         BR_eig = self._br_term(A_eig, cutoff)
-        out_eig = _data.matmul(BR_eig, state_eig)
-        if out is None:
-            return self.H.from_eigbasis(t, out_eig)
-        return _data.add(self.H.from_eigbasis(t, out_eig), out)
+        out = _data.matmul(BR_eig, state, 1., out)
+        if not self.eig_basis:
+            out = self.H.from_eigbasis(t, out)
+        return out
 
     def linear_map(self, f, anti=False):
         return _MapElement(self, [f])
@@ -253,34 +277,14 @@ cdef class _BlochRedfieldElement(_BaseElement):
             if old is self.H:
                 H = new
         if H is None:
-            H = type(self.H)(QobjEvo(self.H._oper, args=args),
-                                 type(self.H._oper) is CSR)
+            H = _EigenBasisTransform(QobjEvo(self.H.oper, args=args),
+                                     type(self.H.oper) is CSR)
         new = _BlochRedfieldElement(
             H, QobjEvo(self.a_op, args=args), self.spectra, self.sec_cutoff
         )
         cache.append((self, new))
         cache.append((self.H, H))
         return new
-
-
-cdef class _BlochRedfieldEigenElement(_BlochRedfieldElement):
-    cpdef Data data(self, double t):
-        cdef size_t i
-        cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
-        A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
-        BR_eig = self._br_term(A_eig, cutoff)
-        return BR_eig
-
-    cdef Data matmul_data_t(self, double t, Data state_eig, Data out=None):
-        cdef size_t i
-        cdef double cutoff = self.sec_cutoff * self._compute_spectrum(t)
-
-        A_eig = self.H.to_eigbasis(t, self.a_op._call(t))
-        BR_eig = self._br_term(A_eig, cutoff)
-        out_eig = _data.matmul(BR_eig, state_eig)
-        if out is None:
-            return out_eig
-        return _data.add(out_eig, out)
 
 
 def brtensor(H, a_op, spectra, use_secular=True,
@@ -349,14 +353,11 @@ def brtensor(H, a_op, spectra, use_secular=True,
     R._issuper = True
     R.elements = []
     any_Qevo = any_Qevo or isinstance(a_op, QobjEvo)
-    if fock_basis:
-        R.elements = [
-            _BlochRedfieldElement(Hdiag, QobjEvo(a_op), spectra, sec_cutoff)
-        ]
-    else:
-        R.elements = [
-            _BlochRedfieldEigenElement(Hdiag, QobjEvo(a_op), spectra, sec_cutoff)
-        ]
+    R.elements = [
+        _BlochRedfieldElement(Hdiag, QobjEvo(a_op), spectra,
+                              sec_cutoff, fock_basis)
+    ]
+
     if Hdiag.isconstant and isinstance(a_op, Qobj):
         R = R(0)
     return R if fock_basis else (R, Hdiag.as_Qobj())
