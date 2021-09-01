@@ -14,7 +14,7 @@ cdef class _EigenBasisTransform:
     cdef:
         QobjEvo oper
         int size
-        bint isconstant
+        readonly bint isconstant
         double _t
         object _eigvals  # np.ndarray
         Data _evecs, _evecs_inv

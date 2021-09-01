@@ -16,15 +16,6 @@ from scipy.linalg cimport cython_blas as blas
 from qutip.core.data.eigen import eigs
 
 
-# cnp.import_array()
-
-# cdef extern from "<complex>" namespace "std" nogil:
-    # double complex conj(double complex x)
-    # double         real(double complex x)
-    # double cabs   "abs" (double complex x)
-    # double complex sqrt(double complex x)
-
-
 __all__ = ['SpectraCoefficient', '_EigenBasisTransform']
 
 
