@@ -274,3 +274,32 @@ def test_bloch_redfield_tensor(cutoff):
     assert isinstance(R_expected, qutip.Qobj)
     np.testing.assert_allclose(R.full(), R_expected.full(),
                                rtol=1e-14, atol=1e-14)
+
+
+@pytest.mark.parametrize('cutoff', [0, 0.1, 1, 3, np.inf])
+def test_bloch_redfield_tensor_time_dependence(cutoff):
+    N = 3
+    H = qutip.QobjEvo([qutip.num(N), "t"])
+    a = qutip.QobjEvo([qutip.destroy(N), "t/2+0.5"])
+    A_op = a + a.dag()
+    spectra = qutip.coefficient("(w>0) * 0.5", args={'w':0})
+    R = bloch_redfield_tensor(
+        H=H,
+        a_ops=[(A_op, spectra)],
+        c_ops=[qutip.destroy(N)],
+        use_secular=cutoff<1e15,
+        sec_cutoff=cutoff,
+        fock_basis=True
+    )
+    assert isinstance(R, qutip.QobjEvo)
+    for t in [0, 0.5, 1.0, 1.5]:
+        R_expected = bloch_redfield_tensor(
+            H=H(t),
+            a_ops=[(A_op(t), spectra)],
+            c_ops=[qutip.destroy(N)],
+            use_secular=cutoff<1e15,
+            sec_cutoff=cutoff,
+            fock_basis=True
+        )
+        np.testing.assert_allclose(R(t).full(), R_expected.full(),
+                                   rtol=1e-14, atol=1e-14)
