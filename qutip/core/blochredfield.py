@@ -34,29 +34,28 @@ import os
 import numpy as np
 from qutip.settings import settings as qset
 
-from ..core import QobjEvoFunc, Qobj, QobjEvo, sprepost, liouvillian, Cubic_Spline, coefficient
-from ..core.qobjevo import QobjEvoBase
-from ._brtools import (bloch_redfield_tensor, CBR_RHS, Spectrum, Spectrum_Str,
-                       Spectrum_array, Spectrum_func_t)
-from ..core import data as _data
+from . import Qobj, QobjEvo, liouvillian, Cubic_Spline, coefficient, sprepost
+from ._brtools import SpectraCoefficient, _EigenBasisTransform
+from ._brtensor import _BlochRedfieldElement
 
 
-__all__ = ['bloch_redfield']
+__all__ = ['bloch_redfield_tensor', 'brterm']
+
 
 def _read_legacy_a_ops(a_op):
     constant = coefficient("1")
     parsed_a_op
-    op, spec = a_op:
+    op, spec = a_op
     if isinstance(op, Qobj):
         if isinstance(spec, str):
             parsed_a_op = (op, coefficient(spec, args={'w':0}))
         elif callable(spec):
-            parsed_a_op =(op, Spectrum(const, spec))
+            parsed_a_op =(op, coefficient(lambda t, args: spec(args['w'])))
         elif isinstance(spec, tuple):
             if isinstance(spec[0], str):
                 freq_responce = coefficient(spec[0], args={'w':0})
             elif isinstance(spec[0], Cubic_Spline):
-                freq_responce = coefficient(spec[0])
+                freq_responce = SpectraCoefficient(coefficient(spec[0]))
             else:
                 raise Exception('Invalid bath-coupling specification.')
             if isinstance(spec[1], str):
@@ -65,26 +64,25 @@ def _read_legacy_a_ops(a_op):
                 time_responce = coefficient(spec[1])
             else:
                 raise Exception('Invalid bath-coupling specification.')
-            parsed_a_op = (op, Spectrum(time_coeff, freq_coeff)
+            parsed_a_op = (op, freq_coeff * time_coeff)
     elif isinstance(op, tuple):
         qobj1, qobj2 = op
         if isinstance(spec[0], str):
             freq_responce = coefficient(spec[0], args={'w':0})
         elif isinstance(spec[0], Cubic_Spline):
-            freq_responce = coefficient(spec[0])
+            freq_responce = SpectraCoefficient(coefficient(spec[0]))
         else:
             raise Exception('Invalid bath-coupling specification.')
         parsed_a_op =  (
             QobjEvo([[qobj1, spec[1]], [qobj1, spec[2]]]),
-            Spectrum(const, spec)
+            freq_responce
         )
-
     return parsed_a_op
 
 
-def bloch_redfield_tensor(object H, list a_ops, list c_ops=[],
-                          bool use_secular=True, double sec_cutoff=0.1,
-                          fock_basis=False, legacy_a_ops=False):
+def bloch_redfield_tensor(H, a_ops, c_ops=[],
+                          use_secular=True, sec_cutoff=0.1,
+                          fock_basis=False, legacy_a_ops=False, sparse=False):
     """
     Calculates the Bloch-Redfield tensor for a system given
     a set of operators and corresponding spectral functions that describes the
@@ -146,15 +144,92 @@ def bloch_redfield_tensor(object H, list a_ops, list c_ops=[],
         column.
     """
     R = liouvillian(H, c_ops)
-    diag = _EigenBasisTransform(H, sparse)
+    H_transform = _EigenBasisTransform(QobjEvo(H), sparse)
 
-    if not fock_basis:
-        R = diag.to_eigbasis(R)
+    if legacy_a_ops:
+        a_ops = [_read_legacy_a_ops(a_op) for a_op in a_ops]
 
-    for a_op in a_ops:
-        if legacy_a_ops:
-            a_op = _read_legacy_a_ops(a_ops)
-        R += brtensor(diag, a_op, use_secular, sec_cutoff, fock_basis)
-    if not fock_basis:
-        return R, diag.as_Qobj
-    return R
+    if fock_basis:
+        for a_op in a_ops:
+            R += brterm(H_transform, *a_op, use_secular, sec_cutoff, fock_basis)
+        return R
+    else:
+        # When the Hamiltonian is time-dependent, the transformation of `L` to
+        # eigenbasis is not optimized.
+        if isinstance(R, QobjEvo):
+            # The `sprepost` will be computed 2 times for each parts of `R`.
+            # Compressing the QobjEvo will lower the number of parts.
+            R.compress()
+        evec = H_transform.as_Qobj()
+        R = sprepost(evec, evec.dag()) @ R @ sprepost(evec.dag(), evec)
+        for a_op in a_ops:
+            R += brterm(H_transform, *a_op,
+                        use_secular, sec_cutoff, fock_basis)[0]
+        return R, H_transform.as_Qobj()
+
+
+def brterm(H, a_op, spectra, use_secular=True,
+           sec_cutoff=0.1, fock_basis=False,
+           sparse=False):
+    """
+    Calculates the contribution of one coupling operator to the Bloch-Redfield
+    tensor.
+
+    Parameters
+    ----------
+
+    H : :class:`qutip.Qobj`, :class:`qutip.QobjEvo`
+        System Hamiltonian.
+
+    a_op : :class:`qutip.Qobj`, :class:`qutip.QobjEvo`
+        The operator coupling to the environment. Must be hermitian.
+
+    spectra : :class:`Coefficient`
+        The corresponding bath spectra.
+        Must be a `Coefficient` using an 'w' args. The `SpectraCoefficient`
+        can be used to use array based coefficient.
+
+        Example:
+
+            coefficient('w>0', args={"w": 0})
+            SpectraCoefficient(coefficient(Cubic_Spline))
+
+    use_secular : bool {True}
+        Flag that indicates if the secular approximation should
+        be used.
+
+    sec_cutoff : float {0.1}
+        Threshold for secular approximation.
+
+    fock_basis : bool {False}
+        Whether to return the tensor in the input basis or the diagonalized
+        basis.
+
+    sparse : bool {False}
+        Whether to use the sparse eigensolver on the Hamiltonian.
+
+    Returns
+    -------
+
+    R, [evecs]: :class:`~Qobj`, :class:`~QobjEvo` or tuple
+        If ``fock_basis``, return the Bloch Redfield tensor in the outside
+        basis. Otherwise return the Bloch Redfield tensor in the diagonalized
+        Hamiltonian basis and the eigenvectors of the Hamiltonian as hstacked
+        column. The tensors and, if given, evecs, will be :obj:`~QobjEvo` if
+        the ``H`` and ``a_op`` is time dependent, :obj:`Qobj` otherwise.
+    """
+    if isinstance(H, Qobj):
+        H = QobjEvo(H)
+
+    if isinstance(H, _EigenBasisTransform):
+        Hdiag = H
+    else:
+        Hdiag = _EigenBasisTransform(H, sparse=sparse)
+
+    sec_cutoff = sec_cutoff if use_secular else np.inf
+    R = QobjEvo(_BlochRedfieldElement(Hdiag, QobjEvo(a_op), spectra,
+                sec_cutoff, not fock_basis))
+
+    if Hdiag.isconstant and isinstance(a_op, Qobj):
+        R = R(0)
+    return R if fock_basis else (R, Hdiag.as_Qobj())

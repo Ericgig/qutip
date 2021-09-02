@@ -6,7 +6,7 @@ from qutip.core.data cimport Dense, CSR, Data, idxint, csr
 from qutip.core.cy.qobjevo cimport QobjEvo
 from qutip.core.cy.coefficient cimport Coefficient
 from qutip.core.cy._element cimport _BaseElement, _MapElement, _ProdElement
-from qutip.solver._brtools cimport SpectraCoefficient, _EigenBasisTransform
+from qutip.core._brtools cimport SpectraCoefficient, _EigenBasisTransform
 from qutip import Qobj
 
 import numpy as np
@@ -295,74 +295,3 @@ cdef class _BlochRedfieldElement(_BaseElement):
         if type(right) is _BlochRedfieldElement:
             out = _MapElement(right, [], left)
         return out
-
-
-def brtensor(H, a_op, spectra, use_secular=True,
-             sec_cutoff=0.1, fock_basis=False,
-             sparse=False):
-    """
-    Calculates the Bloch-Redfield tensor for a system given
-    a set of operators and corresponding spectral functions that describes the
-    system's coupling to its environment.
-
-    Parameters
-    ----------
-
-    H : :class:`qutip.Qobj`, :class:`qutip.QobjEvo`
-        System Hamiltonian.
-
-    a_op : :class:`qutip.Qobj`, :class:`qutip.QobjEvo`
-        The operator coupling to the environment. Must be hermitian.
-
-    spectra : :class:`Coefficient`
-        The corresponding bath spectra.
-        Must be a `Coefficient` using an 'w' args. The `SpectraCoefficient`
-        can be used to use array based coefficient.
-
-        Example:
-
-            coefficient('w>0', args={"w": 0})
-            SpectraCoefficient(coefficient(Cubic_Spline))
-
-    use_secular : bool {True}
-        Flag that indicates if the secular approximation should
-        be used.
-
-    sec_cutoff : float {0.1}
-        Threshold for secular approximation.
-
-    fock_basis : bool {False}
-        Whether to return the tensor in the input basis or the diagonalized
-        basis.
-
-    Returns
-    -------
-
-    R, [evecs]: :class:`qutip.Qobj`, tuple of :class:`qutip.Qobj`
-        If ``fock_basis``, return the Bloch Redfield tensor in the outside
-        basis. Otherwise return the Bloch Redfield tensor in the diagonalized
-        Hamiltonian basis and the eigenvectors of the Hamiltonian as hstacked
-        column.
-    """
-    if isinstance(H, Qobj):
-        H = QobjEvo(H)
-
-    if isinstance(H, _EigenBasisTransform):
-        Hdiag = H
-    else:
-        Hdiag = _EigenBasisTransform(H, sparse=sparse)
-
-    sec_cutoff = sec_cutoff if use_secular else np.inf
-    cdef QobjEvo R = QobjEvo.__new__(QobjEvo)
-    R.dims = [H.dims, H.dims]
-    R.shape = (H.shape[0]**2, H.shape[0]**2)
-    R._issuper = True
-    R.elements = []
-    R.elements = [
-        _BlochRedfieldElement(Hdiag, QobjEvo(a_op), spectra,
-                              sec_cutoff, not fock_basis)
-    ]
-
-    if Hdiag.isconstant and isinstance(a_op, Qobj):
-        return R(0) if fock_basis else (R(0), Hdiag.as_Qobj())
-    return R if fock_basis else (R, Hdiag.as_Qobj())

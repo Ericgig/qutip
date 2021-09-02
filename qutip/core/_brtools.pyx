@@ -12,11 +12,11 @@ from qutip.core.cy.coefficient cimport Coefficient
 from qutip.core.data cimport Data, Dense, idxint
 import qutip.core.data as _data
 from qutip.core import Qobj
-from scipy.linalg cimport cython_blas as blas
 from qutip.core.data.eigen import eigs
+from scipy.linalg cimport cython_blas as blas
 
 
-__all__ = ['SpectraCoefficient', '_EigenBasisTransform']
+__all__ = ['SpectraCoefficient']
 
 
 cdef class SpectraCoefficient(Coefficient):
