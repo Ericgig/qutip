@@ -1,4 +1,3 @@
-
 from qutip.core.data import csr, dense, Dense, CSR
 import numpy as np
 import scipy.sparse
@@ -20,10 +19,10 @@ class _einsum_parser:
         self.ins = [map_[key] for key in in_r if key is not ',']
         if out is None:
             self.out = [i for i in self.ins if self.ins.count(i) == 1]
-            if len(self.out) >= 3:
-                return ValueError
         else:
             self.out = [map_[key] for key in out]
+        if len(self.out) >= 3:
+            return ValueError
 
     def __call__(self, row_l, col_l, row_r, col_r):
         """For the indices of both matrices match the pattern.
@@ -92,3 +91,16 @@ def einsum_dense(subscripts, left, right):
     out = np.einsum(subscripts, left.as_ndarray(), right.as_ndarray())
     if isinstance(out, np.ndarray):
         out = Dense(out, copy=False)
+    return out
+
+
+from .dispatch import Dispatcher as _Dispatcher
+# We set out as False since it can return a scalar, ket or operator.
+einsum = _Dispatcher(einsum_dense, name='einsum',
+                     inputs=('left', 'right'), out=False)
+einsum.add_specialisations([
+    (CSR, CSR, einsum_csr),
+    (Dense, Dense, einsum_dense),
+], _defer=True)
+
+del _Dispatcher

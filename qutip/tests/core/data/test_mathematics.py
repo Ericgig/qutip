@@ -888,3 +888,116 @@ class TestInv(UnaryOpMixin):
         pytest.param(_inv_csr, CSR, CSR),
         pytest.param(_inv_dense, Dense, Dense),
     ]
+
+
+class TestEinsum(BinaryOpMixin):
+    specialisations = [
+        pytest.param(data.einsum_csr, CSR, CSR),
+        pytest.param(data.einsum_dense, Dense, Dense),
+    ]
+
+    def _add_idx(self, subscripts):
+        max_idx = max(subscripts)
+        return [subscripts + [i] for i in range(max_idx+2)]
+
+    def _add_out_idx(self, subscripts):
+        max_idx = max(subscripts)
+        if max_idx == 0:
+            return [subscripts, subscripts + [0]]
+        return [
+            subscripts,
+            subscripts + list(range(max_idx+1)),
+            subscripts + list(permutations(range(max_idx+1),2))
+        ]
+
+    def _get_all_subscript(self):
+        all_subs = [0]
+        for _ in range(3):
+            subs = []
+            for idx in all_subs:
+                subs += self._add_idx(all_subs)
+            all_subs = subs
+        subs = []
+        for idx in all_subs:
+            subs += self._add_out_idx(all_subs)
+        return subs
+
+    def generate_mathematically_correct(self, metafunc):
+        parameters = ['op', 'data_l', 'data_r', 'out_type', 'subscripts']
+        cases = []
+        all_subs = self._get_all_subscript()
+        for p_op, subs in itertools.product(self.specialisations, all_subs):
+            op, *types = p_op.values
+            shapes =
+            args = (op, types, shapes, out_type)
+            cases.extend(cases_type_shape_product(_ALL_CASES, *args))
+        metafunc.parametrize(parameters, cases)
+
+    def generate_incorrect_shape_raises(self, metafunc):
+        parameters = ['op', 'subscripts', 'data_l', 'data_r']
+        if not self.bad_shapes:
+            reason = "".join([
+                "no shapes are 'incorrect' for ",
+                metafunc.cls.__name__,
+                "::",
+                metafunc.function.__name__,
+            ])
+            false_case = pytest.param(*([None]*len(parameters)),
+                                      marks=pytest.mark.skip(reason),
+                                      id="no test")
+            metafunc.parametrize(parameters, [false_case])
+            return
+        cases = []
+        for p_op in self.specialisations:
+            op, *types, _ = p_op.values
+            args = (op, types, self.bad_shapes)
+            cases.extend(cases_type_shape_product(_RANDOM, *args))
+        metafunc.parametrize(parameters, cases)
+
+    def pytest_generate_tests(self, metafunc):
+        # For every test function "test_xyz", we use the test generator
+        # "generate_xyz" if it exists.  This allows derived classes to add
+        # their own tests and generators without overiding this method, cutting
+        # down on boilerplate, but also that derived classes _may_ override the
+        # generation of tests defined in a base class, say if they have
+        # additional special arguments that need parametrising over.
+        generator_name = (
+            "generate_"
+            + metafunc.function.__name__.replace("test_", "")
+        )
+        try:
+            generator = getattr(self, generator_name)
+        except AttributeError:
+            return
+        generator(metafunc)
+
+    def op_numpy(self, subscripts, left, right):
+        if left.shape[1] == 1:
+            if left.shape[0] != 1 or scalar_is_ket:
+                left = np.conj(left.T)
+        return np.einsum(subscripts, left, right)
+    def test_mathematically_correct(self, op, data_l, data_r, out_type, subscripts):
+        """
+        Test that the binary operation is mathematically correct for all the
+        known type specialisations.
+        """
+        left, right = data_l(), data_r()
+
+        expected = self.op_numpy(subscripts, left.to_array(), right.to_array())
+        test = op(subscripts, left, right)
+
+        assert isinstance(test, out_type)
+        if issubclass(out_type, Data):
+            assert test.shape == expected.shape
+            np.testing.assert_allclose(test.to_array(), expected,
+                                       atol=self.tol)
+        else:
+            assert abs(test - expected) < self.tol
+
+    def test_incorrect_shape_raises(self, op, subscripts, data_l, data_r, subscripts):
+        """
+        Test that the operation produces a suitable error if the shapes of the
+        given operands are not compatible.
+        """
+        with pytest.raises(ValueError):
+            op(subscripts, data_l(), data_r())
