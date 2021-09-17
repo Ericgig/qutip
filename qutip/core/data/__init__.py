@@ -9,6 +9,7 @@ from .add import *
 from .adjoint import *
 from .constant import *
 from .eigen import *
+from .einsum import *
 from .expect import *
 from .expm import *
 from .inner import *

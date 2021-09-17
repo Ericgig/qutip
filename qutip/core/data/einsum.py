@@ -11,18 +11,18 @@ class _einsum_parser:
             out = None
         if len(ins) != 5 or ins[2] != ',':
             raise ValueError
-        in_l, in_r = ins.split(",")
         keys = set(ins) ^ set(',')
         map_ = dict(zip(keys, range(len(keys))))
 
         # replace the letter indices by index.
-        self.ins = [map_[key] for key in in_r if key is not ',']
+        self.ins = [map_[key] for key in ins if key != ',']
         if out is None:
             self.out = [i for i in self.ins if self.ins.count(i) == 1]
         else:
             self.out = [map_[key] for key in out]
         if len(self.out) >= 3:
-            return ValueError
+            raise ValueError
+        print(self.ins, self.out, map_)
 
     def __call__(self, row_l, col_l, row_r, col_r):
         """For the indices of both matrices match the pattern.
@@ -58,29 +58,34 @@ class _einsum_parser:
 
 def einsum_csr(subscripts, left, right):
     parser = _einsum_parser(subscripts)
-    out_shape = _einsum_parser(left.shape, right.shape)
-    if not out_shape:
-        return ValueError
+    shape = parser(*left.shape, *right.shape)
+    print(subscripts, left.shape, right.shape, shape)
+    if not shape:
+        raise ValueError
+    if shape[1] == 0:
+        shape = (shape[0], 1)
+    left = left.as_scipy()
+    right = right.as_scipy()
     position = []
     vals = []
-    for col_left in range(left.shape[0]):
-        for ptr_left in range(left.indptr[col_left], left.indptr[col_left+1]):
-            row_left = left.indices[ptr_left]
+    for row_left in range(left.shape[0]):
+        for ptr_left in range(left.indptr[row_left], left.indptr[row_left+1]):
+            col_left = left.indices[ptr_left]
             data_left = left.data[ptr_left]
-            for col_right in range(right.shape[0]):
-                for ptr_right in range(right.indptr[col_right], right.indptr[col_right+1]):
-                    row_right = right.indices[ptr_right]
+            for row_right in range(right.shape[0]):
+                for ptr_right in range(right.indptr[row_right], right.indptr[row_right+1]):
+                    col_right = right.indices[ptr_right]
                     data_right = right.data[ptr_right]
                     pos = parser(row_left, col_left, row_right, col_right)
                     if pos:
                         position.append(pos)
-                        vals.append(complex(data_left * data_right))
+                        vals.append(data_left * data_right)
 
-    if _einsum_parser.return_scalar:
+    if parser.return_scalar:
         return np.sum(vals)
     if len(position) == 0:
-        return csr.zeros(*out_shape)
-    return CSR(sp.csr_matrix((vals, zip(*position)), shape=out_shape),
+        return csr.zeros(*shape)
+    return CSR(scipy.sparse.csr_matrix((vals, zip(*position)), shape=shape),
                copy=False)
 
 
