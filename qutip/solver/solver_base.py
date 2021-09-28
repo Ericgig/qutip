@@ -1,40 +1,6 @@
-# This file is part of QuTiP: Quantum Toolbox in Python.
-#
-#    Copyright (c) 2011 and later, Paul D. Nation and Robert J. Johansson,
-#    All rights reserved.
-#
-#    Redistribution and use in source and binary forms, with or without
-#    modification, are permitted provided that the following conditions are
-#    met:
-#
-#    1. Redistributions of source code must retain the above copyright notice,
-#       this list of conditions and the following disclaimer.
-#
-#    2. Redistributions in binary form must reproduce the above copyright
-#       notice, this list of conditions and the following disclaimer in the
-#       documentation and/or other materials provided with the distribution.
-#
-#    3. Neither the name of the QuTiP: Quantum Toolbox in Python nor the names
-#       of its contributors may be used to endorse or promote products derived
-#       from this software without specific prior written permission.
-#
-#    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-#    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-#    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-#    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-#    HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-#    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-#    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-#    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-#    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-#    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-#    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-###############################################################################
-from __future__ import print_function
+__all__ = []
 
-__all__ = ['Solver']
-
-# import numpy as np
+import numpy as np
 # from ..core import data as _data
 
 from .. import Qobj, QobjEvo, QobjEvoFunc
@@ -44,6 +10,7 @@ from .integrator import integrator_collection
 from ..ui.progressbar import get_progess_bar
 from ..core.data import to
 from time import time
+from .parallel import get_map
 
 
 class Solver:
@@ -180,7 +147,7 @@ class MultiTrajSolver:
     optionsclass = None
 
     def __init__(self):
-        self.seed_sequence = SeedSequence()
+        self.seed_sequence = np.random.SeedSequence()
         self.traj_solver = False
         self.result = None
         raise NotImplementedError
@@ -192,30 +159,33 @@ class MultiTrajSolver:
         """
         if seed is None:
             seeds = self.seed_sequence.spawn(ntraj)
-        elif isinstance(seed, SeedSequence):
+        elif isinstance(seed, np.random.SeedSequence):
             seeds = seed.spawn(ntraj)
         elif not isinstance(seed, list):
-            seeds = SeedSequence(seed).spawn(ntraj)
+            seeds = np.random.SeedSequence(seed).spawn(ntraj)
         elif isinstance(seed, list) and len(seed) >= ntraj:
-            seeds = [SeedSequence(seed_) for seed_ in seed[:ntraj]]
+            seeds = [np.random.SeedSequence(seed_) for seed_ in seed[:ntraj]]
         else:
             raise ValueError("A seed list must be longer than ntraj")
         return seeds
 
     def start(self, state0, t0, *, ntraj=1, seed=None):
-        """Prepare the Solver for stepping."""
-        seed = self._read_seed(seed, 1)[0]
+        """Prepare the Solver for stepping"""
+        seeds = self._read_seed(seed, ntraj)
         self.traj_solvers = []
-        for _ in range(ntraj):
+
+        for seed in seeds:
             traj_solver = self._traj_solver_class(self)
-            traj_solver.start(state0, t0, Generator(self.bit_gen(seed)))
+            traj_solver.start(state0, t0, seed)
             self.traj_solvers.append(traj_solver)
 
     def step(self, t, args=None):
         """Get the state at `t`"""
         if not self.traj_solvers:
-            raise RuntimeError("The `start` method must called first")
-        out = [traj_solver.step(t, args) for traj_solver in self.traj_solvers]
+            raise RuntimeError("The `start` method must called first.")
+        multi = len(self.traj_solvers) = 1
+        out = [traj_solver.step(t, args, safe=multi)
+               for traj_solver in self.traj_solvers]
         return out if len(out) > 1 else out[0]
 
     def run(self, state0, tlist, args=None,
@@ -224,14 +194,12 @@ class MultiTrajSolver:
         Compute ntraj trajectories starting from `state0`.
         """
         self._check_state_dims(state0)
-        if self.options.mcsolve['keep_runs_results']:
-            self.result = MultiTrajResult(len(self.c_ops), len(self.e_ops))
-        else:
-            self.result = MultiTrajResultAveraged(len(self.c_ops),
-                                                  len(self.e_ops))
+        result_cls = (MultiTrajResult
+                      if self.options.mcsolve['keep_runs_results']
+                      else MultiTrajResultAveraged)
+        self.result = result_cls(len(self.c_ops), len(self.e_ops), state0)
         self._run_solver = self._traj_solver_class(self)
         self._run_args = state0, tlist, args
-        self.result._to_dm = not self._super
         self.result.stats['run time'] = 0
         self.add_trajectories(ntraj, timeout, target_tol, seed)
         return self.result
@@ -243,14 +211,19 @@ class MultiTrajSolver:
         if self.result is None:
             raise RuntimeError("No previous computation, use `run` first.")
         start_time = time()
-        seeds = sel._read_seed(seed, ntraj)
-        map_func = get_map(self.options.mcsolve)
-        map_func(self._run_solver.run, seeds, self._run_args, {},
-                 reduce_func=self.result.add,
-                 map_kw=self.options.mcsolve['map_options'],
-                 progress_bar=self.options["progress_bar"],
-                 progress_bar_kwargs=self.options["progress_kwargs"]
-                )
+        seeds = self._read_seed(seed, ntraj)
+        map_func = get_map[self.options.mcsolve]
+        map_kw = self.options.mcsolve['map_options']
+        if timeout:
+            map_kw['job_timeout'] = timeout
+        if target_tol:
+            self.result._set_check_expect_tol(target_tol)
+        map_func(
+            self._run_solver.run, seeds, self._run_args, {},
+            reduce_func=self.result.add, map_kw=map_kw,
+            progress_bar=self.options["progress_bar"],
+            progress_bar_kwargs=self.options["progress_kwargs"]
+        )
         self.result.stats['run time'] += time() - start_time
         self.result.stats.update(self.stats)
         return self.result
@@ -267,3 +240,58 @@ class MultiTrajSolver:
             raise TypeError("options must be an instance of",
                             self.optionsclass)
         self._options = new
+
+
+class _OneTraj(Solver):
+    """
+    ... TODO
+    """
+    name = ""
+
+    def start(self, state0, t0, seed=None):
+        """Prepare the Solver for stepping."""
+        self.generator = Generator(self.bit_gen(seed))
+        self._state = self._prepare_state(state0)
+        self._t = t0
+        self._integrator.set_state(self._t, self._state)
+
+    def step(self, t, args={}):
+        """Get the state at `t`."""
+        if args:
+            self._integrator.arguments(args)
+            [op.arguments(args) for op in self.c_ops]
+            [op.arguments(args) for op in self.n_ops]
+            self._integrator.reset()
+        self._t, self._state = self._step(t, copy=False)
+        return self._restore_state(self._state)
+
+    def run(self, state0, tlist, args=None, seed=None):
+        _time_start = time()
+        if args:
+            self._integrator.arguments(args)
+            [op.arguments(args) for op in self.c_ops]
+            [op.arguments(args) for op in self.n_ops]
+        if not isinstance(seed, SeedSequence):
+            seed = SeedSequence(seed)
+        self.generator = Generator(self.bit_gen(seed))
+
+        _state = self._prepare_state(state0)
+        self._integrator.set_state(tlist[0], _state)
+
+        result = Result(self.e_ops, self.options.results, state0)
+        result.add(tlist[0], state0)
+        for t in tlist[1:]:
+            t, state = self._step(t)
+            state_qobj = self._restore_state(state, False)
+            result.add(t, state_qobj)
+
+        result.seed = seed
+        result.stats = {}
+        result.stats['run time'] = time() - _time_start
+        # result.stats.update(self._integrator.stats)
+        result.stats.update(self.stats)
+        return result
+
+    def _step(self, t, copy=True):
+        """Evolve to t, including jumps."""
+        raise NotImplementedError

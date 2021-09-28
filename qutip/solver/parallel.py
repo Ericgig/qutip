@@ -54,7 +54,7 @@ map_kw = {
 }
 
 
-def serial_map(task, values, task_args=None, task_kwargs=None,
+def serial_map(task, values, task_args=None, task_kwargs=None, *,
                reduce_func=None, map_kw=map_kw,
                progress_bar=None, progress_bar_kwargs={}):
     """
@@ -116,7 +116,7 @@ def serial_map(task, values, task_args=None, task_kwargs=None,
     return results
 
 
-def parallel_map(task, values, task_args=None, task_kwargs=None,
+def parallel_map(task, values, task_args=None, task_kwargs=None, *,
                  reduce_func=None, map_kw=map_kw,
                  progress_bar=None, progress_bar_kwargs={}):
     """
@@ -195,7 +195,7 @@ def parallel_map(task, values, task_args=None, task_kwargs=None,
     return results
 
 
-def loky_pmap(task, values, task_args=None, task_kwargs=None,
+def loky_pmap(task, values, task_args=None, task_kwargs=None, *,
               reduce_func=None, map_kw=map_kw,
               progress_bar=None, progress_bar_kwargs={}):
     """
@@ -278,13 +278,13 @@ def loky_pmap(task, values, task_args=None, task_kwargs=None,
     return results
 
 
-def get_map(options):
-    if "parallel" in options['map']:
-        return parallel_map
-    elif "serial" in options['map']:
-        return serial_map
-    elif "loky" in options['map']:
-        return loky_pmap
-    else:
-        raise ValueError("map not found, available options are 'parallel',"
-                         " 'serial' and 'loky'")
+get_map = {
+    True: parallel_map,
+    'True': parallel_map,
+    "parallel": parallel_map,
+    None: serial_map,
+    False: serial_map,
+    "False": serial_map,
+    "serial": serial_map,
+    "loky": loky_pmap,
+}

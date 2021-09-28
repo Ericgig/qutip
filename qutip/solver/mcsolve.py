@@ -49,7 +49,6 @@ from .result import Result, MultiTrajResult, MultiTrajResultAveraged
 from .solver_base import Solver, _to_qevo
 from .sesolve import sesolve
 from .mesolve import mesolve
-from .parallel import get_map
 from .evolver import *
 from time import time
 
@@ -217,12 +216,13 @@ class McSolver(Solver):
 
 
 
-class _OneTrajMcSolver(Solver):
+class _OneTrajMcSolver(_OneTraj):
     """
     ... TODO
     """
     _super = False
     name = "mcsolve"
+
     def __init__(self, mcsolver):
         self._system = mcsolver._system
         self._c_ops = mcsolver._c_ops
@@ -241,12 +241,9 @@ class _OneTrajMcSolver(Solver):
         else:
             self.bit_gen = np_rng.PCG64
 
-        self._integrator = self._get_evolver(options)
+        self._integrator = self._get_integrator(options)
         self.collapses = []
         self.norm_func = _data.norm.l2
-
-    def prob_func(self, state):
-        return _data.norm.l2(state)**2
 
     def _prepare_state(self, state):
         if not state.isket:
@@ -261,78 +258,40 @@ class _OneTrajMcSolver(Solver):
                             " and ",
                             repr(state.dims),])
                            )
-        self._state_dims = state.dims
-        self._state_type = state.type
-        self._state_qobj = state
+        self._state_metadata = {'dims': state.dims, 'type': state.type}
 
         try:
             state = state.to(self.options.ode["State_data_type"])
         expect (ValueError, TypeError):
             pass
         self._state0 = state.data
+        self.target_norm = self.generator.random()
         return state.data
 
     def _restore_state(self, state, copy=False):
         norm = 1/_data.norm.l2(state)
         state = _data.mul(state, norm)
-        qobj = Qobj(state,
-                    dims=self._state_dims,
-                    type=self._state_type,
-                    copy=copy)
+        qobj = Qobj(state, **self._state_metadata, copy=copy)
         return qobj
 
-    def start(self, state0, t0, seed=None):
-        """Prepare the Solver for stepping."""
-        self._state = self._prepare_state(state0)
-        self._t = t0
-        self.generator = Generator(self.bit_gen(seed))
-        self.target_norm = self.generator.random()
-        self._integrator.set_state(self._t, self._state)
-
-    def step(self, t, args={}):
-        """Get the state at `t`."""
-        if args:
-            self._integrator.update_args(args)
-            [op.arguments(args) for op in self.c_ops]
-            [op.arguments(args) for op in self.n_ops]
-            self._integrator.set_state(self._t, self._state)
-        self._t, self._state = self._step(t, copy=False)
-        return self._restore_state(self._state)
-
     def run(self, state0, tlist, args=None, seed=None):
-        _time_start = time()
-        if not isinstance(seed, SeedSequence):
-            seed = SeedSequence(seed)
-        self.generator = Generator(self.bit_gen(seed))
-        self.target_norm = self.generator.random()
-        _state = self._prepare_state(state0)
-        self._integrator.set_state(tlist[0], _state)
-
-        result = Result(self.e_ops, self.options.results, False)
-        result.add(tlist[0], state0)
-        for t in tlist[1:]:
-            t, state = self._step(t)
-            state_qobj = self._restore_state(state, False)
-            result.add(t, state_qobj)
-
+        result = super().run(state0, tlist, args, seed)
         result.collapse = list(self.collapses)
-        result.seed = seed
-        result.stats = {}
-        result.stats['run time'] = time() - _time_start
-        result.stats.update(self._integrator.stats)
-        result.stats.update(self.stats)
         return result
+
+    def prob_func(self, state):
+        return _data.norm.l2(state)**2
 
     def _step(self, t, copy=True):
         """Evolve to t, including jumps."""
-        t_old, y_old = self.get_state(copy=True)
+        t_old, y_old = self.get_state(copy=False)
         norm_old = self.prob_func(y_old)
         while t_old < t:
-            t_step, state = self._integrator.step(t, copy=True, step=True)
+            t_step, state = self._integrator.step(t, copy=False, step=True)
             norm = self.prob_func(state)
             if norm <= self.target_norm:
-                self.do_collapse(norm_old, norm, t_old, y_old)
-                t_old, y_old = self.get_state(copy=True)
+                self.do_collapse(norm_old, norm, t_old)
+                t_old, y_old = self.get_state(copy=False)
                 norm_old = self.prob_func(y_old)
             else:
                 t_old = t_step
@@ -341,7 +300,7 @@ class _OneTrajMcSolver(Solver):
 
         return t_old, _data.mul(y_old, 1 / self.norm_func(y_old))
 
-    def do_collapse(self, norm_old, norm, t_prev, y_prev):
+    def do_collapse(self, norm_old, norm, t_prev):
         t_final, _ = self._integrator.get_state()
         tries = 0
         while tries < self.norm_steps:
@@ -372,7 +331,6 @@ class _OneTrajMcSolver(Solver):
             else:
                 # t_guess < t_jump
                 t_prev = t_guess
-                y_prev = state.copy()
                 norm_old = norm2_guess
 
         if tries >= self.norm_steps:
@@ -383,17 +341,17 @@ class _OneTrajMcSolver(Solver):
         # t_guess, state is at the collapse
         probs = np.zeros(len(self.n_ops))
         for i, n_op in enumerate(self.n_ops):
-            probs[i] = n_op.expect(t_guess, state, 1)
+            probs[i] = n_op.expect(t, state, 1)
         probs = np.cumsum(probs)
-        which = np.searchsorted(probs, probs[-1] * np.random.rand())
+        which = np.searchsorted(probs, probs[-1] * self.generator.random())
 
-        state_new = self.c_ops[which].mul(t_guess, state)
-        new_norm = self.norm_func(state_new)
+        state_new = self.c_ops[which].matmul_data(t_guess, state)
+        new_norm = self.prob_func(state_new)
         if new_norm < self.mc_corr_eps:
             # This happen when the collapse is caused by numerical error
             state_new = _data.mul(state, 1 / self.norm_func(state))
         else:
             state_new = _data.mul(state_new, 1 / new_norm)
             self.collapses.append((t_guess, which))
-            self.target_norm = np.random.rand()
+            self.target_norm = self.generator.random()
         self._integrator.set_state(t_guess, state_new)
