@@ -34,7 +34,9 @@
 import pytest
 import numpy as np
 import qutip
-
+from qutip.solve import SolverOptions
+from qutip.solve.mcsolve import mcsolve
+from qutip.solve.mesolve import mesolve
 
 def _return_constant(t, args):
     return args['constant']
@@ -70,8 +72,8 @@ class StatesAndExpectOutputCase:
             np.testing.assert_allclose(test, expected_part, rtol=tol)
 
     def test_states_and_expect(self, hamiltonian, args, c_ops, expected, tol):
-        options = qutip.SolverOptions(average_states=True, store_states=True)
-        result = qutip.mcsolve(hamiltonian, self.state, self.times, args=args,
+        options = SolverOptions(average_states=True, store_states=True)
+        result = mcsolve(hamiltonian, self.state, self.times, args=args,
                                c_ops=c_ops, e_ops=self.e_ops, ntraj=self.ntraj,
                                options=options)
         self._assert_expect(result, expected, tol)
@@ -113,14 +115,14 @@ class TestNoCollapse(StatesAndExpectOutputCase):
     # test cases, this is just testing the single-output behaviour.
 
     def test_states_only(self, hamiltonian, args, c_ops, expected, tol):
-        options = qutip.SolverOptions(average_states=True, store_states=True)
-        result = qutip.mcsolve(hamiltonian, self.state, self.times, args=args,
+        options = SolverOptions(average_states=True, store_states=True)
+        result = mcsolve(hamiltonian, self.state, self.times, args=args,
                                c_ops=c_ops, e_ops=[], ntraj=self.ntraj,
                                options=options)
         self._assert_states(result, expected, tol)
 
     def test_expect_only(self, hamiltonian, args, c_ops, expected, tol):
-        result = qutip.mcsolve(hamiltonian, self.state, self.times, args=args,
+        result = mcsolve(hamiltonian, self.state, self.times, args=args,
                                c_ops=c_ops, e_ops=self.e_ops, ntraj=self.ntraj)
         self._assert_expect(result, expected, tol)
 
@@ -188,16 +190,16 @@ def test_stored_collapse_operators_and_times():
     state = qutip.basis(size, size-1)
     times = np.linspace(0, 10, 100)
     c_ops = [a, a]
-    result = qutip.mcsolve(H, state, times, c_ops, ntraj=1)
+    result = mcsolve(H, state, times, c_ops, ntraj=1)
     assert len(result.col_times[0]) > 0
     assert len(result.col_which) == len(result.col_times)
     assert all(col in [0, 1] for col in result.col_which[0])
 
 
 @pytest.mark.parametrize('options', [
-    pytest.param(qutip.SolverOptions(average_expect=True),
+    pytest.param(SolverOptions(average_expect=True),
                  id="average_expect=True"),
-    pytest.param(qutip.SolverOptions(average_states=False),
+    pytest.param(SolverOptions(average_states=False),
                  id="average_states=False"),
 ])
 def test_expectation_dtype(options):
@@ -212,7 +214,7 @@ def test_expectation_dtype(options):
     times = np.linspace(0, 10, 5)
     c_ops = [a, sm]
     e_ops = [a.dag()*a, sm.dag()*sm, a]
-    data = qutip.mcsolve(H, state, times, c_ops, e_ops, ntraj=5,
+    data = mcsolve(H, state, times, c_ops, e_ops, ntraj=5,
                          options=options)
     assert isinstance(data.expect[0][1], float)
     assert isinstance(data.expect[1][1], float)
@@ -240,9 +242,9 @@ class TestSeeds:
     def test_seeds_can_be_reused(self):
         args = (self.H, self.state, self.times)
         kwargs = {'c_ops': self.c_ops, 'ntraj': self.ntraj}
-        first = qutip.mcsolve(*args, **kwargs)
-        options = qutip.SolverOptions(seeds=first.seeds)
-        second = qutip.mcsolve(*args, options=options, **kwargs)
+        first = mcsolve(*args, **kwargs)
+        options = SolverOptions(seeds=first.seeds)
+        second = mcsolve(*args, options=options, **kwargs)
         for first_t, second_t in zip(first.col_times, second.col_times):
             np.testing.assert_equal(first_t, second_t)
         for first_w, second_w in zip(first.col_which, second.col_which):
@@ -251,8 +253,8 @@ class TestSeeds:
     def test_seeds_are_not_reused_by_default(self):
         args = (self.H, self.state, self.times)
         kwargs = {'c_ops': self.c_ops, 'ntraj': self.ntraj}
-        first = qutip.mcsolve(*args, **kwargs)
-        second = qutip.mcsolve(*args, **kwargs)
+        first = mcsolve(*args, **kwargs)
+        second = mcsolve(*args, **kwargs)
         assert not all(np.array_equal(first_t, second_t)
                        for first_t, second_t in zip(first.col_times,
                                                     second.col_times))
@@ -275,7 +277,7 @@ def test_list_ntraj():
              np.sqrt(coupling * n_th) * a.dag()]
     e_ops = [qutip.num(size)]
     ntraj = [1, 5, 15, 100]
-    mc = qutip.mcsolve(H, state, times, c_ops, e_ops, ntraj=ntraj)
+    mc = mcsolve(H, state, times, c_ops, e_ops, ntraj=ntraj)
     assert len(ntraj) == len(mc.expect)
 
 
@@ -293,7 +295,7 @@ def test_dynamic_arguments():
     state = qutip.basis(size, 2)
 
     c_ops = [[a, _dynamic], [a.dag(), _dynamic]]
-    mc = qutip.mcsolve(H, state, times, c_ops, ntraj=25, args={"collapse": []})
+    mc = mcsolve(H, state, times, c_ops, ntraj=25, args={"collapse": []})
     assert all(len(collapses) <= 1 for collapses in mc.col_which)
 
 
@@ -312,7 +314,7 @@ def test_regression_490():
          [qutip.sigmaz(), _regression_490_f2]]
     state = (qutip.basis(2, 0) + qutip.basis(2, 1)).unit()
     times = np.linspace(0, 3, 10)
-    result_me = qutip.mesolve(h, state, times)
-    result_mc = qutip.mcsolve(h, state, times, ntraj=1)
+    result_me = mesolve(h, state, times)
+    result_mc = mcsolve(h, state, times, ntraj=1)
     for state_me, state_mc in zip(result_me.states, result_mc.states):
         np.testing.assert_allclose(state_me.full(), state_mc.full(), atol=1e-8)

@@ -45,7 +45,8 @@ Pulses from Quantum Optical Systems (2017, arXiv:1710.02875).
 import numpy as np
 from itertools import product, combinations_with_replacement
 from ..core import basis, tensor, zero_ket, Qobj
-from .propagator import propagator
+#from .propagator import propagator
+propagator = None
 from .solver import SolverOptions
 
 __all__ = ['temporal_basis_vector',

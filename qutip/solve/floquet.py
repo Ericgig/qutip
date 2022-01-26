@@ -53,7 +53,8 @@ from .sesolve import sesolve
 from ._rhs_generate import rhs_clear
 from .steadystate import steadystate
 from .solver import SolverOptions
-from .propagator import propagator
+#from .propagator import propagator
+propagator = None
 from .solver import Result, _solver_safety_check
 from ..utilities import n_thermal
 

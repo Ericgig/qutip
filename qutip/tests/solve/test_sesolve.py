@@ -39,9 +39,10 @@ import os
 
 from qutip import (
     sigmax, sigmay, sigmaz, qeye, basis, expect, num, destroy, create,
-    sesolve, coefficient
+    coefficient
 )
 from qutip.solve import SolverOptions
+from qutip.solve.sesolve import sesolve
 
 os.environ['QUTIP_GRAPHICS'] = "NO"
 
