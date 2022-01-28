@@ -34,9 +34,9 @@
 import pytest
 import numpy as np
 import qutip
-from qutip.solve import SolverOptions
-from qutip.solve.mcsolve import mcsolve
-from qutip.solve.mesolve import mesolve
+from qutip.solve_legacy.solver import SolverOptions
+from qutip.solve_legacy.mcsolve import mcsolve
+from qutip.solve_legacy.mesolve import mesolve
 
 def _return_constant(t, args):
     return args['constant']

@@ -35,11 +35,12 @@ import numpy as np
 import scipy.linalg
 import pytest
 import qutip
-from qutip.solve._brtools_checks import (
+from qutip.solve_legacy._brtools_checks import (
     _test_zheevr, _test_diag_liou_mult, _test_dense_to_eigbasis,
     _test_vec_to_eigbasis, _test_eigvec_to_fockbasis, _test_vector_roundtrip,
     _cop_super_mult, _test_br_term_mult
 )
+from qutip.solve_legacy._brtensor import bloch_redfield_tensor
 from qutip.core import data as _data
 import platform
 
@@ -172,8 +173,7 @@ def test_br_term_mult(secular):
         operator = qutip.rand_herm(dimension, 0.5)
         a_ops = [[operator, lambda w: 1.0]]
         vec = np.ones((dimension*dimension,), dtype=np.complex128)
-        br_tensor, _ = qutip.bloch_redfield_tensor(H, a_ops,
-                                                   use_secular=secular)
+        br_tensor, _ = bloch_redfield_tensor(H, a_ops, use_secular=secular)
         _op = br_tensor - L_diagonal
         target = _data.to(_data.CSR, _op.data).as_scipy().dot(vec)
         calculated = np.zeros_like(target)

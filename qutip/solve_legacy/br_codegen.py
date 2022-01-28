@@ -409,7 +409,7 @@ class BR_Codegen(object):
 
 
 def cython_preamble(use_omp=False):
-    call_str = "from qutip.solve._brtools cimport (cop_super_mult, br_term_mult)"
+    call_str = "from qutip.solve_legacy._brtools cimport (cop_super_mult, br_term_mult)"
     """
     Returns list of code segments for Cython preamble.
     """

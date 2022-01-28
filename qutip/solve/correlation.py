@@ -39,7 +39,7 @@ __all__ = [
 
 from re import sub
 import types
-
+from copy import copy
 import numpy as np
 import scipy.fftpack
 
@@ -47,17 +47,9 @@ from ..core import (
     qeye, Qobj, QobjEvo, liouvillian, spre, unstack_columns, stack_columns,
     tensor, qzero, expect
 )
-from .mesolve import mesolve
-from .mcsolve import mcsolve
-from ._rhs_generate import rhs_clear, td_wrap_array_str
-from ._utilities import cython_build_cleanup
-from .solver import SolverOptions, config
+from qutip import mesolve, MeSolver, mcsolve, SolverOptions
 from .steadystate import steadystate
 from ..settings import settings
-debug = settings.install['debug']
-
-if debug:
-    import inspect
 
 
 # -----------------------------------------------------------------------------
@@ -67,8 +59,8 @@ if debug:
 # low level correlation
 
 def correlation_2op_1t(H, state0, taulist, c_ops, a_op, b_op,
-                       solver="me", reverse=False, args={},
-                       options=SolverOptions(ntraj=[20, 100])):
+                       solver="me", reverse=False, args=None,
+                       options=None, ntraj=[20, 100]):
     r"""
     Calculate the two-operator two-time correlation function:
     :math:`\left<A(t+\tau)B(t)\right>`
@@ -103,10 +95,10 @@ def correlation_2op_1t(H, state0, taulist, c_ops, a_op, b_op,
         choice of solver (`me` for master-equation, `mc` for Monte Carlo, and
         `es` for exponential series).
     options : SolverOptions
-        Solver options class. `ntraj` is taken as a two-element list because
-        the `mc` correlator calls `mcsolve()` recursively; by default,
-        `ntraj=[20, 100]`. `mc_corr_eps` prevents divide-by-zero errors in
-        the `mc` correlator; by default, `mc_corr_eps=1e-10`.
+        Solver options class.
+    ntraj : list, optional  [20, 100]
+        Number of trajectories for the ``mc`` solver. The first number is the
+        number of trajectories for the evolution on
 
     Returns
     -------
@@ -118,9 +110,6 @@ def correlation_2op_1t(H, state0, taulist, c_ops, a_op, b_op,
     See, Gardiner, Quantum Noise, Section 5.2.
 
     """
-
-    if debug:
-        print(inspect.stack()[0][3])
     if reverse:
         A_op = a_op
         B_op = b_op
@@ -130,12 +119,13 @@ def correlation_2op_1t(H, state0, taulist, c_ops, a_op, b_op,
         B_op = a_op
         C_op = b_op
     return _correlation_2t(H, state0, [0], taulist, c_ops, A_op, B_op, C_op,
-                           solver=solver, args=args, options=options)[0]
+                           solver=solver, args=args, options=options,
+                           ntraj=ntraj)[0]
 
 
 def correlation_2op_2t(H, state0, tlist, taulist, c_ops, a_op, b_op,
                        solver="me", reverse=False, args={},
-                       options=SolverOptions(ntraj=[20, 100])):
+                       options=None, ntraj=[20, 100]):
     r"""
     Calculate the two-operator two-time correlation function:
     :math:`\left<A(t+\tau)B(t)\right>`
@@ -192,12 +182,10 @@ def correlation_2op_2t(H, state0, tlist, taulist, c_ops, a_op, b_op,
     See, Gardiner, Quantum Noise, Section 5.2.
 
     """
-    if debug:
-        print(inspect.stack()[0][3])
     if tlist is None:
         return correlation_2op_1t(H, state0, taulist, c_ops, a_op, b_op,
                                   solver=solver, reverse=reverse, args=args,
-                                  options=options)
+                                  options=options, ntraj=ntraj)
     if reverse:
         A_op = a_op
         B_op = b_op
@@ -207,12 +195,13 @@ def correlation_2op_2t(H, state0, tlist, taulist, c_ops, a_op, b_op,
         B_op = a_op
         C_op = b_op
     return _correlation_2t(H, state0, tlist, taulist, c_ops, A_op, B_op, C_op,
-                           solver=solver, args=args, options=options)
+                           solver=solver, args=args, options=options,
+                           ntraj=ntraj)
 
 
 def correlation_3op_1t(H, state0, taulist, c_ops, a_op, b_op, c_op,
                        solver="me", args={},
-                       options=SolverOptions(ntraj=[20, 100])):
+                       options=None, ntraj=[20, 100]):
     r"""
     Calculate the three-operator two-time correlation function:
     :math:`\left<A(t)B(t+\tau)C(t)\right>` along one time axis using the
@@ -261,17 +250,15 @@ def correlation_3op_1t(H, state0, taulist, c_ops, a_op, b_op, c_op,
     References
     ----------
     See, Gardiner, Quantum Noise, Section 5.2.
-
     """
-    if debug:
-        print(inspect.stack()[0][3])
     return _correlation_2t(H, state0, [0], taulist, c_ops, a_op, b_op, c_op,
-                           solver=solver, args=args, options=options)[0]
+                           solver=solver, args=args, options=options,
+                           ntraj=ntraj)[0]
 
 
 def correlation_3op_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
                        solver="me", args={},
-                       options=SolverOptions(ntraj=[20, 100])):
+                       options=None, ntraj=[20, 100]):
     r"""
     Calculate the three-operator two-time correlation function:
     :math:`\left<A(t)B(t+\tau)C(t)\right>` along two time axes using the
@@ -331,19 +318,19 @@ def correlation_3op_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
     See, Gardiner, Quantum Noise, Section 5.2.
 
     """
-    if debug:
-        print(inspect.stack()[0][3])
     if tlist is None:
         return correlation_3op_1t(H, state0, taulist, c_ops, a_op, b_op, c_op,
-                                  solver=solver, args=args, options=options)
+                                  solver=solver, args=args, options=options,
+                                  ntraj=ntraj)
     return _correlation_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
-                           solver=solver, args=args, options=options)
+                           solver=solver, args=args, options=options,
+                           ntraj=ntraj)
 
 
 # high level correlation
 
 def coherence_function_g1(H, state0, taulist, c_ops, a_op, solver="me",
-                          args={}, options=SolverOptions(ntraj=[20, 100])):
+                          args={}, options=None, ntraj=[20, 100]):
     r"""
     Calculate the normalized first-order quantum coherence function:
 
@@ -400,13 +387,14 @@ def coherence_function_g1(H, state0, taulist, c_ops, a_op, solver="me",
 
     # calculate the correlation function G1 and normalize with n to obtain g1
     G1 = correlation_2op_1t(H, state0, taulist, c_ops, a_op.dag(), a_op,
-                            solver=solver, args=args, options=options)
+                            solver=solver, args=args, options=options,
+                            ntraj=ntraj)
     g1 = G1 / np.sqrt(n[0] * n)
     return g1, G1
 
 
 def coherence_function_g2(H, state0, taulist, c_ops, a_op, solver="me",
-                          args={}, options=SolverOptions(ntraj=[20, 100])):
+                          args={}, options=None, ntraj=[20, 100]):
     r"""
     Calculate the normalized second-order quantum coherence function:
 
@@ -460,12 +448,14 @@ def coherence_function_g2(H, state0, taulist, c_ops, a_op, solver="me",
         state0 = steadystate(H, c_ops)
         n = np.array([expect(state0, a_op.dag() * a_op)])
     else:
-        n = mesolve(H, state0, taulist, c_ops, [a_op.dag() * a_op], args=args).expect[0]
+        n = mesolve(H, state0, taulist, c_ops,
+                    [a_op.dag() * a_op], args=args).expect[0]
 
     # calculate the correlation function G2 and normalize with n to obtain g2
     G2 = correlation_3op_1t(H, state0, taulist, c_ops,
                             a_op.dag(), a_op.dag()*a_op, a_op,
-                            solver=solver, args=args, options=options)
+                            solver=solver, args=args, options=options,
+                            ntraj=ntraj)
     g2 = G2 / (n[0] * n)
     return g2, G2
 
@@ -513,8 +503,6 @@ def spectrum(H, wlist, c_ops, a_op, b_op, solver="es", use_pinv=False):
         specified in `wlist`.
 
     """
-    if debug:
-        print(inspect.stack()[0][3])
     if solver == "es":
         return _spectrum_es(H, wlist, c_ops, a_op, b_op)
     elif solver == "pi":
@@ -535,7 +523,8 @@ def spectrum_correlation_fft(tlist, y, inverse=False):
     y : array_like
         list/array of correlations corresponding to time delays :math:`t`.
     inverse: boolean
-        boolean parameter for using a positive exponent in the Fourier Transform instead. Default is False.
+        boolean parameter for using a positive exponent in the Fourier
+        Transform instead. Default is False.
 
     Returns
     -------
@@ -544,8 +533,6 @@ def spectrum_correlation_fft(tlist, y, inverse=False):
         two-sided power spectrum 'S(w)'.
 
     """
-    if debug:
-        print(inspect.stack()[0][3])
     tlist = np.asarray(tlist)
     N = tlist.shape[0]
     dt = tlist[1] - tlist[0]
@@ -568,7 +555,7 @@ def spectrum_correlation_fft(tlist, y, inverse=False):
 # master 2t correlation solver
 
 def _correlation_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
-                    solver="me", args={}, options=SolverOptions()):
+                    solver="me", args={}, options=None, ntraj=[20, 100]):
     """
     Internal function for calling solvers in order to calculate the
     three-operator two-time correlation function:
@@ -579,19 +566,10 @@ def _correlation_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
     # two-time correlations (incuding those with 2ops vs 3). Ex: to compute a
     # correlation of the form <A(t+tau)B(t)>: a_op = identity, b_op = A,
     # and c_op = B.
-
-    if debug:
-        print(inspect.stack()[0][3])
-
     if min(tlist) != 0:
         raise TypeError("tlist must be positive and contain the element 0.")
     if min(taulist) != 0:
         raise TypeError("taulist must be positive and contain the element 0.")
-
-    if config.tdname:
-        cython_build_cleanup(config.tdname)
-    rhs_clear()
-    H, c_ops, args = td_wrap_array_str(H, c_ops, args, tlist)
 
     if solver == "me":
         return _correlation_me_2t(H, state0, tlist, taulist,
@@ -600,7 +578,7 @@ def _correlation_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
     elif solver == "mc":
         return _correlation_mc_2t(H, state0, tlist, taulist,
                                   c_ops, a_op, b_op, c_op,
-                                  args=args, options=options)
+                                  args=args, options=options, ntraj=ntraj)
     elif solver == "es":
         return _correlation_es_2t(H, state0, tlist, taulist,
                                   c_ops, a_op, b_op, c_op)
@@ -611,7 +589,7 @@ def _correlation_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
 # master equation solvers
 
 def _correlation_me_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
-                       args={}, options=SolverOptions()):
+                       args={}, options=None):
     """
     Internal function for calculating the three-operator two-time
     correlation function:
@@ -629,21 +607,15 @@ def _correlation_me_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
     else:
         rho0 = state0
 
-    if debug:
-        print(inspect.stack()[0][3])
-
-    rho_t = mesolve(H, rho0, tlist, c_ops, args=args, options=options).states
-    corr_mat = np.zeros([np.size(tlist), np.size(taulist)], dtype=complex)
     H = QobjEvo(H, args=args, tlist=tlist, copy=False)
     c_ops = [QobjEvo(op, args=args, tlist=tlist, copy=False) for op in c_ops]
+    solver = MeSolver(H, c_ops, options=options)
+    rho_t = solver.run(rho0, tlist).states
+    corr_mat = np.zeros([np.size(tlist), np.size(taulist)], dtype=complex)
 
     for t_idx, rho in enumerate(rho_t):
-        H_shifted = H._insert_time_shift(tlist[t_idx])
-        c_ops_shifted = [op._insert_time_shift(tlist[t_idx]) for op in c_ops]
-
-        corr_mat[t_idx, :] = mesolve(
-            H_shifted, c_op * rho * a_op, taulist, c_ops_shifted,
-            [b_op], args=args, options=options
+        corr_mat[t_idx, :] = solver.run(c_op * rho * a_op, taulist,
+            e_ops=[b_op], args={'_shift_dt': tlist[t_idx]},
         ).expect[0]
 
     return corr_mat
@@ -669,9 +641,6 @@ def _correlation_es_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op):
     else:
         rho0 = state0
 
-    if debug:
-        print(inspect.stack()[0][3])
-
     # contruct the Liouvillian
     L = liouvillian(H, c_ops)
     corr_mat = np.zeros([np.size(tlist), np.size(taulist)], dtype=complex)
@@ -692,8 +661,6 @@ def _spectrum_es(H, wlist, c_ops, a_op, b_op):
     Internal function for calculating the spectrum of the correlation function
     :math:`\left<A(\tau)B(0)\right>`.
     """
-    if debug:
-        print(inspect.stack()[0][3])
 
     # construct the Liouvillian
     L = liouvillian(H, c_ops)
@@ -729,7 +696,7 @@ def _spectrum_es(H, wlist, c_ops, a_op, b_op):
 # Monte Carlo solvers
 
 def _correlation_mc_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
-                       args={}, options=SolverOptions()):
+                       args={}, options=None, ntraj=[20, 100]):
     """
     Internal function for calculating the three-operator two-time
     correlation function:
@@ -748,14 +715,14 @@ def _correlation_mc_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
         raise TypeError("state0 must be a state vector.")
     psi0 = state0
 
-    if debug:
-        print(inspect.stack()[0][3])
+    options = copy(options) or SolverOptions()
+    options.results['keep_runs_results'] = True
+    options['progress_bar'] = False
 
     psi_t_mat = mcsolve(
         H, psi0, tlist, c_ops, [],
-        args=args, ntraj=options['ntraj'][0], options=options,
-        progress_bar=None,
-    ).states
+        args=args, ntraj=ntraj[0], options=options,
+    ).runs_states
 
     corr_mat = np.zeros([np.size(tlist), np.size(taulist)], dtype=complex)
     H = QobjEvo(H, args=args, tlist=tlist, copy=False)
@@ -767,24 +734,23 @@ def _correlation_mc_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
         H_shifted = H._insert_time_shift(tlist[t_idx])
         c_ops_shifted = [op._insert_time_shift(tlist[t_idx]) for op in c_ops]
 
-        for trial_idx in range(options['ntraj'][0]):
+        for trial_idx in range(ntraj[0]):
             if isinstance(a_op, Qobj) and isinstance(c_op, Qobj):
                 if a_op.dag() == c_op:
                     # A shortcut here, requires only 1/4 the trials
                     chi_0 = (options.mcsolve['mc_corr_eps'] + c_op) * \
-                        psi_t_mat[trial_idx, t_idx]
+                        psi_t_mat[trial_idx][t_idx]
 
                     # evolve these states and calculate expectation value of B
                     c_tau = chi_0.norm()**2 * mcsolve(
                         H_shifted, chi_0/chi_0.norm(), taulist, c_ops_shifted,
                         [b_op],
-                        args=args, ntraj=options['ntraj'][1], options=options,
-                        progress_bar=None
+                        args=args, ntraj=ntraj[1], options=options,
                     ).expect[0]
 
                     # final correlation vector computed by combining the
                     # averages
-                    corr_mat[t_idx, :] += c_tau/options['ntraj'][1]
+                    corr_mat[t_idx, :] += c_tau/ntraj[1]
             else:
                 # otherwise, need four trial wavefunctions
                 # (Ad+C)*psi_t, (Ad+iC)*psi_t, (Ad-C)*psi_t, (Ad-iC)*psi_t
@@ -797,7 +763,7 @@ def _correlation_mc_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
                     a_op_dag = a_op
                 chi_0 = [(options.mcsolve['mc_corr_eps'] + a_op_dag +
                           np.exp(1j*x*np.pi/2)*c_op) *
-                         psi_t_mat[trial_idx, t_idx]
+                         psi_t_mat[trial_idx][t_idx]
                          for x in range(4)]
 
                 # evolve these states and calculate expectation value of B
@@ -805,15 +771,14 @@ def _correlation_mc_2t(H, state0, tlist, taulist, c_ops, a_op, b_op, c_op,
                     chi.norm()**2 * mcsolve(
                         H_shifted, chi/chi.norm(), taulist, c_ops_shifted,
                         [b_op],
-                        args=args, ntraj=options['ntraj'][1], options=options,
-                        progress_bar=None
+                        args=args, ntraj=ntraj[1], options=options,
                     ).expect[0]
                     for chi in chi_0
                 ]
 
                 # final correlation vector computed by combining the averages
                 corr_mat_add = np.asarray(
-                    1.0 / (4*options['ntraj'][0]) *
+                    1.0 / (4*ntraj[0]) *
                     (c_tau[0] - c_tau[2] - 1j*c_tau[1] + 1j*c_tau[3]),
                     dtype=corr_mat.dtype
                 )

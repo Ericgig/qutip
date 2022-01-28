@@ -37,8 +37,6 @@ import pickle
 import numpy as np
 import sys
 from .core import Qobj
-from .solve import Result
-
 
 
 # -----------------------------------------------------------------------------
@@ -291,9 +289,6 @@ def qload(name):
         else:
             str1 += "\n"
         print(str1)
-    elif isinstance(out, Result):
-        print('Loaded Result object:')
-        print(out)
     else:
         print("Loaded " + str(type(out).__name__) + " object.")
     return out

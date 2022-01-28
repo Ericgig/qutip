@@ -1,4 +1,5 @@
 from qutip.solver.result import *
+from qutip.solver.options import *
 import qutip
 import numpy as np
 import pytest

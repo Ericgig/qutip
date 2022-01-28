@@ -33,17 +33,19 @@
 import os
 import warnings
 
-import qutip.settings
+from .settings import settings
 import qutip.version
 from qutip.version import version as __version__
 
+"""
 # -----------------------------------------------------------------------------
 # Check if we're in IPython.
 try:
     __IPYTHON__
-    qutip.settings.ipython = True
+    settings.ipython = True
 except NameError:
-    qutip.settings.ipython = False
+    settings.ipython = False
+"""
 
 
 # -----------------------------------------------------------------------------
@@ -53,6 +55,7 @@ except NameError:
 # (i.e. in parfor or parallel_map)
 os.environ['QUTIP_IN_PARALLEL'] = 'FALSE'
 
+"""
 try:
     from qutip.cy.openmp.parfuncs import spmv_csr_openmp
 except ImportError:
@@ -61,11 +64,12 @@ else:
     qutip.settings.has_openmp = True
     # See Pull #652 for why this is here.
     os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+"""
 
 import platform
 from .utilities import _blas_info
-qutip.settings.eigh_unsafe = (_blas_info() == "OPENBLAS" and
-                              platform.system() == 'Darwin')
+# qutip.settings.eigh_unsafe = (_blas_info() == "OPENBLAS" and
+#                               platform.system() == 'Darwin')
 del platform
 # -----------------------------------------------------------------------------
 # setup the cython environment
@@ -113,8 +117,8 @@ else:
 #
 
 from .core import *
-from .solve import *
 from .solver import *
+from .solve import *
 
 # graphics
 from .bloch import *

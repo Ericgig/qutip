@@ -325,7 +325,11 @@ cdef class QobjEvo:
 
     def arguments(QobjEvo self, dict new_args):
         """Update the arguments"""
+        if not new_args:
+            return
         cache = []
+        if '_shift_dt' in new_args:
+            self._shift_dt = new_args['_shift_dt']
         self.elements = [
             element.replace_arguments(new_args, cache=cache)
             for element in self.elements

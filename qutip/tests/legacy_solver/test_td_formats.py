@@ -34,7 +34,7 @@
 from numpy.testing import assert_, run_module_suite
 
 from qutip import rand_herm, qeye
-from qutip.solve._rhs_generate import td_format_check
+from qutip.solve_legacy._rhs_generate import td_format_check
 
 
 def test_setTDFormatCheckMC():

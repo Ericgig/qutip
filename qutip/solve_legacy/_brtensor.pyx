@@ -47,7 +47,7 @@ cimport cython
 
 from qutip.core.data cimport CSR, idxint, csr
 from qutip.core.data.add cimport add_csr
-from qutip.solve._brtools cimport (
+from qutip.solve_legacy._brtools cimport (
     vec2mat_index, dense_to_eigbasis, ZHEEVR, skew_and_dwmin,
     liou_from_diag_ham, cop_super_term
 )

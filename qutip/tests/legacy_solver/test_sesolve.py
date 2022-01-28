@@ -41,8 +41,8 @@ from qutip import (
     sigmax, sigmay, sigmaz, qeye, basis, expect, num, destroy, create,
     coefficient
 )
-from qutip.solve import SolverOptions
-from qutip.solve.sesolve import sesolve
+from qutip.solve_legacy.solver import SolverOptions
+from qutip.solve_legacy.sesolve import sesolve
 
 os.environ['QUTIP_GRAPHICS'] = "NO"
 

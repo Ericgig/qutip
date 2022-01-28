@@ -41,8 +41,8 @@ import os
 
 from qutip import *
 from qutip.random_objects import rand_ket
-from qutip.solve import SolverOptions
-from qutip.solve.mesolve import mesolve
+from qutip.solve_legacy.solver import SolverOptions
+from qutip.solve_legacy.mesolve import mesolve
 
 os.environ['QUTIP_GRAPHICS'] = "NO"
 

@@ -33,6 +33,11 @@
 import pytest
 import numpy as np
 import qutip
+from qutip.solve_legacy.bloch_redfield import (
+    brmesolve,
+    bloch_redfield_tensor,
+    bloch_redfield_solve
+)
 
 pytestmark = [
     pytest.mark.requires_cython,
@@ -72,8 +77,8 @@ def test_simple_qubit_system(me_c_ops, brme_c_ops, brme_a_ops):
     psi0 = (2*qutip.basis(2, 0) + qutip.basis(2, 1)).unit()
     times = np.linspace(0, 10, 100)
     me = qutip.mesolve(H, psi0, times, c_ops=me_c_ops, e_ops=e_ops).expect
-    brme = qutip.brmesolve([[H, '1']], psi0, times,
-                           brme_a_ops, e_ops, brme_c_ops).expect
+    brme = brmesolve([[H, '1']], psi0, times,
+                     brme_a_ops, e_ops, brme_c_ops).expect
     for me_expectation, brme_expectation in zip(me, brme):
         np.testing.assert_allclose(me_expectation, brme_expectation, atol=1e-2)
 
@@ -115,7 +120,7 @@ def test_harmonic_oscillator(n_th):
     e_ops = [a.dag()*a, a+a.dag()]
 
     me = qutip.mesolve(H, psi0, times, c_ops, e_ops)
-    brme = qutip.brmesolve(H, psi0, times, a_ops, e_ops)
+    brme = brmesolve(H, psi0, times, a_ops, e_ops)
     for me_expectation, brme_expectation in zip(me.expect, brme.expect):
         np.testing.assert_allclose(me_expectation, brme_expectation, atol=1e-2)
 
@@ -143,7 +148,7 @@ def test_jaynes_cummings_zero_temperature():
     H = w0*a.dag()*a + w0*sp.dag()*sp + g*(a+a.dag())*(sp+sp.dag())
 
     me = qutip.mesolve(H, psi0, times, c_ops, e_ops)
-    brme = qutip.brmesolve(H, psi0, times, a_ops, e_ops)
+    brme = brmesolve(H, psi0, times, a_ops, e_ops)
     for me_expectation, brme_expectation in zip(me.expect, brme.expect):
         # Accept 5% error.
         np.testing.assert_allclose(me_expectation, brme_expectation, atol=5e-2)
@@ -177,7 +182,7 @@ def test_time_dependence_tuples(time_dependence_tuple):
     kappa = 0.2
     a_ops = [[a + a.dag(), time_dependence_tuple(kappa, times)]]
     exact = 9 * np.exp(-kappa * (1 - np.exp(-times)))
-    brme = qutip.brmesolve(H, psi0, times, a_ops, e_ops=[a.dag()*a])
+    brme = brmesolve(H, psi0, times, a_ops, e_ops=[a.dag()*a])
     assert np.mean(np.abs(brme.expect[0] - exact) / exact) < 1e-5
 
 
@@ -192,8 +197,7 @@ def test_time_dependent_spline_in_c_ops():
     a_ops = [[a + a.dag(), _string_w_interpolating_t(kappa, times)]]
     collapse_points = np.sqrt(kappa) * np.exp(-0.5*times)
     c_ops = [[a, qutip.Cubic_Spline(times[0], times[-1], collapse_points)]]
-    brme = qutip.brmesolve(H, psi0, times,
-                           a_ops, e_ops=[a.dag()*a], c_ops=c_ops)
+    brme = brmesolve(H, psi0, times, a_ops, e_ops=[a.dag()*a], c_ops=c_ops)
     assert np.mean(np.abs(brme.expect[0] - exact) / exact) < 1e-5
 
 
@@ -207,7 +211,7 @@ def test_nonhermitian_e_ops():
     psi0 = qutip.basis(N, 2)
     times = np.linspace(0, 10, 10)
     me = qutip.mesolve(H, psi0, times, c_ops=[], e_ops=[a]).expect[0]
-    brme = qutip.brmesolve(H_brme, psi0, times, a_ops=[], e_ops=[a]).expect[0]
+    brme = brmesolve(H_brme, psi0, times, a_ops=[], e_ops=[a]).expect[0]
     np.testing.assert_allclose(me, brme, atol=1e-4)
 
 
@@ -221,7 +225,7 @@ def test_result_states():
     psi0 = qutip.fock_dm(N, 2)
     times = np.linspace(0, 10, 10)
     me = qutip.mesolve(H, psi0, times).states
-    brme = qutip.brmesolve(H_brme, psi0, times).states
+    brme = brmesolve(H_brme, psi0, times).states
     assert max(np.abs((me_state - brme_state).full()).max()
                for me_state, brme_state in zip(me, brme)) < 1e-5
 
@@ -285,7 +289,7 @@ def test_split_operators_maintain_answer(collapse_operators):
 
     me_c_ops, brme_c_ops, a_ops = collapse_operators(N, kappa, times)
     me = qutip.mesolve(H, psi0, times, me_c_ops, e_ops)
-    brme = qutip.brmesolve(H, psi0, times, a_ops, e_ops, brme_c_ops)
+    brme = brmesolve(H, psi0, times, a_ops, e_ops, brme_c_ops)
 
     for me_expect, brme_expect in zip(me.expect, brme.expect):
         np.testing.assert_allclose(me_expect, brme_expect, atol=1e-2)
@@ -309,7 +313,7 @@ def test_hamiltonian_taking_arguments():
     H = w0*a.dag()*a + w0*sp.dag()*sp + g*(a+a.dag())*(sp+sp.dag())
     args = {'ii': 1}
 
-    no_args = qutip.brmesolve(H, psi0, times, a_ops, e_ops)
-    args = qutip.brmesolve([[H, 'ii']], psi0, times, a_ops, e_ops, args=args)
+    no_args = brmesolve(H, psi0, times, a_ops, e_ops)
+    args = brmesolve([[H, 'ii']], psi0, times, a_ops, e_ops, args=args)
     for arg, no_arg in zip(args.expect, no_args.expect):
         assert np.array_equal(arg, no_arg)

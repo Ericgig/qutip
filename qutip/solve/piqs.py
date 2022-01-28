@@ -55,7 +55,8 @@ from .. import (
     sigmap, sigmam,
 )
 from ..entropy import entropy_vn
-from .solver import SolverOptions, Result
+from ..solver.result import Result
+from ..solver.options import SolverResultsOptions
 from ._piqs import Dicke as _Dicke
 from ._piqs import (
     jmm1_dictionary,
@@ -1812,20 +1813,18 @@ class Pim(object):
         """
         Solve the ODE for the evolution of diagonal states and Hamiltonians.
         """
-        if options is None:
-            options = SolverOptions()
-        output = Result()
+        output = Result([], SolverResultsOptions(), False, False)
         output.solver = "pisolve"
         output.times = tlist
         output.states = []
-        output.states.append(Qobj(rho0))
+        output.add(tlist[0], Qobj(rho0))
         rhs_generate = lambda y, tt, M: M.dot(y)
         rho0_flat = np.diag(np.real(rho0.full()))
         L = self.coefficient_matrix()
         rho_t = odeint(rhs_generate, rho0_flat, tlist, args=(L,))
-        for r in rho_t[1:]:
+        for t, r in zip(tlist[1:], rho_t[1:]):
             diag = np.diag(r)
-            output.states.append(Qobj(diag))
+            output.add(t, Qobj(diag))
         return output
 
     def tau1(self, j, m):

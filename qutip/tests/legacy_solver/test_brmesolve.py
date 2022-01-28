@@ -34,7 +34,11 @@
 import numpy as np
 import pytest
 import qutip
-
+from qutip.solve_legacy.bloch_redfield import (
+    brmesolve,
+    bloch_redfield_tensor,
+    bloch_redfield_solve
+)
 
 def pauli_spin_operators():
     return [qutip.sigmax(), qutip.sigmay(), qutip.sigmaz()]
@@ -64,8 +68,7 @@ def test_simple_qubit_system(me_c_ops, brme_c_ops, brme_a_ops):
     psi0 = (2*qutip.basis(2, 0) + qutip.basis(2, 1)).unit()
     times = np.linspace(0, 10, 100)
     me = qutip.mesolve(H, psi0, times, c_ops=me_c_ops, e_ops=e_ops).expect
-    brme = qutip.brmesolve(H, psi0, times,
-                           brme_a_ops, e_ops, brme_c_ops).expect
+    brme = brmesolve(H, psi0, times, brme_a_ops, e_ops, brme_c_ops).expect
     for me_expectation, brme_expectation in zip(me, brme):
         np.testing.assert_allclose(me_expectation, brme_expectation, atol=1e-2)
 
@@ -108,7 +111,7 @@ def test_harmonic_oscillator(n_th):
     e_ops = [a.dag()*a, a+a.dag()]
 
     me = qutip.mesolve(H, psi0, times, c_ops, e_ops)
-    brme = qutip.brmesolve(H, psi0, times, a_ops, e_ops)
+    brme = brmesolve(H, psi0, times, a_ops, e_ops)
     for me_expectation, brme_expectation in zip(me.expect, brme.expect):
         np.testing.assert_allclose(me_expectation, brme_expectation, atol=1e-2)
 
@@ -138,7 +141,7 @@ def test_jaynes_cummings_zero_temperature():
     H = w0*a.dag()*a + w0*sp.dag()*sp + g*(a+a.dag())*(sp+sp.dag())
 
     me = qutip.mesolve(H, psi0, times, c_ops, e_ops)
-    brme = qutip.brmesolve(H, psi0, times, a_ops, e_ops)
+    brme = brmesolve(H, psi0, times, a_ops, e_ops)
     for me_expectation, brme_expectation in zip(me.expect, brme.expect):
         # Accept 5% error.
         np.testing.assert_allclose(me_expectation, brme_expectation, atol=5e-2)
@@ -167,8 +170,7 @@ def test_pull_572_error():
     qubit_2_x = qutip.tensor(id2, qutip.sigmax(), id2)
     qubit_3_x = qutip.tensor(id2, id2, qutip.sigmax())
     # Bloch-Redfield tensor including dissipation for qubits 2 and 3 only
-    R, ekets = qutip.bloch_redfield_tensor(H,
-                                           [[qubit_2_x, S2], [qubit_3_x, S3]])
+    R, ekets = bloch_redfield_tensor(H, [[qubit_2_x, S2], [qubit_3_x, S3]])
     # Initial state : first qubit is excited
     grnd2 = qutip.sigmam() * qutip.sigmap()  # 2x2 ground
     exc2 = qutip.sigmap() * qutip.sigmam()   # 2x2 excited state
@@ -179,7 +181,7 @@ def test_pull_572_error():
 
     # Solution of the master equation
     times = np.linspace(0, 10./gamma3, 1000)
-    sol = qutip.bloch_redfield_solve(R, ekets, ini, times, [proj_up1])
+    sol = bloch_redfield_solve(R, ekets, ini, times, [proj_up1])
     np.testing.assert_allclose(sol[0], np.ones_like(times))
 
 
@@ -196,6 +198,6 @@ def test_solver_accepts_list_hamiltonian():
     psi0 = (2*qutip.basis(2, 0) + qutip.basis(2, 1)).unit()
     times = np.linspace(0, 10, 100)
     me = qutip.mesolve(H, psi0, times, c_ops=c_ops, e_ops=e_ops).expect
-    brme = qutip.brmesolve(H, psi0, times, [], e_ops, c_ops).expect
+    brme = brmesolve(H, psi0, times, [], e_ops, c_ops).expect
     for me_expectation, brme_expectation in zip(me, brme):
         np.testing.assert_allclose(me_expectation, brme_expectation, atol=1e-8)

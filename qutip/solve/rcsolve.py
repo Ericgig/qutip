@@ -49,8 +49,8 @@ from .. import (
     spre, spost, sprepost, thermal_dm, tensor, identity, destroy, sigmax,
     sigmaz, basis, qeye,
 )
-from .mesolve import mesolve
-from .solver import SolverOptions
+from ..solver.mesolve import mesolve
+from ..solver.options import SolverOptions
 
 
 def rcsolve(Hsys, psi0, tlist, e_ops, Q, wc, alpha, N, w_th, sparse=False,

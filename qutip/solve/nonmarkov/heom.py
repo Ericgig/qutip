@@ -48,7 +48,9 @@ from qutip import (
     Qobj, qeye, enr_state_dictionaries, liouvillian, spre, spost, sprepost,
 )
 from qutip.core import data as _data
-from ..solver import SolverOptions, Result, Stats
+from ...solver.result import Result
+from ...solver.options import SolverOptions
+from .stats import Stats
 from qutip.ui.progressbar import BaseProgressBar, TextProgressBar
 from ._heom import pad
 
@@ -430,13 +432,13 @@ class HSolverDL(HEOMSolver):
         r = scipy.integrate.ode(_ode_rhs)
 
         r.set_f_params(L_helems)
-        r.set_integrator('zvode', method=options['method'],
-                         order=options['order'],
-                         atol=options['atol'], rtol=options['rtol'],
-                         nsteps=options['nsteps'],
-                         first_step=options['first_step'],
-                         min_step=options['min_step'],
-                         max_step=options['max_step'])
+        r.set_integrator('zvode', method=options.ode['method'],
+                         order=options.ode['order'],
+                         atol=options.ode['atol'], rtol=options.ode['rtol'],
+                         nsteps=options.ode['nsteps'],
+                         first_step=options.ode['first_step'],
+                         min_step=options.ode['min_step'],
+                         max_step=options.ode['max_step'])
 
         if stats:
             time_now = timeit.default_timer()
@@ -489,14 +491,12 @@ class HSolverDL(HEOMSolver):
                 ss_run = stats.add_section('run')
 
         # Set up terms of the matsubara and tanimura boundaries
-        output = Result()
+        output = Result([], SolverOptions().results, True, False)
         output.solver = "hsolve"
-        output.times = tlist
-        output.states = []
 
         if stats:
             start_init = timeit.default_timer()
-        output.states.append(Qobj(rho0))
+        output.add(tlist[0], Qobj(rho0))
         rho0_flat = rho0.full().ravel('F')  # Using 'F' effectively transposes
         rho0_he = np.zeros([sup_dim*self._N_he], dtype=complex)
         rho0_he[:sup_dim] = rho0_flat
@@ -513,7 +513,7 @@ class HSolverDL(HEOMSolver):
             if t_idx < n_tsteps - 1:
                 r.integrate(r.t + dt[t_idx])
                 rho = Qobj(r.y[:sup_dim].reshape(rho0.shape), dims=rho0.dims)
-                output.states.append(rho)
+                output.add(r.t, rho)
 
         if stats:
             time_now = timeit.default_timer()
