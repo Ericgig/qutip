@@ -11,7 +11,7 @@ import time
 import threading
 import concurrent.futures
 from qutip.ui.progressbar import progess_bars
-from qutip.settings import available_cpu_count
+from qutip.settings import available_cpu_count, settings
 
 if sys.platform == 'darwin':
     mp_context = multiprocessing.get_context('fork')
@@ -103,6 +103,17 @@ def serial_map(task, values, task_args=None, task_kwargs=None,
     return results
 
 
+def caller(task, *args, **kwargs):
+    """
+    Wrapper around the task to set the settings.
+    """
+    try:
+        settings._is_subprocess = True
+        return task(*args, **kwargs)
+    finally:
+        settings._is_subprocess = False
+
+
 def parallel_map(task, values, task_args=None, task_kwargs=None,
                  reduce_func=None, map_kw=None,
                  progress_bar=None, progress_bar_kwargs={}):
@@ -157,6 +168,7 @@ def parallel_map(task, values, task_args=None, task_kwargs=None,
     progress_bar = progess_bars[progress_bar]()
     progress_bar.start(len(values), **progress_bar_kwargs)
 
+    errors = []
     if reduce_func is not None:
         results = None
         result_func = lambda i, value: reduce_func(value)
@@ -166,7 +178,12 @@ def parallel_map(task, values, task_args=None, task_kwargs=None,
 
     def _done_callback(future):
         if not future.cancelled():
-            result_func(future._i, future.result())
+            try:
+                result = future.result()
+            except Exception as e:
+                errors.append(e)
+                raise e
+        result_func(future._i, result)
         progress_bar.update()
 
     if sys.version_info >= (3, 7):
@@ -175,50 +192,48 @@ def parallel_map(task, values, task_args=None, task_kwargs=None,
     else:
         ctx_kw = {}
 
-    os.environ['QUTIP_IN_PARALLEL'] = 'TRUE'
-    try:
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=map_kw['num_cpus'], **ctx_kw,
-        ) as executor:
-            waiting = set()
-            i = 0
-            while i < len(values):
-                # feed values to the executor, ensuring that there is at
-                # most one task per worker at any moment in time so that
-                # we can shutdown without waiting for greater than the time
-                # taken by the longest task
-                if len(waiting) >= map_kw['num_cpus']:
-                    # no space left, wait for a task to complete or
-                    # the time to run out
-                    timeout = max(0, end_time - time.time())
-                    _done, waiting = concurrent.futures.wait(
-                        waiting,
-                        timeout=timeout,
-                        return_when=concurrent.futures.FIRST_COMPLETED,
-                    )
-                if time.time() >= end_time:
-                    # no time left, exit the loop
-                    break
-                while len(waiting) < map_kw['num_cpus'] and i < len(values):
-                    # space and time available, add tasks
-                    value = values[i]
-                    future = executor.submit(
-                        task, *((value,) + task_args), **task_kwargs,
-                    )
-                    # small hack to avoid add_done_callback not supporting
-                    # extra arguments and closures inside loops retaining
-                    # a reference not a value:
-                    future._i = i
-                    future.add_done_callback(_done_callback)
-                    waiting.add(future)
-                    i += 1
+    with concurrent.futures.ProcessPoolExecutor(
+        max_workers=map_kw['num_cpus'], **ctx_kw,
+    ) as executor:
+        waiting = set()
+        i = 0
+        while i < len(values):
+            # feed values to the executor, ensuring that there is at
+            # most one task per worker at any moment in time so that
+            # we can shutdown without waiting for greater than the time
+            # taken by the longest task
+            if len(waiting) >= map_kw['num_cpus']:
+                # no space left, wait for a task to complete or
+                # the time to run out
+                timeout = max(0, end_time - time.time())
+                _done, waiting = concurrent.futures.wait(
+                    waiting,
+                    timeout=timeout,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+            if time.time() >= end_time:
+                # no time left, exit the loop
+                break
+            while len(waiting) < map_kw['num_cpus'] and i < len(values):
+                # space and time available, add tasks
+                value = values[i]
+                future = executor.submit(
+                    caller, *((task, value,) + task_args), **task_kwargs,
+                )
+                # small hack to avoid add_done_callback not supporting
+                # extra arguments and closures inside loops retaining
+                # a reference not a value:
+                future._i = i
+                future.add_done_callback(_done_callback)
+                waiting.add(future)
+                i += 1
 
-            timeout = max(0, end_time - time.time())
-            concurrent.futures.wait(waiting, timeout=timeout)
-    finally:
-        os.environ['QUTIP_IN_PARALLEL'] = 'FALSE'
+        timeout = max(0, end_time - time.time())
+        concurrent.futures.wait(waiting, timeout=timeout)
 
     progress_bar.finished()
+    if errors:
+        raise errors[0]
     return results
 
 
@@ -271,7 +286,6 @@ def loky_pmap(task, values, task_args=None, task_kwargs=None,
     if task_kwargs is None:
         task_kwargs = {}
     map_kw = _read_map_kw(map_kw)
-    os.environ['QUTIP_IN_PARALLEL'] = 'TRUE'
     from loky import get_reusable_executor, TimeoutError
 
     progress_bar = progess_bars[progress_bar]()
@@ -283,8 +297,8 @@ def loky_pmap(task, values, task_args=None, task_kwargs=None,
     results = []
 
     try:
-        jobs = [executor.submit(task, value, *task_args, **task_kwargs)
-               for value in values]
+        jobs = [executor.submit(caller, task, value, *task_args, **task_kwargs)
+                for value in values]
 
         for job in jobs:
             remaining_time = min(end_time - time.time(), job_time)
@@ -305,7 +319,6 @@ def loky_pmap(task, values, task_args=None, task_kwargs=None,
     finally:
         executor.shutdown()
     progress_bar.finished()
-    os.environ['QUTIP_IN_PARALLEL'] = 'FALSE'
     return results
 
 

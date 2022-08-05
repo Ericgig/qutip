@@ -479,6 +479,11 @@ cdef class StrCoefficient(Coefficient):
 
 
 def compile_code(code, file_name, parsed, c_opt):
+    if qset.is_subprocess:
+        raise Exception(
+            "Qutip cannot compile coefficient in parallel. "
+            "Building the QobjEvo before the loop should fix the issue."
+        )
     pwd = os.getcwd()
     root = qset.coeffroot
     try:

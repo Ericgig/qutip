@@ -392,3 +392,20 @@ def test_CoeffFromScipy():
     coeff = coefficient(y, tlist=tlist, order=3)
     from_scipy = coefficient(interp.make_interp_spline(tlist, y, k=3))
     _assert_eq_over_interval(coeff, from_scipy, rtol=1e-8, inside=True)
+
+
+@pytest.mark.parametrize('map', [
+    pytest.param(qutip.solver.parallel.parallel_map, id='parallel_map'),
+    pytest.param(qutip.solver.parallel.loky_pmap, id='loky_pmap'),
+])
+@pytest.mark.requires_cython
+def test_coefficient_parallel(map):
+    if map is qutip.solver.parallel.loky_pmap:
+        loky = pytest.importorskip("loky")
+
+    otherwise_never_used = "np.log(np.exp(t + t + t))"
+
+    with pytest.raises(Exception) as error:
+        map(coefficient, [otherwise_never_used]*10)
+
+    assert "parallel" in str(error.value)

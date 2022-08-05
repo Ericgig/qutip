@@ -140,6 +140,7 @@ class Settings:
         self._debug = False
         self._log_handler = "default"
         self._colorblind_safe = False
+        self._is_subprocess = False
 
     @property
     def has_mkl(self):
@@ -284,6 +285,10 @@ class Settings:
     @colorblind_safe.setter
     def colorblind_safe(self, value):
         self._colorblind_safe = value
+
+    @property
+    def is_subprocess(self):
+        return self._is_subprocess
 
     def __str__(self):
         lines = ["Qutip settings:"]
