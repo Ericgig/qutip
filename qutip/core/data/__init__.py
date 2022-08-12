@@ -1,7 +1,9 @@
 # First-class type imports
+try:
+    from . import constant
+except Exception as e:
+    print(e)
 
-import qutip.core.data.dense as dense
-import qutip.core.data.csr as csr
 from .dense import Dense
 from .csr import CSR
 from .base import Data
@@ -28,6 +30,7 @@ from .trace import *
 # For operations with mulitple related versions, we just import the module.
 from . import norm, permute
 
+from . import dense, csr
 
 # Set up the data conversions that are known by us.  All types covered by
 # conversions will be made available for use in the dispatcher functions.
