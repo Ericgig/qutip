@@ -113,6 +113,7 @@ jobs:
           python -m pip install -e .[$QUTIP_TARGET]
           python -m pip install coverage==6.2
           python -m pip install pytest-cov coveralls pytest-fail-slow
+          ls qutip/core/data
           mkdir test_dir
           cd test_dir
 
