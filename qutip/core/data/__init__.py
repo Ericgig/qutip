@@ -1,7 +1,7 @@
 # First-class type imports
 
-import .dense as dense
-import .csr as csr
+import qutip.core.data.dense as dense
+import qutip.core.data.csr as csr
 from .dense import Dense
 from .csr import CSR
 from .base import Data
