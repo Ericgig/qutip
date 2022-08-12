@@ -1,6 +1,7 @@
 # First-class type imports
 
-from . import dense, csr
+import .dense as dense
+import .csr as csr
 from .dense import Dense
 from .csr import CSR
 from .base import Data
