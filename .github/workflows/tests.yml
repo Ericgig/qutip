@@ -113,10 +113,10 @@ jobs:
           python -m pip install .[$QUTIP_TARGET] -vv
           python -m pip install coverage==6.2
           python -m pip install pytest-cov coveralls pytest-fail-slow
-          cd ..
 
       - name: Package information
         run: |
+          cd ..
           ls
           conda --version
           python --version
@@ -139,13 +139,15 @@ jobs:
         # to see if something hung.
         timeout-minutes: 60
         run: |
+          cd ..
+          ls
           if [[ -n "${{ matrix.openmp }}" ]]; then
             # Force OpenMP runs to use more threads, even if there aren't
             # actually that many CPUs.  We have to check any dispatch code is
             # truly being executed.
             export QUTIP_NUM_PROCESSES=2
           fi
-          pytest -Werror --strict-config --strict-markers --fail-slow=300 --durations=0 --durations-min=1.0 --verbosity=1 --cov=qutip --cov-report= --color=yes ${{ matrix.pytest-extra-options }} ../qutip/tests
+          pytest -Werror --strict-config --strict-markers --fail-slow=300 --durations=0 --durations-min=1.0 --verbosity=1 --cov=qutip --cov-report= --color=yes ${{ matrix.pytest-extra-options }} qutip/qutip/tests
           # Above flags are:
           #  -Werror
           #     treat warnings as errors
