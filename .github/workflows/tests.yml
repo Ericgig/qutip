@@ -110,13 +110,9 @@ jobs:
           else
             conda install nomkl "numpy${{ matrix.numpy-requirement }}" "scipy${{ matrix.scipy-requirement }}"
           fi
-          pip install pip==22.1.2
-          python -m pip install -e .[$QUTIP_TARGET]
+          python -m pip install .[$QUTIP_TARGET]
           python -m pip install coverage==6.2
           python -m pip install pytest-cov coveralls pytest-fail-slow
-          ls qutip/core/data
-          mkdir test_dir
-          cd test_dir
 
       - name: Package information
         run: |
