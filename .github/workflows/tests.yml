@@ -119,6 +119,7 @@ jobs:
           conda --version
           python --version
           conda list
+          pip list -v
           python -c "import qutip; qutip.about()"
           python -c "import qutip; print(qutip.settings)"
 
