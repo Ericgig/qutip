@@ -110,8 +110,7 @@ jobs:
           else
             conda install nomkl "numpy${{ matrix.numpy-requirement }}" "scipy${{ matrix.scipy-requirement }}"
           fi
-          python -m pip install -e .[$QUTIP_TARGET]
-          python setup.py develop
+          python -m pip install -e .[$QUTIP_TARGET] -vv
           python -m pip install coverage==6.2
           python -m pip install pytest-cov coveralls pytest-fail-slow
 
