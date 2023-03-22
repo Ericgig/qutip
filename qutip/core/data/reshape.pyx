@@ -160,7 +160,7 @@ reshape.__doc__ =\
 reshape.add_specialisations([
     (CSR, CSR, reshape_csr),
     (Dense, Dense, reshape_dense),
-], _defer=True)
+])
 
 
 # Similar to the `out` parameter of `matmul`, we don't include `inplace` in the
@@ -204,7 +204,7 @@ column_stack.__doc__ =\
 column_stack.add_specialisations([
     (CSR, CSR, column_stack_csr),
     (Dense, Dense, column_stack_dense),
-], _defer=True)
+])
 
 column_unstack = _Dispatcher(
     _inspect.Signature([
@@ -244,7 +244,7 @@ column_unstack.__doc__ =\
 column_unstack.add_specialisations([
     (CSR, CSR, column_unstack_csr),
     (Dense, Dense, column_unstack_dense),
-], _defer=True)
+])
 
 
 split_columns = _Dispatcher(
@@ -280,6 +280,6 @@ split_columns.__doc__ =\
 split_columns.add_specialisations([
     (CSR, split_columns_csr),
     (Dense, split_columns_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

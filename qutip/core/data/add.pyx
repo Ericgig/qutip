@@ -250,7 +250,7 @@ add.__doc__ =\
 add.add_specialisations([
     (Dense, Dense, Dense, add_dense),
     (CSR, CSR, CSR, add_csr),
-], _defer=True)
+])
 
 sub = _Dispatcher(
     _inspect.Signature([
@@ -271,6 +271,6 @@ sub.__doc__ =\
 sub.add_specialisations([
     (Dense, Dense, Dense, sub_dense),
     (CSR, CSR, CSR, sub_csr),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

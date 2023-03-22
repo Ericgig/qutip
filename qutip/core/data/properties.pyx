@@ -256,7 +256,7 @@ isherm.__doc__ =\
     """
 isherm.add_specialisations([
     (CSR, isherm_csr),
-], _defer=True)
+])
 
 isdiag = _Dispatcher(
     _inspect.Signature([
@@ -278,7 +278,7 @@ isdiag.__doc__ =\
     """
 isdiag.add_specialisations([
     (CSR, isdiag_csr),
-], _defer=True)
+])
 
 iszero = _Dispatcher(
     _inspect.Signature([
@@ -312,6 +312,6 @@ iszero.__doc__ =\
 iszero.add_specialisations([
     (CSR, iszero_csr),
     (Dense, iszero_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

@@ -201,7 +201,7 @@ solve.__doc__ = """
 solve.add_specialisations([
     (CSR, Dense, Dense, solve_csr_dense),
     (Dense, Dense, Dense, solve_dense),
-], _defer=True)
+])
 
 
 del _Dispatcher

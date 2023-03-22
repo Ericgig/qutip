@@ -88,7 +88,7 @@ trace.__doc__ =\
 trace.add_specialisations([
     (CSR, trace_csr),
     (Dense, trace_dense),
-], _defer=True)
+])
 
 trace_oper_ket = _Dispatcher(
     _inspect.Signature([
@@ -104,6 +104,6 @@ trace_oper_ket.__doc__ =\
 trace_oper_ket.add_specialisations([
     (CSR, trace_oper_ket_csr),
     (Dense, trace_oper_ket_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

@@ -81,6 +81,6 @@ pow.__doc__ =\
 pow.add_specialisations([
     (CSR, CSR, pow_csr),
     (Dense, Dense, pow_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

@@ -430,7 +430,7 @@ matmul.add_specialisations([
     (CSR, CSR, CSR, matmul_csr),
     (CSR, Dense, Dense, matmul_csr_dense_dense),
     (Dense, Dense, Dense, matmul_dense),
-], _defer=True)
+])
 
 
 multiply = _Dispatcher(
@@ -448,7 +448,7 @@ multiply.__doc__ =\
 multiply.add_specialisations([
     (CSR, CSR, CSR, multiply_csr),
     (Dense, Dense, Dense, multiply_dense),
-], _defer=True)
+])
 
 
 del _inspect, _Dispatcher

@@ -38,7 +38,7 @@ zeros.__doc__ =\
 zeros.add_specialisations([
     (CSR, csr.zeros),
     (Dense, dense.zeros),
-], _defer=True)
+])
 
 identity = _Dispatcher(
     _inspect.Signature([
@@ -68,6 +68,6 @@ identity.__doc__ =\
 identity.add_specialisations([
     (CSR, csr.identity),
     (Dense, dense.identity),
-], _defer=True)
+])
 
 del _Dispatcher, _inspect

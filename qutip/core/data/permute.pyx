@@ -363,7 +363,7 @@ dimensions.__doc__ =\
 dimensions.add_specialisations([
     (CSR, CSR, dimensions_csr),
     (Dense, Dense, dimensions_dense),
-], _defer=True)
+])
 
 indices = _Dispatcher(
     _inspect.Signature([
@@ -400,6 +400,6 @@ indices.__doc__ =\
 indices.add_specialisations([
     (CSR, CSR, indices_csr),
     (Dense, Dense, indices_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

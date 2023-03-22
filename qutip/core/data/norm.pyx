@@ -155,7 +155,7 @@ l2.__doc__ =\
 l2.add_specialisations([
     (Dense, l2_dense),
     (CSR, l2_csr),
-], _defer=True)
+])
 
 _norm_signature = _inspect.Signature([
     _inspect.Parameter('matrix', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
@@ -172,7 +172,7 @@ frobenius.__doc__ =\
 frobenius.add_specialisations([
     (Dense, frobenius_dense),
     (CSR, frobenius_csr),
-], _defer=True)
+])
 
 max = _Dispatcher(_norm_signature, name='max', module=__name__, inputs=('matrix',))
 max.__doc__ =\
@@ -184,7 +184,7 @@ max.__doc__ =\
 max.add_specialisations([
     (Dense, max_dense),
     (CSR, max_csr),
-], _defer=True)
+])
 
 one = _Dispatcher(_norm_signature, name='one', module=__name__, inputs=('matrix',))
 one.__doc__ =\
@@ -196,7 +196,7 @@ one.__doc__ =\
 one.add_specialisations([
     (Dense, one_dense),
     (CSR, one_csr),
-], _defer=True)
+])
 
 
 trace = _Dispatcher(
@@ -217,7 +217,7 @@ trace.__doc__ =\
 trace.add_specialisations([
     (CSR, trace_csr),
     (Dense, trace_dense),
-], _defer=True)
+])
 
 
 cpdef double frobenius_data(Data state):

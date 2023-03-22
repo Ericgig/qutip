@@ -125,7 +125,7 @@ adjoint.__doc__ = """Hermitian adjoint (matrix conjugate transpose)."""
 adjoint.add_specialisations([
     (Dense, Dense, adjoint_dense),
     (CSR, CSR, adjoint_csr),
-], _defer=True)
+])
 
 transpose = _Dispatcher(
     _inspect.Signature([
@@ -140,7 +140,7 @@ transpose.__doc__ = """Transpose of a matrix."""
 transpose.add_specialisations([
     (Dense, Dense, transpose_dense),
     (CSR, CSR, transpose_csr),
-], _defer=True)
+])
 
 conj = _Dispatcher(
     _inspect.Signature([
@@ -155,6 +155,6 @@ conj.__doc__ = """Element-wise conjugation of a matrix."""
 conj.add_specialisations([
     (Dense, Dense, conj_dense),
     (CSR, CSR, conj_csr),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

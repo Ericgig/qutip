@@ -232,7 +232,7 @@ inner.__doc__ =\
 inner.add_specialisations([
     (CSR, CSR, inner_csr),
     (Dense, Dense, inner_dense),
-], _defer=True)
+])
 
 inner_op = _Dispatcher(
     _inspect.Signature([
@@ -281,6 +281,6 @@ inner_op.__doc__ =\
 inner_op.add_specialisations([
     (CSR, CSR, CSR, inner_op_csr),
     (Dense, Dense, Dense, inner_op_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

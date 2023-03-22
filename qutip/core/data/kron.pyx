@@ -86,6 +86,6 @@ kron.__doc__ =\
 kron.add_specialisations([
     (CSR, CSR, CSR, kron_csr),
     (Dense, Dense, Dense, kron_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

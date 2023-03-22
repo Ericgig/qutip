@@ -416,7 +416,7 @@ cdef class Dispatcher:
         # Add ourselves to the list of dispatchers to be updated.
         _to.dispatchers.append(self)
 
-    def add_specialisations(self, specialisations, _defer=False):
+    def add_specialisations(self, specialisations):
         """
         Add specialisations for particular combinations of data types to this
         operation.  The data types must already be known in `data.to` before
@@ -425,10 +425,8 @@ cdef class Dispatcher:
         conversions to and from other types unless you define a closer
         specialisation using this method.
 
-        The lookup table will automatically be rebuilt after this method is
-        called.  Specialisations defined more than once will use the most
-        recent version; you can use this to override currently known
-        specialisations if desired.
+        The lookup table will automatically be rebuilt at first utilisation
+        after calling this method.
 
         Parameters
         ----------
@@ -456,14 +454,6 @@ cdef class Dispatcher:
                     (Dense, CSC, CSR, add_2),
                 ]
             Type annotations present in the specialisation objects are ignored.
-
-        _defer : bool, optional (False)
-            Only intended for internal library use during initialisation. If
-            `True`, then the input types are not checked, and the full lookup
-            table is not built until a manual call to
-            `Dispatcher.rebuild_lookup()` is made.  If you are getting errors,
-            remember that you should add the data type conversions to `data.to`
-            before you try to add specialisations.
         """
         for arg in specialisations:
             arg = tuple(arg)
@@ -475,23 +465,26 @@ cdef class Dispatcher:
                     + (", an output type" if self.output else "")
                     + " and a callable"
                 )
-            for i in range(self._n_dispatch):
-                if (not _defer) and arg[i] not in _to.dtypes:
-                    raise ValueError(str(arg[i]) + " is not a known data type")
             if not callable(arg[self._n_dispatch]):
                 raise TypeError(str(arg[-1]) + " is not callable")
             self._specialisations[arg[:-1]] = arg[-1]
-        if not _defer:
-            self.rebuild_lookup()
+        self.reset_lookup()
 
-    def rebuild_lookup(self):
+    def reset_lookup(self):
         """
-        Manually trigger a rebuild of the lookup table for this dispatcher.
-        This is called automatically when new data types are added to
-        `data.to`, or when specialisations are added to this object with
-        `Dispatcher.add_specialisations`.
+        Erase the lookup table.
+        The lookup table will be build automatically when using the dispatched
+        function.
+        """
+        self._lookup = {}
 
-        You most likely do not need to call this function yourself.
+    def _rebuild_lookup(self):
+        """
+        Rebuild the lookup table for this dispatcher.
+        This is called automatically when using this dispatcher and the lookup
+        table is not constructed. When new data types are added to
+        `data.to`, or when specialisations are added to this object with
+        `Dispatcher.add_specialisations` the lookup table will be erased.
         """
         cdef double weight, cur
         cdef tuple types, out_types
@@ -555,6 +548,8 @@ cdef class Dispatcher:
         if type(types) is not tuple:
             types = (types,)
         types = tuple(_to.parse(arg) for arg in types)
+        if not self._lookup:
+            self._rebuild_lookup()
         try:
             return self._lookup[types]
         except KeyError:
@@ -576,6 +571,8 @@ cdef class Dispatcher:
             dtype = _to.parse(dtype)
             dispatch.append(dtype)
         cdef _constructed_specialisation function
+        if not self._lookup:
+            self._rebuild_lookup()
         try:
             function = self._lookup[tuple(dispatch)]
         except KeyError:

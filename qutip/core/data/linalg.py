@@ -50,6 +50,6 @@ inv.__doc__ =\
 inv.add_specialisations([
     (CSR, CSR, inv_csr),
     (Dense, Dense, inv_dense),
-], _defer=True)
+])
 
 del _Dispatcher

@@ -37,7 +37,7 @@ diag = _Dispatcher(_diag_signature, name='diag', inputs=(), out=True)
 diag.add_specialisations([
     (CSR, csr.diags),
     (Dense, dense.diags),
-], _defer=True)
+])
 
 del _diag_signature
 
@@ -98,4 +98,4 @@ one_element = _Dispatcher(one_element_dense, name='one_element',
 one_element.add_specialisations([
     (CSR, one_element_csr),
     (Dense, one_element_dense),
-], _defer=True)
+])

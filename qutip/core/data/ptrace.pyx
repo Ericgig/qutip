@@ -211,6 +211,6 @@ ptrace.add_specialisations([
     (CSR, CSR, ptrace_csr),
     (CSR, Dense, ptrace_csr_dense),
     (Dense, Dense, ptrace_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

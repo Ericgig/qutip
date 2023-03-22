@@ -84,7 +84,7 @@ mul.__doc__ =\
 mul.add_specialisations([
     (CSR, CSR, mul_csr),
     (Dense, Dense, mul_dense),
-], _defer=True)
+])
 
 imul = _Dispatcher(
     # Will not be inplce if specialisation does not exist but should still
@@ -104,7 +104,7 @@ imul.__doc__ =\
 imul.add_specialisations([
     (CSR, CSR, imul_csr),
     (Dense, Dense, imul_dense),
-], _defer=True)
+])
 
 neg = _Dispatcher(
     _inspect.Signature([
@@ -120,7 +120,7 @@ neg.__doc__ =\
 neg.add_specialisations([
     (CSR, CSR, neg_csr),
     (Dense, Dense, neg_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher
 

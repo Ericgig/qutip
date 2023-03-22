@@ -326,7 +326,7 @@ eigs.__doc__ =\
 eigs.add_specialisations([
     (CSR, eigs_csr),
     (Dense, eigs_dense),
-], _defer=True)
+])
 
 
 def svd_csr(data, vecs=True, k=6, **kw):
@@ -447,7 +447,7 @@ svd.__doc__ =\
 # only a few states. So only the dense version is registered.
 svd.add_specialisations([
     (Dense, svd_dense),
-], _defer=True)
+])
 
 
 del _Dispatcher

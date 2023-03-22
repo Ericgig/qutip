@@ -276,7 +276,7 @@ expect.add_specialisations([
     (CSR, CSR, expect_csr),
     (CSR, Dense, expect_csr_dense),
     (Dense, Dense, expect_dense),
-], _defer=True)
+])
 
 expect_super = _Dispatcher(
     _inspect.Signature([
@@ -298,7 +298,7 @@ expect_super.add_specialisations([
     (CSR, CSR, expect_super_csr),
     (CSR, Dense, expect_super_csr_dense),
     (Dense, Dense, expect_super_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher
 

@@ -67,7 +67,7 @@ expm.add_specialisations([
     (CSR, CSR, expm_csr),
     (CSR, Dense, expm_csr_dense),
     (Dense, Dense, expm_dense),
-], _defer=True)
+])
 
 
 def logm_dense(matrix: Dense) -> Dense:
@@ -88,6 +88,6 @@ logm = _Dispatcher(
 logm.__doc__ = """Matrix logarithm `ln(A)` for a matrix `A`."""
 logm.add_specialisations([
     (Dense, Dense, logm_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

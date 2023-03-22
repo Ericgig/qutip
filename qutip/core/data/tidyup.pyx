@@ -101,6 +101,6 @@ tidyup.__doc__ =\
 tidyup.add_specialisations([
     (CSR, tidyup_csr),
     (Dense, tidyup_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher

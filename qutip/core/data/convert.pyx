@@ -259,7 +259,7 @@ cdef class _to:
                 self._convert[(to_t, from_t)] =\
                     _converter(convert[::-1], to_t, from_t)
         for dispatcher in self.dispatchers:
-            dispatcher.rebuild_lookup()
+            dispatcher.reset_lookup()
 
     def register_aliases(self, aliases, layer_type):
         """

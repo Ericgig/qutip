@@ -139,6 +139,6 @@ project.__doc__ =\
 project.add_specialisations([
     (CSR, CSR, project_csr),
     (Dense, Dense, project_dense),
-], _defer=True)
+])
 
 del _inspect, _Dispatcher
