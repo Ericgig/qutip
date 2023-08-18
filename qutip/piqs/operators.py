@@ -1,11 +1,12 @@
 from .. import (
     Qobj, tensor, identity, ket2dm,
     sigmax, sigmay, sigmaz,
-    sigmap, sigmam,
+    sigmap, sigmam, qdiags
 )
 from scipy.sparse import dok_matrix, block_diag
-from ._piqs import jmm1_dictionary, _num_dicke_states
-
+from ._piqs import jmm1_dictionary, _num_dicke_states, _num_dicke_ladders
+from .utilities import *
+import numpy as np
 
 __all__ = [
     "spin_algebra",
@@ -20,6 +21,26 @@ __all__ = [
     "ground",
     "block_matrix",
 ]
+
+
+def _expand(op, N):
+    """
+    Create the N operators:
+
+        op & 1 & ... & 1
+        1 & op & ... & 1
+        ...
+        1 & 1 & ... & op
+
+    """
+    ops = [tensor([op] + [identity(2)] * (N-1))]
+
+    b = [[(i - i2) % N for i in range(N)] for i2 in range(N)]
+
+    for i in range(1, N):
+        ops.append(ops[0].permute(b[i]))
+
+    return ops
 
 #Dicke only
 def spin_algebra(N, op=None):
@@ -46,54 +67,22 @@ def spin_algebra(N, op=None):
         A list of `qutip.Qobj` operators - [sx, sy, sz] or the
         requested operator.
     """
-    # 1. Define N TLS spin-1/2 matrices in the uncoupled basis
-    N = int(N)
-    sx = [0 for i in range(N)]
-    sy = [0 for i in range(N)]
-    sz = [0 for i in range(N)]
-    sp = [0 for i in range(N)]
-    sm = [0 for i in range(N)]
-
-    sx[0] = 0.5 * sigmax()
-    sy[0] = 0.5 * sigmay()
-    sz[0] = 0.5 * sigmaz()
-    sp[0] = sigmap()
-    sm[0] = sigmam()
-
-    # 2. Place operators in total Hilbert space
-    for k in range(N - 1):
-        sx[0] = tensor(sx[0], identity(2))
-        sy[0] = tensor(sy[0], identity(2))
-        sz[0] = tensor(sz[0], identity(2))
-        sp[0] = tensor(sp[0], identity(2))
-        sm[0] = tensor(sm[0], identity(2))
-
-    # 3. Cyclic sequence to create all N operators
-    a = [i for i in range(N)]
-    b = [[a[i - i2] for i in range(N)] for i2 in range(N)]
-
-    # 4. Create N operators
-    for i in range(1, N):
-        sx[i] = sx[0].permute(b[i])
-        sy[i] = sy[0].permute(b[i])
-        sz[i] = sz[0].permute(b[i])
-        sp[i] = sp[0].permute(b[i])
-        sm[i] = sm[0].permute(b[i])
-
-    spin_operators = [sx, sy, sz]
-
     if not op:
-        return spin_operators
+        return [
+            _expand(0.5 *sigmax(), N),
+            _expand(0.5 *sigmay(), N),
+            _expand(0.5 *sigmaz(), N),
+        ]
     elif op == "x":
-        return sx
+        return _expand(0.5 *sigmax(), N)
     elif op == "y":
-        return sy
+        return _expand(0.5 *sigmay(), N)
     elif op == "z":
-        return sz
+        return _expand(0.5 *sigmaz(), N)
     elif op == "+":
-        return sp
+        return _expand(sigmap(), N)
     elif op == "-":
-        return sm
+        return _expand(sigmam(), N)
     else:
         raise TypeError("Invalid type")
 
@@ -183,45 +172,28 @@ def jspin(N, op=None, basis="dicke"):
     if basis == "uncoupled":
         return _jspin_uncoupled(N, op)
 
-    nds = num_dicke_states(N)
-    num_ladders = num_dicke_ladders(N)
-    jz_operator = dok_matrix((nds, nds), dtype=np.complex128)
-    jp_operator = dok_matrix((nds, nds), dtype=np.complex128)
-    jm_operator = dok_matrix((nds, nds), dtype=np.complex128)
-    s = 0
-
-    for k in range(0, num_ladders):
-        j = 0.5 * N - k
-        mmax = int(2 * j + 1)
-        for i in range(0, mmax):
-            m = j - i
-            jz_operator[s, s] = m
-            if (s + 1) in range(0, nds):
-                jp_operator[s, s + 1] = ap(j, m - 1)
-            if (s - 1) in range(0, nds):
-                jm_operator[s, s - 1] = am(j, m + 1)
-            s = s + 1
-
-    jx_operator = 1 / 2 * (jp_operator + jm_operator)
-    jy_operator = 1j / 2 * (jm_operator - jp_operator)
-    jx = Qobj(jx_operator)
-    jy = Qobj(jy_operator)
-    jz = Qobj(jz_operator)
-    jp = Qobj(jp_operator)
-    jm = Qobj(jm_operator)
-
     if not op:
-        return [jx, jy, jz]
-    if op == "+":
-        return jp
+        jp = jspin(N, "+")
+        jm = jspin(N, "-")
+        return [(jp + jm)/2, 0.5j * (-jp + jm), jspin(N, "z")]
+    if op in ["+", "-"]:
+        diag = []
+        for j in range(0, N+1, 2):
+            diag += [((i) * (N-i+1-j))**0.5 for i in range(N+1-j)]
+        diag = diag[1:]
+        offset = 1 if op == "+" else -1
+        return qdiags(diag, [offset])
     elif op == "-":
         return jm
     elif op == "x":
-        return jx
+        return 0.5 * (jspin(N, "+") + jspin(N, "-"))
     elif op == "y":
-        return jy
+        return 0.5j * (-jspin(N, "+") + jspin(N, "-"))
     elif op == "z":
-        return jz
+        diag = []
+        for j in range(0, N+1, 2):
+            diag += [(N-j)/2 - i for i in range(N-j+1)]
+        return qdiags(diag, [0])
     else:
         raise TypeError("Invalid type")
 
@@ -411,7 +383,7 @@ def dicke(N, j, m, density_matrix=True, *, dtype=None):
     rho: :class: qutip.Qobj
         The density matrix.
     """
-    nds = num_dicke_states(N)
+    nds = _num_dicke_states(N)
     rho = np.zeros(nds)
 
     jmm1_dict = jmm1_dictionary(N)[1]
@@ -539,7 +511,7 @@ def coherent_spin_state(
         a = x
         b = y
 
-    nds = num_dicke_states(N)
+    nds = _num_dicke_states(N)
     psi = np.zeros(nds, dtype=np.complex128)
 
     j = 0.5 * N
