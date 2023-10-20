@@ -3,7 +3,8 @@ __all__ = ['nm_mcsolve', 'NonMarkovianMCSolver']
 import functools
 import numbers
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy
 
 from .multitraj import MultiTrajSolver

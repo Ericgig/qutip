@@ -1,6 +1,7 @@
 __all__ = ['spectrum', 'spectrum_correlation_fft']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.fftpack
 
 from .steadystate import steadystate

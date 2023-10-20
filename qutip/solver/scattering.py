@@ -10,7 +10,8 @@ Pulses from Quantum Optical Systems (2017, arXiv:1710.02875).
 # Author:  Ben Bartlett
 # Contact: benbartlett@stanford.edu
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from itertools import product, combinations_with_replacement
 from ..core import basis, tensor, zero_ket, Qobj, QobjEvo
 from .propagator import propagator, Propagator

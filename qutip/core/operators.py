@@ -13,7 +13,8 @@ __all__ = ['jmat', 'spin_Jx', 'spin_Jy', 'spin_Jz', 'spin_Jm', 'spin_Jp',
 
 import numbers
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.sparse
 
 from . import data as _data

@@ -8,7 +8,8 @@ __all__ = ['correlation_matrix', 'covariance_matrix',
            'wigner_covariance_matrix', 'logarithmic_negativity']
 
 from . import expect
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 
 
 def correlation_matrix(basis, rho=None):

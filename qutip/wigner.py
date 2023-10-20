@@ -3,11 +3,10 @@ __all__ = [
     'wigner_transform',
 ]
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import warnings
-from numpy import (
-    zeros, array, arange, exp, real, conj, pi, copy, sqrt, meshgrid, cos, sin,
-)
+
 import scipy.sparse as sp
 import scipy.fftpack as ft
 import scipy.linalg as la
@@ -161,7 +160,7 @@ def _angle_slice(slicearray, theta, phi):
     return theta, phi
 
 
-def wigner(psi, xvec, yvec, method='clenshaw', g=sqrt(2),
+def wigner(psi, xvec, yvec, method='clenshaw', g=np.sqrt(2),
            sparse=False, parfor=False):
     """Wigner function for a state vector or density matrix at points
     `xvec + i * yvec`.
@@ -180,7 +179,7 @@ def wigner(psi, xvec, yvec, method='clenshaw', g=sqrt(2),
         apply to the 'fft' method.
 
     g : float
-        Scaling factor for `a = 0.5 * g * (x + iy)`, default `g = sqrt(2)`.
+        Scaling factor for `a = 0.5 * g * (x + iy)`, default `g = np.sqrt(2)`.
         The value of `g` is related to the value of `hbar` in the commutation
         relation `[x, y] = i * hbar` via `hbar=2/g^2` giving the default
         value `hbar=1`.
@@ -210,11 +209,11 @@ def wigner(psi, xvec, yvec, method='clenshaw', g=sqrt(2),
     Returns
     -------
 
-    W : array
+    W : np.array
         Values representing the Wigner function calculated over the specified
         range [xvec,yvec].
 
-    yvex : array
+    yvex : np.array
         FFT ONLY. Returns the y-coordinate values calculated via the Fourier
         transform.
 
@@ -256,7 +255,7 @@ def wigner(psi, xvec, yvec, method='clenshaw', g=sqrt(2),
             "method must be either 'iterative', 'laguerre', or 'fft'.")
 
 
-def _wigner_iterative(rho, xvec, yvec, g=sqrt(2)):
+def _wigner_iterative(rho, xvec, yvec, g=np.sqrt(2)):
     r"""
     Using an iterative method to evaluate the wigner functions for the Fock
     state :math:`|m><n|`.
@@ -273,31 +272,31 @@ def _wigner_iterative(rho, xvec, yvec, g=sqrt(2)):
     """
 
     M = np.prod(rho.shape[0])
-    X, Y = meshgrid(xvec, yvec)
+    X, Y = np.meshgrid(xvec, yvec)
     A = 0.5 * g * (X + 1.0j * Y)
 
-    Wlist = array([zeros(np.shape(A), dtype=complex) for k in range(M)])
-    Wlist[0] = exp(-2.0 * abs(A) ** 2) / pi
+    Wlist = np.array([np.zeros(np.shape(A), dtype=complex) for k in range(M)])
+    Wlist[0] = np.exp(-2.0 * abs(A) ** 2) / np.pi
 
-    W = real(rho[0, 0]) * real(Wlist[0])
+    W = np.real(rho[0, 0]) * np.real(Wlist[0])
     for n in range(1, M):
-        Wlist[n] = (2.0 * A * Wlist[n - 1]) / sqrt(n)
-        W += 2 * real(rho[0, n] * Wlist[n])
+        Wlist[n] = (2.0 * A * Wlist[n - 1]) / np.sqrt(n)
+        W += 2 * np.real(rho[0, n] * Wlist[n])
 
     for m in range(1, M):
-        temp = copy(Wlist[m])
-        Wlist[m] = (2 * conj(A) * temp - sqrt(m) * Wlist[m - 1]) / sqrt(m)
+        temp = np.copy(Wlist[m])
+        Wlist[m] = (2 * np.conj(A) * temp - np.sqrt(m) * Wlist[m - 1]) / np.sqrt(m)
 
         # Wlist[m] = Wigner function for |m><m|
-        W += real(rho[m, m] * Wlist[m])
+        W += np.real(rho[m, m] * Wlist[m])
 
         for n in range(m + 1, M):
-            temp2 = (2 * A * Wlist[n - 1] - sqrt(m) * temp) / sqrt(n)
-            temp = copy(Wlist[n])
+            temp2 = (2 * A * Wlist[n - 1] - np.sqrt(m) * temp) / np.sqrt(n)
+            temp = np.copy(Wlist[n])
             Wlist[n] = temp2
 
             # Wlist[n] = Wigner function for |m><n|
-            W += 2 * real(rho[m, n] * Wlist[n])
+            W += 2 * np.real(rho[m, n] * Wlist[n])
 
     return 0.5 * W * g ** 2
 
@@ -310,9 +309,9 @@ def _wigner_laguerre(rho, xvec, yvec, g, parallel):
     """
 
     M = np.prod(rho.shape[0])
-    X, Y = meshgrid(xvec, yvec)
+    X, Y = np.meshgrid(xvec, yvec)
     A = 0.5 * g * (X + 1.0j * Y)
-    W = zeros(np.shape(A))
+    W = np.zeros(np.shape(A))
 
     # compute wigner functions for density matrices |m><n| and
     # weight by all the elements in the density matrix
@@ -330,27 +329,27 @@ def _wigner_laguerre(rho, xvec, yvec, g, parallel):
                     n = rho.data.indices[jj]
 
                     if m == n:
-                        W += real(rho[m, m] * (-1) ** m * genlaguerre(m, 0)(B))
+                        W += np.real(rho[m, m] * (-1) ** m * genlaguerre(m, 0)(B))
 
                     elif n > m:
-                        W += 2.0 * real(rho[m, n] * (-1) ** m *
+                        W += 2.0 * np.real(rho[m, n] * (-1) ** m *
                                         (2 * A) ** (n - m) *
-                                        sqrt(factorial(m) / factorial(n)) *
+                                        np.sqrt(factorial(m) / factorial(n)) *
                                         genlaguerre(m, n - m)(B))
     else:
         # for dense density matrices
         B = 4 * abs(A) ** 2
         for m in range(M):
             if abs(rho[m, m]) > 0.0:
-                W += real(rho[m, m] * (-1) ** m * genlaguerre(m, 0)(B))
+                W += np.real(rho[m, m] * (-1) ** m * genlaguerre(m, 0)(B))
             for n in range(m + 1, M):
                 if abs(rho[m, n]) > 0.0:
-                    W += 2.0 * real(rho[m, n] * (-1) ** m *
+                    W += 2.0 * np.real(rho[m, n] * (-1) ** m *
                                     (2 * A) ** (n - m) *
-                                    sqrt(factorial(m) / factorial(n)) *
+                                    np.sqrt(factorial(m) / factorial(n)) *
                                     genlaguerre(m, n - m)(B))
 
-    return 0.5 * W * g ** 2 * np.exp(-B / 2) / pi
+    return 0.5 * W * g ** 2 * np.exp(-B / 2) / np.pi
 
 
 def _par_wig_eval(args):
@@ -359,17 +358,17 @@ def _par_wig_eval(args):
     using parfor.
     """
     m, rho, A, B = args
-    W1 = zeros(np.shape(A))
+    W1 = np.zeros(np.shape(A))
     for jj in range(rho.data.indptr[m], rho.data.indptr[m + 1]):
         n = rho.data.indices[jj]
 
         if m == n:
-            W1 += real(rho[m, m] * (-1) ** m * genlaguerre(m, 0)(B))
+            W1 += np.real(rho[m, m] * (-1) ** m * genlaguerre(m, 0)(B))
 
         elif n > m:
-            W1 += 2.0 * real(rho[m, n] * (-1) ** m *
+            W1 += 2.0 * np.real(rho[m, n] * (-1) ** m *
                              (2 * A) ** (n - m) *
-                             sqrt(factorial(m) / factorial(n)) *
+                             np.sqrt(factorial(m) / factorial(n)) *
                              genlaguerre(m, n - m)(B))
     return W1
 
@@ -392,7 +391,7 @@ def _wigner_fourier(psi, xvec, g=np.sqrt(2)):
         return W, yvec
 
 
-def _psi_wigner_fft(psi, xvec, g=sqrt(2)):
+def _psi_wigner_fft(psi, xvec, g=np.sqrt(2)):
     """
     FFT method for a single state vector.  Called multiple times when the
     input is a density matrix.
@@ -433,7 +432,7 @@ def _osc_eigen(N, pnts):
     pnts = np.asarray(pnts)
     lpnts = len(pnts)
     A = np.zeros((N, lpnts))
-    A[0, :] = np.exp(-pnts ** 2 / 2.0) / pi ** 0.25
+    A[0, :] = np.exp(-pnts ** 2 / 2.0) / np.pi ** 0.25
     if N == 1:
         return A
     else:
@@ -444,15 +443,15 @@ def _osc_eigen(N, pnts):
         return A
 
 
-def _wigner_clenshaw(rho, xvec, yvec, g=sqrt(2), sparse=False):
+def _wigner_clenshaw(rho, xvec, yvec, g=np.sqrt(2), sparse=False):
     r"""
     Using Clenshaw summation - numerically stable and efficient
     iterative algorithm to evaluate polynomial series.
 
     The Wigner function is calculated as
-    :math:`W = e^(-0.5*x^2)/pi * \sum_{L} c_L (2x)^L / \sqrt(L!)` where
+    :math:`W = e^(-0.5*x^2)/np.pi * \sum_{L} c_L (2x)^L / \np.sqrt(L!)` where
     :math:`c_L = \sum_n \rho_{n,L+n} LL_n^L` where
-    :math:`LL_n^L = (-1)^n \sqrt(L!n!/(L+n)!) LaguerreL[n,L,x]`
+    :math:`LL_n^L = (-1)^n \np.sqrt(L!n!/(L+n)!) LaguerreL[n,L,x]`
     """
 
     M = np.prod(rho.shape[0])
@@ -464,7 +463,7 @@ def _wigner_clenshaw(rho, xvec, yvec, g=sqrt(2), sparse=False):
     B *= B
     w0 = (2*rho[0, -1])*np.ones_like(A2)
     L = M-1
-    #calculation of \sum_{L} c_L (2x)^L / \sqrt(L!)
+    #calculation of \sum_{L} c_L (2x)^L / \np.sqrt(L!)
     #using Horner's method
     if not sparse:
         rho = rho.full() * (2*np.ones((M,M)) - np.diag(np.ones(M)))
@@ -483,7 +482,7 @@ def _wigner_clenshaw(rho, xvec, yvec, g=sqrt(2), sparse=False):
             #here c_L = _wig_laguerre_val(L, B, np.diag(rho, L))
             w0 = _wig_laguerre_val(L, B, diag) + w0 * A2 * (L+1)**-0.5
 
-    return w0.real * np.exp(-B*0.5) * (g*g*0.5 / pi)
+    return w0.real * np.exp(-B*0.5) * (g*g*0.5 / np.pi)
 
 
 def _wig_laguerre_val(L, x, c):
@@ -497,7 +496,7 @@ def _wig_laguerre_val(L, x, c):
     where
 
     .. math:
-        LL_n^L = (-1)^n \sqrt(L!n!/(L+n)!) LaguerreL[n,L,x]
+        LL_n^L = (-1)^n \np.sqrt(L!n!/(L+n)!) LaguerreL[n,L,x]
 
     The evaluation uses Clenshaw recursion.
     """
@@ -621,7 +620,7 @@ class _QFuncCoherentGrid:
 
     def __call__(self, first: int, last: int = None):
         """
-        Get a 3D array of shape ``(yvec.size, xvec.size, last - first)`` of the
+        Get a 3D np.array of shape ``(yvec.size, xvec.size, last - first)`` of the
         coherent-state vectors for all the Fock states in the range ``first``
         to ``last``, excluding the end point.  The first two axes are the y-
         and x-coordinates of phase space (i.e. Cartesian indexing, like
@@ -657,13 +656,13 @@ class QFunc:
     xvec, yvec : array_like
         x- and y-coordinates at which to calculate the Husimi-Q function.
 
-    g : float, default sqrt(2)
+    g : float, default np.sqrt(2)
         Scaling factor for ``a = 0.5 * g * (x + iy)``.  The value of `g` is
         related to the value of `hbar` in the commutation relation
         :math:`[x,\,y] = i\hbar` via :math:`\hbar=2/g^2`, so the default
         corresponds to :math:`\hbar=1`.
 
-    memory : real, default 1024
+    memory : np.real, default 1024
         Size in MB that may be used internally as workspace.  This class will
         raise ``MemoryError`` if subsequently passed a state of sufficiently
         large dimension that this bound would be exceeded.  In those cases, use
@@ -728,7 +727,7 @@ class QFunc:
 
     def _single(self, vector: np.ndarray, alphas: np.ndarray):
         r"""
-        Get the Q function (without the :math:`\pi` scaling factor) of a single
+        Get the Q function (without the :math:`\np.pi` scaling factor) of a single
         state vector.
         """
         return np.abs(np.dot(alphas, (self._g * 0.5) * vector)) ** 2
@@ -758,7 +757,7 @@ def _qfunc_iterative_single(
     vector: np.ndarray, alpha_grid: _QFuncCoherentGrid, g: float,
 ):
     r"""
-    Get the Q function (without the :math:`\pi` scaling factor) of a single
+    Get the Q function (without the :math:`\np.pi` scaling factor) of a single
     state vector, using the iterative algorithm which recomputes the powers of
     the coherent-state matrix.
     """
@@ -775,7 +774,7 @@ def qfunc(
     state: Qobj,
     xvec,
     yvec,
-    g: float = sqrt(2),
+    g: float = np.sqrt(2),
     precompute_memory: float = 1024,
 ):
     r"""
@@ -791,13 +790,13 @@ def qfunc(
     xvec, yvec : array_like
         x- and y-coordinates at which to calculate the Husimi-Q function.
 
-    g : float, default sqrt(2)
+    g : float, default np.sqrt(2)
         Scaling factor for ``a = 0.5 * g * (x + iy)``.  The value of `g` is
         related to the value of :math:`\hbar` in the commutation relation
         :math:`[x,\,y] = i\hbar` via :math:`\hbar=2/g^2`, so the default
         corresponds to :math:`\hbar=1`.
 
-    precompute_memory : real, default 1024
+    precompute_memory : np.real, default 1024
         Size in MB that may be used during calculations as working space when
         dealing with density-matrix inputs.  This is ignored for state-vector
         inputs.  The bound is not quite exact due to other, order-of-magnitude
@@ -862,8 +861,8 @@ def spin_q_function(rho, theta, phi):
     The spin Q function is normal when integrated over the surface of the
     sphere
 
-    .. math:: \frac{4 \pi}{2j + 1}\int_\phi \int_\theta
-              Q(\theta, \phi) \sin(\theta) d\theta d\phi = 1
+    .. math:: \frac{4 \np.pi}{2j + 1}\int_\phi \int_\theta
+              Q(\theta, \phi) \np.sin(\theta) d\theta d\phi = 1
 
     Parameters
     ----------
@@ -876,7 +875,7 @@ def spin_q_function(rho, theta, phi):
 
     Returns
     -------
-    Q, THETA, PHI : 2d-array
+    Q, THETA, PHI : 2d-np.array
         Values representing the spin Husimi Q function at the values specified
         by THETA and PHI.
 
@@ -893,22 +892,22 @@ def spin_q_function(rho, theta, phi):
     J = rho.shape[0]
     j = (J - 1) / 2
 
-    THETA, PHI = meshgrid(theta, phi)
+    THETA, PHI = np.meshgrid(theta, phi)
 
     Q = np.zeros_like(THETA, dtype=complex)
     data = rho.full()
 
-    for m1 in arange(-j, j + 1):
-        Q += binom(2 * j, j + m1) * cos(THETA / 2) ** (2 * (j + m1)) * \
-             sin(THETA / 2) ** (2 * (j - m1)) * \
+    for m1 in np.arange(-j, j + 1):
+        Q += binom(2 * j, j + m1) * np.cos(THETA / 2) ** (2 * (j + m1)) * \
+             np.sin(THETA / 2) ** (2 * (j - m1)) * \
              data[int(j - m1), int(j - m1)]
 
-        for m2 in arange(m1 + 1, j + 1):
-            Q += (sqrt(binom(2 * j, j + m1)) * sqrt(binom(2 * j, j + m2)) *
-                  cos(THETA / 2) ** (2 * j + m1 + m2) *
-                  sin(THETA / 2) ** (2 * j - m1 - m2)) * \
-             (exp(1j * (m1 - m2) * PHI) * data[int(j - m1), int(j - m2)] +
-              exp(1j * (m2 - m1) * PHI) * data[int(j - m2), int(j - m1)])
+        for m2 in np.arange(m1 + 1, j + 1):
+            Q += (np.sqrt(binom(2 * j, j + m1)) * np.sqrt(binom(2 * j, j + m2)) *
+                  np.cos(THETA / 2) ** (2 * j + m1 + m2) *
+                  np.sin(THETA / 2) ** (2 * j - m1 - m2)) * \
+             (np.exp(1j * (m1 - m2) * PHI) * data[int(j - m1), int(j - m2)] +
+              np.exp(1j * (m2 - m1) * PHI) * data[int(j - m2), int(j - m1)])
 
     return Q.real, THETA, PHI
 
@@ -937,8 +936,8 @@ def _rho_kq(rho, j, k, q):
 
     v = 0j
     data = rho.full()
-    for m1 in arange(-j, j+1):
-        for m2 in arange(-j, j+1):
+    for m1 in np.arange(-j, j+1):
+        for m2 in np.arange(-j, j+1):
             v += (
                     (-1) ** (2 * j - k - m1 - m2)
                     * np.sqrt((2 * k + 1) / (2 * j + 1))
@@ -954,8 +953,8 @@ def spin_wigner(rho, theta, phi):
     The spin W function is normal when integrated over the surface of the
     sphere
 
-    .. math:: \sqrt{\frac{4 \pi}{2j + 1}}\int_\phi \int_\theta
-              W(\theta,\phi) \sin(\theta) d\theta d\phi = 1
+    .. math:: \np.sqrt{\frac{4 \np.pi}{2j + 1}}\int_\phi \int_\theta
+              W(\theta,\phi) \np.sin(\theta) d\theta d\phi = 1
 
 
     Parameters
@@ -969,7 +968,7 @@ def spin_wigner(rho, theta, phi):
 
     Returns
     -------
-    W, THETA, PHI : 2d-array
+    W, THETA, PHI : 2d-np.array
         Values representing the spin Wigner function at the values specified
         by THETA and PHI.
 
@@ -991,12 +990,12 @@ def spin_wigner(rho, theta, phi):
     J = rho.shape[0]
     j = (J - 1) / 2
 
-    THETA, PHI = meshgrid(theta, phi)
+    THETA, PHI = np.meshgrid(theta, phi)
 
     W = np.zeros_like(THETA, dtype=complex)
 
     for k in range(int(2 * j)+1):
-        for q in arange(-k, k+1):
+        for q in np.arange(-k, k+1):
             # sph_harm takes azimuthal angle then polar angle as arguments
             W += _rho_kq(rho, j, k, q) * sph_harm(q, k, PHI, THETA)
 

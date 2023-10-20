@@ -15,7 +15,8 @@ __all__ = [
 import itertools
 import numbers
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.linalg
 
 from . import data as _data

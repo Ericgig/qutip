@@ -10,7 +10,8 @@ method (TTM), introduced in [1].
 [1] Javier Cerrillo and Jianshu Cao, Phys. Rev. Lett 112, 110401 (2014)
 """
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import time
 from qutip import spre, vector_to_operator, operator_to_vector, Result
 

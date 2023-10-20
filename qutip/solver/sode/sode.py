@@ -1,4 +1,5 @@
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from . import _sode
 from ..integrator.integrator import Integrator
 from ..stochastic import StochasticSolver, SMESolver

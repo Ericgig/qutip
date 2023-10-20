@@ -9,10 +9,9 @@ reaction coordinate method.
 __all__ = ['rcsolve']
 
 import warnings
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.sparse as sp
-from numpy import matrix
-from numpy import linalg
 from .. import (
     spre, spost, sprepost, thermal_dm, tensor, destroy,
     qeye, mesolve, qeye_like, qzero_like

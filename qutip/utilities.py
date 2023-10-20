@@ -5,7 +5,8 @@ qutip modules.
 
 __all__ = ['n_thermal', 'clebsch', 'convert_unit']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 
 def n_thermal(w, w_th):
     """

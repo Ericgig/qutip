@@ -1,6 +1,7 @@
 __all__ = ['mcsolve', "MCSolver"]
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from ..core import QobjEvo, spre, spost, Qobj, unstack_columns
 from .multitraj import MultiTrajSolver
 from .solver_base import Solver, Integrator, _solver_deprecation

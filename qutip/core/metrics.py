@@ -11,7 +11,8 @@ __all__ = ['fidelity', 'tracedist', 'bures_dist', 'bures_angle',
 
 import warnings
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from scipy import linalg as la
 import scipy.sparse as sp
 from .superop_reps import (to_kraus, to_choi, _to_superpauli, to_super,

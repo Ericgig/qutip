@@ -7,7 +7,8 @@ See http://people.math.sfu.ca/~jverner/
 # http://people.math.sfu.ca/~jverner/
 
 __all__ = ["vern9_coeff"]
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 order = 9
 rk_step = 16
 rk_extra_step = 26

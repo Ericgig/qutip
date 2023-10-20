@@ -6,7 +6,8 @@ __all__ = [
     "FMESolver",
 ]
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from qutip.core import data as _data
 from qutip import Qobj, QobjEvo
 from .propagator import Propagator

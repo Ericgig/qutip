@@ -1,4 +1,5 @@
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from qutip import unstack_columns, stack_columns
 from qutip.core import data as _data
 from ..stochastic import StochasticSolver

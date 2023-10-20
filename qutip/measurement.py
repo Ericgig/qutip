@@ -11,7 +11,8 @@ __all__ = [
     'measure'
 ]
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 
 from . import Qobj, expect, identity, tensor
 

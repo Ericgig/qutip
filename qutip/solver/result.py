@@ -1,5 +1,6 @@
 """ Class for solve function results"""
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from ..core import Qobj, QobjEvo, expect, isket, ket2dm, qzero, qzero_like
 
 __all__ = ["Result", "MultiTrajResult", "McResult", "NmmcResult",

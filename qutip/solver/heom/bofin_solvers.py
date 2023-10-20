@@ -12,7 +12,8 @@ implementation in QuTiP itself.
 
 from time import time
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.sparse as sp
 from scipy.sparse.linalg import spsolve
 

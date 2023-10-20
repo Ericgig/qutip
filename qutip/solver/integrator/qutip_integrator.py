@@ -1,7 +1,8 @@
 from ..integrator import IntegratorException, Integrator
 from ..solver_base import Solver
 from .explicit_rk import Explicit_RungeKutta
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from qutip import data as _data
 
 

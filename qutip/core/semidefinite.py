@@ -6,7 +6,8 @@ This module implements internal-use functions for semidefinite programming.
 import collections
 import functools
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.sparse as sp
 
 # Conditionally import CVXPY

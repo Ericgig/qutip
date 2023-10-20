@@ -1,6 +1,7 @@
 __all__ = ['simdiag']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.linalg as la
 from . import Qobj
 from .core import data as _data

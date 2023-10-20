@@ -1,6 +1,7 @@
 __all__ = ['expect', 'variance']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 
 from .qobj import Qobj
 from . import data as _data

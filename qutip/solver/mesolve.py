@@ -5,7 +5,8 @@ equation.
 
 __all__ = ['mesolve', 'MESolver']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from time import time
 from .. import (Qobj, QobjEvo, isket, liouvillian, ket2dm, lindblad_dissipator)
 from ..core import stack_columns, unstack_columns

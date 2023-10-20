@@ -4,7 +4,8 @@ Internal use module for manipulating dims specifications.
 
 # Everything should be explicitly imported, not made available by default.
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from operator import getitem
 from functools import partial
 

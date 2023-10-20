@@ -7,7 +7,8 @@ __all__ = [
     'IntegratorScipylsoda',
 ]
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from scipy.integrate import ode
 from scipy.integrate._ode import zvode
 from qutip.core import data as _data

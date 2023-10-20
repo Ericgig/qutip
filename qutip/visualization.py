@@ -11,8 +11,8 @@ __all__ = ['plot_wigner_sphere', 'hinton', 'sphereplot',
 
 import warnings
 import itertools as it
-import numpy as np
-from numpy import pi, array, sin, cos, angle, log2
+import qutip.settings
+np = qutip.settings.np
 
 from packaging.version import parse as parse_version
 
@@ -235,8 +235,8 @@ def _blob(x, y, w, w_max, area, color_fn, ax=None):
     the given coordinates.
     """
     hs = np.sqrt(area) / 2
-    xcorners = array([x - hs, x + hs, x + hs, x - hs])
-    ycorners = array([y - hs, y - hs, y + hs, y + hs])
+    xcorners = np.array([x - hs, x + hs, x + hs, x - hs])
+    ycorners = np.array([y - hs, y - hs, y + hs, y + hs])
 
     if ax is not None:
         handle = ax
@@ -308,7 +308,7 @@ def hinton(rho, x_basis=None, y_basis=None, color_style="scaled",
            the minimum for the negative part of the matrix element;
            note that this generalizes `"threshold"` to complex numbers.
         -  If set to ``"phase"``, each color is chosen according to
-           the angle of the corresponding matrix element.
+           the np.angle of the corresponding matrix element.
 
     label_top : bool, default=True
         If True, x ticklabels will be placed on top, otherwise
@@ -388,7 +388,7 @@ def hinton(rho, x_basis=None, y_basis=None, color_style="scaled",
                 # Convert to a superoperator in the Pauli basis,
                 # so that all the elements are real.
                 sqobj = _to_superpauli(rho)
-                nq = int(log2(sqobj.shape[0]) / 2)
+                nq = int(np.log2(sqobj.shape[0]) / 2)
                 W = sqobj.full().T
                 # Create default labels, too.
                 labels = list(map("".join, it.product("IXYZ", repeat=nq)))
@@ -438,7 +438,7 @@ def hinton(rho, x_basis=None, y_basis=None, color_style="scaled",
         )
 
     artist_list = list()
-    ax.fill(array([0, width, width, 0]), array([0, 0, height, height]),
+    ax.fill(np.array([0, width, width, 0]), np.array([0, 0, height, height]),
             color=cmap(128))
     for W in Ws:
         artist = list()
@@ -490,14 +490,14 @@ def sphereplot(values, theta, phi, *,
 
     Parameters
     ----------
-    values : array
+    values : np.array
         Data set to be plotted
 
     theta : float
-        Angle with respect to z-axis. Its range is between 0 and pi
+        Angle with respect to z-axis. Its range is between 0 and np.pi
 
     phi : float
-        Angle in x-y plane. Its range is between 0 and 2*pi
+        Angle in x-y plane. Its range is between 0 and 2*np.pi
 
     cmap : a matplotlib colormap instance, optional
         Color map to use when plotting.
@@ -528,11 +528,11 @@ def sphereplot(values, theta, phi, *,
     _equal_shape(V)
 
     r_and_ph = list()
-    min_ph = pi
-    max_ph = -pi
+    min_ph = np.pi
+    max_ph = -np.pi
     for values in V:
-        r = array(abs(values))
-        ph = angle(values)
+        r = np.array(abs(values))
+        ph = np.angle(values)
         min_ph = min(min_ph, ph.min())
         max_ph = max(max_ph, ph.max())
         r_and_ph.append((r, ph))
@@ -545,9 +545,9 @@ def sphereplot(values, theta, phi, *,
 
     # plot with facecolors set to cm.jet colormap normalized to nrm
     thetam, phim = np.meshgrid(theta, phi)
-    xx = sin(thetam) * cos(phim)
-    yy = sin(thetam) * sin(phim)
-    zz = cos(thetam)
+    xx = np.sin(thetam) * np.cos(phim)
+    yy = np.sin(thetam) * np.sin(phim)
+    zz = np.cos(thetam)
     artist_list = list()
     for r, ph in r_and_ph:
         artist = [ax.plot_surface(r * xx, r * yy, r * zz, rstride=1, cstride=1,
@@ -664,7 +664,7 @@ def _get_matrix_components(option, M, argument):
     elif option == 'abs':
         return np.abs(M.flatten())
     elif option == 'phase':
-        return angle(M.flatten())
+        return np.angle(M.flatten())
     else:
         raise ValueError("got an unexpected argument, "
                          f"{option} for {argument}")
@@ -688,7 +688,7 @@ def matrix_histogram(M, x_basis=None, y_basis=None, limits=None,
     y_basis : list of strings, optional
         list of y ticklabels
 
-    limits : list/array with two float numbers, optional
+    limits : list/np.array with two float numbers, optional
         The z-axis limits [min, max]
 
     bar_style : string, default="real"
@@ -700,9 +700,9 @@ def matrix_histogram(M, x_basis=None, y_basis=None, limits=None,
         -  If set to ``"abs"``, each bar is plotted
            as the absolute value of the corresponding matrix element
         -  If set to ``"phase"`` (default), each bar is plotted
-           as the angle of the corresponding matrix element
+           as the np.angle of the corresponding matrix element
 
-    color_limits : list/array with two float numbers, optional
+    color_limits : list/np.array with two float numbers, optional
         The limits of colorbar [min, max]
 
     color_style : string, default="real"
@@ -715,7 +715,7 @@ def matrix_histogram(M, x_basis=None, y_basis=None, limits=None,
         -  If set to ``"abs"``, each color is chosen according to
            the absolute value of the corresponding matrix element.
         -  If set to ``"phase"``, each color is chosen according to
-           the angle of the corresponding matrix element.
+           the np.angle of the corresponding matrix element.
 
     cmap : a matplotlib colormap instance, optional
         Color map to use when plotting.
@@ -755,10 +755,10 @@ def matrix_histogram(M, x_basis=None, y_basis=None, limits=None,
             The shading is relative to plot's source of light.
 
         'azim' : float, default=-35
-            The azimuthal viewing angle.
+            The azimuthal viewing np.angle.
 
         'elev' : float, default=35
-            The elevation viewing angle.
+            The elevation viewing np.angle.
 
         'stick' : bool, default=False
             Changes xlim and ylim in such a way that bars next to
@@ -854,8 +854,8 @@ def matrix_histogram(M, x_basis=None, y_basis=None, limits=None,
             c_max = color_limits[1]
         else:
             if color_style == 'phase':
-                c_min = -pi
-                c_max = pi
+                c_min = -np.pi
+                c_max = np.pi
             else:
                 c_min = min(color_M) if i == 0 else min(min(color_M), c_min)
                 c_max = min(color_M) if i == 0 else max(max(color_M), c_max)
@@ -949,9 +949,9 @@ def matrix_histogram(M, x_basis=None, y_basis=None, limits=None,
         else:
             cb.set_label('arg')
             if color_limits is None:
-                cb.set_ticks([-pi, -pi / 2, 0, pi / 2, pi])
+                cb.set_ticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
                 cb.set_ticklabels(
-                    (r'$-\pi$', r'$-\pi/2$', r'$0$', r'$\pi/2$', r'$\pi$'))
+                    (r'$-\np.pi$', r'$-\np.pi/2$', r'$0$', r'$\np.pi/2$', r'$\np.pi$'))
 
     return fig, output
 
@@ -1263,7 +1263,7 @@ def plot_expectation_values(results, ylabels=None, *,
     Returns
     -------
     fig, axes : tuple
-        A tuple of the matplotlib figure and array of axes instances
+        A tuple of the matplotlib figure and np.array of axes instances
         used to produce the figure.
     """
     if not isinstance(results, list):
@@ -1307,10 +1307,10 @@ def plot_spin_distribution(P, THETA, PHI, projection='2d', *,
         Distribution values as a meshgrid matrix.
 
     THETA : matrix
-        Meshgrid matrix for the theta coordinate. Its range is between 0 and pi
+        Meshgrid matrix for the theta coordinate. Its range is between 0 and np.pi
 
     PHI : matrix
-        Meshgrid matrix for the phi coordinate. Its range is between 0 and 2*pi
+        Meshgrid matrix for the phi coordinate. Its range is between 0 and 2*np.pi
 
     projection: string {'2d', '3d'}, default='2d'
         Specify whether the spin distribution function is to be plotted as a 2D
@@ -1365,21 +1365,21 @@ def plot_spin_distribution(P, THETA, PHI, projection='2d', *,
 
     artist_list = list()
     if projection == '2d':
-        Y = (THETA - pi / 2) / (pi / 2)
-        X = (pi - PHI) / pi * np.sqrt(cos(THETA - pi / 2))
+        Y = (THETA - np.pi / 2) / (np.pi / 2)
+        X = (np.pi - PHI) / np.pi * np.sqrt(np.cos(THETA - np.pi / 2))
         for P in Ps:
             artist_list.append([ax.pcolor(X, Y, P.real, cmap=cmap)])
         ax.set_xlabel(r'$\varphi$', fontsize=18)
         ax.set_ylabel(r'$\theta$', fontsize=18)
         ax.axis('equal')
         ax.set_xticks([-1, 0, 1])
-        ax.set_xticklabels([r'$0$', r'$\pi$', r'$2\pi$'], fontsize=18)
+        ax.set_xticklabels([r'$0$', r'$\np.pi$', r'$2\np.pi$'], fontsize=18)
         ax.set_yticks([-1, 0, 1])
-        ax.set_yticklabels([r'$\pi$', r'$\pi/2$', r'$0$'], fontsize=18)
+        ax.set_yticklabels([r'$\np.pi$', r'$\np.pi/2$', r'$0$'], fontsize=18)
     else:
-        xx = sin(THETA) * cos(PHI)
-        yy = sin(THETA) * sin(PHI)
-        zz = cos(THETA)
+        xx = np.sin(THETA) * np.cos(PHI)
+        yy = np.sin(THETA) * np.sin(PHI)
+        zz = np.cos(THETA)
         for P in Ps:
             artist = [ax.plot_surface(xx, yy, zz, rstride=1, cstride=1,
                       facecolors=cmap(norm(P)), linewidth=0)]
@@ -1405,7 +1405,7 @@ def plot_spin_distribution(P, THETA, PHI, projection='2d', *,
 #
 def complex_array_to_rgb(X, theme='light', rmax=None):
     """
-    Makes an array of complex number and converts it to an array of [r, g, b],
+    Makes an np.array of complex number and converts it to an np.array of [r, g, b],
     where phase gives hue and saturation/value are given by the absolute value.
     Especially for use with imshow for complex plots.
 
@@ -1416,7 +1416,7 @@ def complex_array_to_rgb(X, theme='light', rmax=None):
 
     Parameters
     ----------
-    X : array
+    X : np.array
         Array (of any dimension) of complex numbers.
 
     theme : 'light' or 'dark', default='light'
@@ -1428,7 +1428,7 @@ def complex_array_to_rgb(X, theme='light', rmax=None):
 
     Returns
     -------
-    Y : array
+    Y : np.array
         Array of colors (of shape X.shape + (3,)).
 
     """
@@ -1437,7 +1437,7 @@ def complex_array_to_rgb(X, theme='light', rmax=None):
     if absmax == 0.:
         absmax = 1.
     Y = np.zeros(X.shape + (3,), dtype='float')
-    Y[..., 0] = np.angle(X) / (2 * pi) % 1
+    Y[..., 0] = np.angle(X) / (2 * np.pi) % 1
     if theme == 'light':
         Y[..., 1] = np.clip(np.abs(X) / absmax, 0, 1)
         Y[..., 2] = 1

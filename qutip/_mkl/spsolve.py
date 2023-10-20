@@ -1,5 +1,6 @@
 import sys
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.sparse as sp
 from ctypes import c_int, byref
 from numpy.ctypeslib import ndpointer

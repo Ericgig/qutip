@@ -2,8 +2,8 @@ __all__ = ['Bloch']
 
 import os
 
-import numpy as np
-from numpy import (outer, cos, sin, ones)
+import qutip.settings
+np = qutip.settings.np
 
 from packaging.version import parse as parse_version
 
@@ -187,7 +187,7 @@ class Bloch:
         self.annotations = []
         # Number of times sphere has been saved
         self.savenum = 0
-        # Style of points, 'm' for multiple colors, 's' for single color
+        # Style of points, 'm' for multiple colors, 's' for np.single color
         self.point_style = []
         # Transparency of points, alpha value from 0 to 1
         self.point_alpha = []
@@ -208,9 +208,9 @@ class Bloch:
             - "xyz"
             - "sx sy sz"
             - "01"
-            - "polarization jones"
-            - "polarization jones letters"
-              see also: https://en.wikipedia.org/wiki/Jones_calculus
+            - "polarization jnp.ones"
+            - "polarization jnp.ones letters"
+              see also: https://en.wikipedia.org/wiki/Jnp.ones_calculus
             - "polarization stokes"
               see also: https://en.wikipedia.org/wiki/Stokes_parameters
         """
@@ -233,13 +233,13 @@ class Bloch:
             self.xlabel = ['', '']
             self.ylabel = ['', '']
             self.zlabel = ['$\\left|0\\right>$', '$\\left|1\\right>$']
-        elif convention == "polarization jones":
+        elif convention == "polarization jnp.ones":
             self.xlabel = [ketex % "\\nearrow\\hspace{-1.46}\\swarrow",
                            ketex % "\\nwarrow\\hspace{-1.46}\\searrow"]
             self.ylabel = [ketex % "\\circlearrowleft", ketex %
                            "\\circlearrowright"]
             self.zlabel = [ketex % "\\leftrightarrow", ketex % "\\updownarrow"]
-        elif convention == "polarization jones letters":
+        elif convention == "polarization jnp.ones letters":
             self.xlabel = [ketex % "D", ketex % "A"]
             self.ylabel = [ketex % "L", ketex % "R"]
             self.zlabel = [ketex % "H", ketex % "V"]
@@ -326,14 +326,14 @@ class Bloch:
 
         colors : array_like
             Optional array with colors for the points.
-            A single color for meth 's', and list of colors for meth 'm'
+            A np.single color for meth 's', and list of colors for meth 'm'
 
         alpha : float, default=1.
             Transparency value for the vectors. Values between 0 and 1.
 
         .. note::
 
-           When using ``meth=l`` in QuTiP 4.6, the line transparency defaulted
+           When unp.sing ``meth=l`` in QuTiP 4.6, the line transparency defaulted
            to ``0.75`` and there was no way to alter it.
            When the ``alpha`` parameter was added in QuTiP 4.7, the default
            became ``alpha=1.0`` for values of ``meth``.
@@ -629,7 +629,7 @@ class Bloch:
             # If no external figure was supplied, we check to see if the
             # figure we created in a previous call to .render() has been
             # closed, and re-create if has been. This has the unfortunate
-            # side effect of losing any modifications made to the axes or
+            # side effect of lonp.sing any modifications made to the axes or
             # figure, but the alternative is to crash the matplotlib backend.
             #
             # The inline backend used by, e.g. jupyter notebooks, is happy to
@@ -687,9 +687,9 @@ class Bloch:
         # back half of sphere
         u = np.linspace(0, np.pi, 25)
         v = np.linspace(0, np.pi, 25)
-        x = outer(cos(u), sin(v))
-        y = outer(sin(u), sin(v))
-        z = outer(ones(np.size(u)), cos(v))
+        x = np.outer(np.cos(u), np.sin(v))
+        y = np.outer(np.sin(u), np.sin(v))
+        z = np.outer(np.ones(np.size(u)), np.cos(v))
         self.axes.plot_surface(x, y, z, rstride=2, cstride=2,
                                color=self.sphere_color, linewidth=0,
                                alpha=self.sphere_alpha)
@@ -698,18 +698,18 @@ class Bloch:
                                  color=self.frame_color,
                                  alpha=self.frame_alpha)
         # equator
-        self.axes.plot(1.0 * cos(u), 1.0 * sin(u), zs=0, zdir='z',
+        self.axes.plot(1.0 * np.cos(u), 1.0 * np.sin(u), zs=0, zdir='z',
                        lw=self.frame_width, color=self.frame_color)
-        self.axes.plot(1.0 * cos(u), 1.0 * sin(u), zs=0, zdir='x',
+        self.axes.plot(1.0 * np.cos(u), 1.0 * np.sin(u), zs=0, zdir='x',
                        lw=self.frame_width, color=self.frame_color)
 
     def plot_front(self):
         # front half of sphere
         u = np.linspace(-np.pi, 0, 25)
         v = np.linspace(0, np.pi, 25)
-        x = outer(cos(u), sin(v))
-        y = outer(sin(u), sin(v))
-        z = outer(ones(np.size(u)), cos(v))
+        x = np.outer(np.cos(u), np.sin(v))
+        y = np.outer(np.sin(u), np.sin(v))
+        z = np.outer(np.ones(np.size(u)), np.cos(v))
         self.axes.plot_surface(x, y, z, rstride=2, cstride=2,
                                color=self.sphere_color, linewidth=0,
                                alpha=self.sphere_alpha)
@@ -718,10 +718,10 @@ class Bloch:
                                  color=self.frame_color,
                                  alpha=self.frame_alpha)
         # equator
-        self.axes.plot(1.0 * cos(u), 1.0 * sin(u),
+        self.axes.plot(1.0 * np.cos(u), 1.0 * np.sin(u),
                        zs=0, zdir='z', lw=self.frame_width,
                        color=self.frame_color)
-        self.axes.plot(1.0 * cos(u), 1.0 * sin(u),
+        self.axes.plot(1.0 * np.cos(u), 1.0 * np.sin(u),
                        zs=0, zdir='x', lw=self.frame_width,
                        color=self.frame_color)
 
@@ -859,7 +859,7 @@ class Bloch:
         Notes
         -----
 
-        When using inline plotting in Jupyter notebooks, any figure created
+        When unp.sing inline plotting in Jupyter notebooks, any figure created
         in a notebook cell is displayed after the cell executes. Thus if you
         create a figure yourself and use it create a Bloch sphere with
         ``b = Bloch(..., fig=fig)`` and then call ``b.show()`` in the same

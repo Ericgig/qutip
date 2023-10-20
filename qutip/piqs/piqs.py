@@ -12,7 +12,8 @@ It also allows to characterize nonlinear functions of the density matrix.
 from math import factorial
 from decimal import Decimal
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from scipy.integrate import odeint
 from scipy.linalg import eigvalsh
 from scipy.special import entr

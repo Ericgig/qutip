@@ -1,6 +1,7 @@
 __all__ = ['qpt_plot', 'qpt_plot_combined', 'qpt']
 
-from numpy import hstack, real, imag
+import qutip.settings
+np = qutip.settings.np
 import scipy.linalg as la
 from . import tensor, spre, spost, stack_columns, unstack_columns
 from .visualization import matrix_histogram
@@ -32,7 +33,7 @@ def _index_permutations(size_list):
 
 def qpt_plot(chi, lbls_list, title=None, fig=None, axes=None):
     """
-    Visualize the quantum process tomography chi matrix. Plot the real and
+    Visualize the quantum process tomography chi matrix. Plot the np.real and
     imaginary parts separately.
 
     Parameters
@@ -71,11 +72,11 @@ def qpt_plot(chi, lbls_list, title=None, fig=None, axes=None):
         xlabels.append("".join([lbls_list[k][inds[k]]
                                 for k in range(len(lbls_list))]))
 
-    matrix_histogram(real(chi), xlabels, xlabels, limits=[-1, 1], ax=axes[0])
-    axes[0].set_title(r"real($\chi$)")
+    matrix_histogram(np.real(chi), xlabels, xlabels, limits=[-1, 1], ax=axes[0])
+    axes[0].set_title(r"np.real($\chi$)")
 
-    matrix_histogram(imag(chi), xlabels, xlabels, limits=[-1, 1], ax=axes[1])
-    axes[1].set_title(r"imag($\chi$)")
+    matrix_histogram(np.imag(chi), xlabels, xlabels, limits=[-1, 1], ax=axes[1])
+    axes[1].set_title(r"np.imag($\chi$)")
 
     if title and fig:
         fig.suptitle(title)
@@ -180,7 +181,7 @@ def qpt(U, op_basis_list):
             op_basis_list))]
         E_ops.append(tensor(E_op_list))
     EE_ops = [spre(E1) * spost(E2.dag()) for E1 in E_ops for E2 in E_ops]
-    M = hstack([EE.full().ravel('F')[:, None] for EE in EE_ops])
+    M = np.hstack([EE.full().ravel('F')[:, None] for EE in EE_ops])
     Uvec = U.full().ravel('F')
     chi_vec = la.solve(M, Uvec)
     return chi_vec.reshape(U.shape).T

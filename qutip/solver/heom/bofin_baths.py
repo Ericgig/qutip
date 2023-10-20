@@ -11,7 +11,8 @@ implementation in QuTiP itself.
 
 import enum
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from scipy.linalg import eigvalsh
 
 from qutip.core import data as _data

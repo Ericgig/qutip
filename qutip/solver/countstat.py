@@ -4,7 +4,8 @@ the counting statistics formalism.
 """
 __all__ = ['countstat_current', 'countstat_current_noise']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.sparse as sp
 
 from itertools import product

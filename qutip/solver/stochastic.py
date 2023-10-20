@@ -4,7 +4,8 @@ from .sode.ssystem import *
 from .result import MultiTrajResult, Result, ExpectOp
 from .multitraj import MultiTrajSolver
 from .. import Qobj, QobjEvo, liouvillian, lindblad_dissipator
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from collections.abc import Iterable
 from functools import partial
 from .solver_base import _solver_deprecation

@@ -11,7 +11,8 @@ import functools
 import numbers
 import warnings
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.sparse
 
 from .. import __version__

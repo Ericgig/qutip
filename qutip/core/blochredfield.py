@@ -1,6 +1,7 @@
 import os
 import inspect
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from qutip.settings import settings as qset
 
 from . import Qobj, QobjEvo, liouvillian, coefficient, sprepost

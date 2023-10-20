@@ -5,7 +5,8 @@ in one way or another.
 
 __all__ = ['wigner_cmap', 'MidpointNorm', 'complex_phase_cmap']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 
 try:
     import matplotlib as mpl

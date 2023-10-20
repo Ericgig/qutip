@@ -2,7 +2,8 @@ from .result import Result, MultiTrajResult
 from .parallel import _get_map
 from time import time
 from .solver_base import Solver
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 
 __all__ = ["MultiTrajSolver"]
 

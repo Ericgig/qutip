@@ -4,7 +4,8 @@ This module provides solvers for the unitary Schrodinger equation.
 
 __all__ = ['sesolve', 'SESolver']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from time import time
 from .. import Qobj, QobjEvo
 from .solver_base import Solver, _solver_deprecation

@@ -19,7 +19,8 @@ __all__ = [
 ]
 
 from .floquet import *
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import warnings
 
 

@@ -1,6 +1,7 @@
 __all__ = ['Bloch3d']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from . import Qobj, expect, sigmax, sigmay, sigmaz
 
 

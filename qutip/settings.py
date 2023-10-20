@@ -7,6 +7,7 @@ import sys
 from ctypes import cdll
 import platform
 import numpy as np
+from .pseudo_module import pseudoNumpy
 
 __all__ = ['settings']
 
@@ -133,6 +134,7 @@ class Settings:
         self._debug = False
         self._log_handler = "default"
         self._colorblind_safe = False
+        self.np = pseudoNumpy
 
     @property
     def has_mkl(self):

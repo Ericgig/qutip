@@ -13,8 +13,8 @@ __all__ = ['Distribution', 'WignerDistribution', 'QDistribution',
            'HarmonicOscillatorWaveFunction',
            'HarmonicOscillatorProbabilityFunction']
 
-import numpy as np
-from numpy import pi, exp, sqrt
+import qutip.settings
+np = qutip.settings.np
 
 from scipy.special import hermite, factorial
 
@@ -304,14 +304,14 @@ class TwoModeQuadratureCorrelation(Distribution):
         N = psi.dims[0][0]
 
         for n1 in range(N):
-            kn1 = exp(-1j * self.theta1 * n1) / \
-                sqrt(sqrt(pi) * 2 ** n1 * factorial(n1)) * \
-                exp(-X1 ** 2 / 2.0) * np.polyval(hermite(n1), X1)
+            kn1 = np.exp(-1j * self.theta1 * n1) / \
+                np.sqrt(np.sqrt(np.pi) * 2 ** n1 * factorial(n1)) * \
+                np.exp(-X1 ** 2 / 2.0) * np.polyval(hermite(n1), X1)
 
             for n2 in range(N):
-                kn2 = exp(-1j * self.theta2 * n2) / \
-                    sqrt(sqrt(pi) * 2 ** n2 * factorial(n2)) * \
-                    exp(-X2 ** 2 / 2.0) * np.polyval(hermite(n2), X2)
+                kn2 = np.exp(-1j * self.theta2 * n2) / \
+                    np.sqrt(np.sqrt(np.pi) * 2 ** n2 * factorial(n2)) * \
+                    np.exp(-X2 ** 2 / 2.0) * np.polyval(hermite(n2), X2)
                 i = state_number_index([N, N], [n1, n2])
                 p += kn1 * kn2 * psi.data[i, 0]
 
@@ -335,13 +335,13 @@ class TwoModeQuadratureCorrelation(Distribution):
 
         for m in range(N):
             for n in range(N):
-                M1[m, n] = exp(-1j * self.theta1 * (m - n)) / \
-                    sqrt(pi * 2 ** (m + n) * factorial(n) * factorial(m)) * \
-                    exp(-X1 ** 2) * np.polyval(
+                M1[m, n] = np.exp(-1j * self.theta1 * (m - n)) / \
+                    np.sqrt(np.pi * 2 ** (m + n) * factorial(n) * factorial(m)) * \
+                    np.exp(-X1 ** 2) * np.polyval(
                         hermite(m), X1) * np.polyval(hermite(n), X1)
-                M2[m, n] = exp(-1j * self.theta2 * (m - n)) / \
-                    sqrt(pi * 2 ** (m + n) * factorial(n) * factorial(m)) * \
-                    exp(-X2 ** 2) * np.polyval(
+                M2[m, n] = np.exp(-1j * self.theta2 * (m - n)) / \
+                    np.sqrt(np.pi * 2 ** (m + n) * factorial(n) * factorial(m)) * \
+                    np.exp(-X2 ** 2) * np.polyval(
                         hermite(m), X2) * np.polyval(hermite(n), X2)
 
         for n1 in range(N):
@@ -376,9 +376,9 @@ class HarmonicOscillatorWaveFunction(Distribution):
         N = psi.shape[0]
 
         for n in range(N):
-            k = pow(self.omega / pi, 0.25) / \
-                sqrt(2 ** n * factorial(n)) * \
-                exp(-self.xvecs[0] ** 2 / 2.0) * \
+            k = pow(self.omega / np.pi, 0.25) / \
+                np.sqrt(2 ** n * factorial(n)) * \
+                np.exp(-self.xvecs[0] ** 2 / 2.0) * \
                 np.polyval(hermite(n), self.xvecs[0])
 
             self.data += k * psi.data[n, 0]
@@ -408,15 +408,15 @@ class HarmonicOscillatorProbabilityFunction(Distribution):
         M, N = rho.shape
 
         for m in range(M):
-            k_m = pow(self.omega / pi, 0.25) / \
-                sqrt(2 ** m * factorial(m)) * \
-                exp(-self.xvecs[0] ** 2 / 2.0) * \
+            k_m = pow(self.omega / np.pi, 0.25) / \
+                np.sqrt(2 ** m * factorial(m)) * \
+                np.exp(-self.xvecs[0] ** 2 / 2.0) * \
                 np.polyval(hermite(m), self.xvecs[0])
 
             for n in range(N):
-                k_n = pow(self.omega / pi, 0.25) / \
-                    sqrt(2 ** n * factorial(n)) * \
-                    exp(-self.xvecs[0] ** 2 / 2.0) * \
+                k_n = pow(self.omega / np.pi, 0.25) / \
+                    np.sqrt(2 ** n * factorial(n)) * \
+                    np.exp(-self.xvecs[0] ** 2 / 2.0) * \
                     np.polyval(hermite(n), self.xvecs[0])
 
                 self.data += np.conjugate(k_n) * k_m * rho.data[m, n]

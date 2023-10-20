@@ -1,4 +1,5 @@
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from ctypes import POINTER, c_int, c_char, byref
 from numpy.ctypeslib import ndpointer
 import qutip.settings as qset

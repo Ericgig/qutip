@@ -4,7 +4,8 @@ __all__ = [
     'correlation_3op_2t', 'coherence_function_g1', 'coherence_function_g2'
 ]
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.fftpack
 
 from ..core import (

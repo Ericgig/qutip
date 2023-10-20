@@ -5,7 +5,8 @@ equation.
 
 __all__ = ['brmesolve', 'BRSolver']
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import inspect
 from time import time
 from .. import Qobj, QobjEvo, coefficient, Coefficient

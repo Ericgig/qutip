@@ -6,7 +6,8 @@ See http://people.math.sfu.ca/~jverner/
 # Verner 7 Efficient
 # http://people.math.sfu.ca/~jverner/RKV76.IIa.Efficient.00001675585.081206.CoeffsOnlyFLOAT
 __all__ = ["vern7_coeff"]
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 order = 7
 rk_step = 10
 rk_extra_step = 16

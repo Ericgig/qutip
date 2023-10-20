@@ -15,8 +15,9 @@ __all__ = [
 
 import numbers
 
-import numpy as np
-from numpy.random import Generator, SeedSequence, default_rng
+import qutip.settings
+np = qutip.settings.np
+
 import scipy.linalg
 import scipy.sparse as sp
 
@@ -27,7 +28,7 @@ from .core.dimensions import flatten
 from . import settings
 
 
-_RAND = default_rng()
+_RAND = np.random.default_rng()
 _UNITS = np.array([1, 1j])
 
 
@@ -78,10 +79,10 @@ def _get_generator(seed):
     """
     if seed is None:
         gen = _RAND
-    elif isinstance(seed, Generator):
+    elif isinstance(seed, np.random.Generator):
         gen = seed
     else:
-        gen = default_rng(seed)
+        gen = np.random.default_rng(seed)
     return gen
 
 

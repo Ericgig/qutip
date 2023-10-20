@@ -7,7 +7,8 @@ __all__ = ['subsystem_apply']
 
 import itertools
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 
 from . import Qobj, qeye, to_kraus, tensor
 from . import data as _data

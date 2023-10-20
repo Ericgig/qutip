@@ -2,7 +2,8 @@ from qutip import liouvillian, lindblad_dissipator, Qobj, qzero_like, qeye_like
 from qutip import vector_to_operator, operator_to_vector
 from qutip import settings
 import qutip.core.data as _data
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.sparse.csgraph
 import scipy.sparse.linalg
 from warnings import warn

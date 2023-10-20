@@ -2,7 +2,8 @@ from itertools import product
 from functools import partial, reduce
 from operator import mul
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 import scipy.sparse as sp
 from . import Qobj, qeye, sigmax, fock_dm, qdiags, qeye_like
 

@@ -7,7 +7,8 @@ __all__ = [
     'expand_operator'
 ]
 
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 from functools import partial
 from .operators import qeye
 from .qobj import Qobj

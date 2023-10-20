@@ -1,5 +1,6 @@
 """ `Integrator`: ODE solver wrapper to use in qutip's Solver """
-import numpy as np
+import qutip.settings
+np = qutip.settings.np
 
 __all__ = ['Integrator', 'IntegratorException']
 
