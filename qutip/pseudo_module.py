@@ -1,4 +1,3 @@
-import shelve
 import numpy
 
 class PseudoModule:
@@ -8,11 +7,9 @@ class PseudoModule:
         self.name = name or self.base.__name__
 
         if calls is None:
-            self.calls = {} # shelve.open(self.name + "_call.data")
-            self.own = True
+            self.calls = {}
         else:
             self.calls = calls
-            self.own = False
         self.sub_modules = {
             sub: PseudoModule(
                 getattr(base_module, sub),
@@ -23,18 +20,13 @@ class PseudoModule:
         }
         self.frozen = True
 
-    def __del__(self):
-        if self.own:
-            pass
-            # self.calls.close()
-
     def __getattr__(self, item):
         if item in self.sub_modules:
             return self.sub_modules[item]
-        # if f"{self.name}.{item}" in self.calls:
-        #     self.calls[f"{self.name}.{item}"] += 1
-        # else:
-        #     self.calls[f"{self.name}.{item}"] = 1
+        if f"{self.name}.{item}" in self.calls:
+            self.calls[f"{self.name}.{item}"] += 1
+        else:
+            self.calls[f"{self.name}.{item}"] = 1
         return getattr(self.base, item)
 
     def __setattr__(self, item, val):
