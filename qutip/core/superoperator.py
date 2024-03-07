@@ -10,7 +10,7 @@ import numpy as np
 
 from .qobj import Qobj
 from . import data as _data
-from .dimensions import Compound, SuperSpace, Space
+from .dimensions import Compound, SuperSpace, Space, Dimensions
 
 
 def _map_over_compound_operators(f):
@@ -202,7 +202,7 @@ def operator_to_vector(op):
         raise TypeError("Cannot convert object already "
                         "in super representation")
     return Qobj(stack_columns(op.data),
-                dims=[op.dims, [1]],
+                dims=[op._dims, [1]],
                 superrep="super",
                 copy=False)
 
@@ -344,14 +344,6 @@ def spre(A):
                 copy=False)
 
 
-def _drop_projected_dims(dims):
-    """
-    Eliminate subsystems that has been collapsed to only one state due to
-    a projection.
-    """
-    return [d for d in dims if d != 1]
-
-
 def sprepost(A, B):
     """
     Superoperator formed from pre-multiplication by A and post-multiplication
@@ -374,12 +366,9 @@ def sprepost(A, B):
     from .cy.qobjevo import QobjEvo
     if (isinstance(A, QobjEvo) or isinstance(B, QobjEvo)):
         return spre(A) * spost(B)
-    dims = [[_drop_projected_dims(A.dims[0]),
-             _drop_projected_dims(B.dims[1])],
-            [_drop_projected_dims(A.dims[1]),
-             _drop_projected_dims(B.dims[0])]]
+
     return Qobj(_data.kron_transpose(B.data, A.data),
-                dims=dims,
+                dims=Dimensions.from_prepost(A._dims, B._dims),
                 superrep='super',
                 isherm=A._isherm and B._isherm,
                 copy=False)

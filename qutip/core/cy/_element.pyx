@@ -8,7 +8,7 @@
 import warnings
 from .. import data as _data
 from qutip.core.cy.coefficient import coefficient_function_parameters
-from qutip.core.superoperator import _drop_projected_dims
+from qutip.core.dimensions import Dimensions
 from qutip.core.qobj import Qobj
 from qutip.core.data cimport Dense, Data, dense
 from qutip.core.data.matmul cimport *
@@ -384,17 +384,12 @@ cdef class _ConstantSuperElement(_BaseElement):
 
     cpdef object qobj(self, t):
         if self._qobj is None:
-            A = self._pre
-            B = self._post
-            dims = [[_drop_projected_dims(A.dims[0]),
-                     _drop_projected_dims(B.dims[1])],
-                    [_drop_projected_dims(A.dims[1]),
-                     _drop_projected_dims(B.dims[0])]]
+            dims = Dimensions.from_prepost(self._pre._dims, self._post._dims)
             self._qobj = Qobj(
                 self.data(t),
                 dims=dims,
                 superrep='super',
-                isherm=A._isherm and B._isherm,
+                isherm=self._pre._isherm and self._post._isherm,
                 copy=False
             )
         return self._qobj
