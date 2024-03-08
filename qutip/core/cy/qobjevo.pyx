@@ -290,7 +290,8 @@ cdef class QobjEvo:
             dims = op.qobj(0)._dims
         elif callable(op):
             out = _FuncElement(op, args, style=function_style)
-            dims = out.qobj(0)._dims
+            qobj = out.qobj(0)
+            dims = qobj._dims
             if not isinstance(qobj, Qobj):
                 raise TypeError(
                     "Function based time-dependent elements must have the"
@@ -309,8 +310,8 @@ cdef class QobjEvo:
             self.shape = dims.shape
         elif self._dims != dims:
             raise ValueError(
-                f"QobjEvo term {op!r} has dims {qobj.dims!r} and shape"
-                f" {qobj.shape!r} but previous terms had dims {self.dims!r}"
+                f"QobjEvo term {op!r} has dims {dims!r} and shape"
+                f" {dims.shape!r} but previous terms had dims {self.dims!r}"
                 f" and shape {self.shape!r}."
             )
 
