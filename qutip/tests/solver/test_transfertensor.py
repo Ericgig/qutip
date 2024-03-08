@@ -27,8 +27,11 @@ def test_ttmsolve_jc_model(call):
     psi0c = qutip.basis(N, 0)
     rho0c = qutip.ket2dm(psi0c)
     rho0 = qutip.tensor(rho0a, rho0c)
-    superrho0cav = qutip.sprepost(
-        qutip.tensor(qutip.qeye(2), psi0c), qutip.tensor(qutip.qeye(2), psi0c.dag())
+    superrho0cav = qutip.tensor_contract(
+        qutip.sprepost(
+            qutip.tensor(qutip.qeye(2), psi0c),
+            qutip.tensor(qutip.qeye(2), psi0c.dag())
+        ), [5, 7]
     )
 
     # calculate exact solution using mesolve
