@@ -190,7 +190,7 @@ jobs:
             # We only have 2 physical cores, but we want to test mpi_pmap with 2 workers.
             export OMPI_MCA_rmaps_base_oversubscribe=true
           fi
-          pip install yaml
+          pip install pyyaml
           python -c "import sys, scipy, numpy; print(scipy.__version__, numpy.__version__, sys.version_info); scipy.show_config()"
           pytest qutip/tests -k test_scipy
           # pytest -Werror --strict-config --strict-markers --fail-slow=300 --durations=0 --durations-min=1.0 --verbosity=1 --cov=qutip --cov-report= --color=yes ${{ matrix.pytest-extra-options }} qutip/tests
