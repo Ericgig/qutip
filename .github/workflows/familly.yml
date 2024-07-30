@@ -53,5 +53,6 @@ jobs:
 
       - name: Run test
         run: |
+          cd ../${{ matrix.repo }}
           pytest tests -vv
           
