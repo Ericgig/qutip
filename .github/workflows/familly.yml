@@ -11,7 +11,7 @@ defaults:
 
 jobs:
   tests:
-    name: ${{ matrix.repo }}-${{ matrix.release }}
+    name: ${{ matrix.repo }}-${{ matrix.version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -52,4 +52,6 @@ jobs:
           # `pip list -v` has the module location
           # grep extract the line, awk the colunm
           # That location is feed to pytest
+          pip list -v | grep ${{ matrix.repo }}
+          pip list -v | grep ${{ matrix.repo }} | awk -F ' ' '{print $3}'
           pytest $(pip list -v | grep ${{ matrix.repo }} | awk -F ' ' '{print $3}') -vv
