@@ -212,9 +212,9 @@ def _extension_extra_sources():
     # For typing brevity we specify sources in Unix-style string form, then
     # normalise them into the OS-specific form later.
     extra_sources = {
-        'qutip.core.data.matmul': [
-            'qutip/core/data/src/matmul_csr_vector.cpp',
-            'qutip/core/data/src/matmul_diag_vector.cpp',
+        'src/qutip.core.data.matmul': [
+            'src/qutip/core/data/src/matmul_csr_vector.cpp',
+            'src/qutip/core/data/src/matmul_diag_vector.cpp',
         ],
     }
     out = collections.defaultdict(list)
@@ -273,8 +273,9 @@ def create_extension_modules(options):
             )
             continue
         # The module name is the same as the folder structure, but with dots in
-        # place of separators ('/' or '\'), and without the '.pyx' extension.
-        pyx_module = ".".join(pyx_file.parts)[:-4]
+        # place of separators ('/' or '\'), and without the 'src' location and
+        # '.pyx' extension
+        pyx_module = ".".join(pyx_file.parts)[4:-4]
         pyx_sources = [pyx_file_str] + extra_sources[pyx_module]
         out.append(Extension(pyx_module,
                              sources=pyx_sources,
