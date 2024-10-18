@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 import numbers
+import functools
 
 import qutip
-from .. import __version__
-from ..settings import settings
-from . import data as _data
-from .dimensions import (
+from ... import __version__
+from ...settings import settings
+from .. import data as _data
+from ..dimensions import (
     enumerate_flat, collapse_dims_super, flatten, unflatten, Dimensions
 )
 from typing import Any, Literal
@@ -15,8 +16,10 @@ from qutip.typing import LayerType, DimensionLike
 from numpy.typing import ArrayLike
 
 
-class _QobjBuilder
-    @classmethod
+class _QobjBuilder(type):
+    qobjtype_to_class = {}
+
+    @staticmethod
     def _initialize_data(arg, raw_dims, copy):
         flags = {}
         if isinstance(arg, _data.Data):
@@ -47,7 +50,7 @@ class _QobjBuilder
         isherm: bool = None,
         isunitary: bool = None
     ):
-        data, dims, flags = self._initialize_data(arg, dims, copy)
+        data, dims, flags = _QobjBuilder._initialize_data(arg, dims, copy)
         if isherm is not None:
             flags["isherm"] = isherm
         if isunitary is not None:
@@ -55,15 +58,7 @@ class _QobjBuilder
         if superrep is not None:
             dims = dims.replace_superrep(superrep)
 
-        instance_class = {
-            "ket": qutip.core.qobj_state.Ket,
-            "bra": qutip.core.qobj_state.Bra,
-            "operator-ket": qutip.core.qobj_operator.OperKet,
-            "operator-bra": qutip.core.qobj_operator.OperBra,
-            "scalar": qutip.core.qobj_state.Operator,
-            "oper": qutip.core.qobj_state.Operator,
-            "super": qutip.core.qobj_state.SuperOperator,
-        }[dims.type]
+        instance_class = _QobjBuilder.qobjtype_to_class[dims.type]
 
         new_qobj = instance_class.__new__(instance_class)
         new_qobj.__init__(data, dims, **flags)
@@ -133,7 +128,7 @@ class Qobj(metaclass=_QobjBuilder):
 
     @property
     def type(self) -> str:
-        return self._dims.
+        return self._dims.type
 
     @property
     def data(self) -> _data.Data:
@@ -211,7 +206,7 @@ class Qobj(metaclass=_QobjBuilder):
             isherm=self._isherm,
             isunitary=self._isunitary,
             copy=False
-        ):
+        )
 
     @_require_equal_type
     def __add__(self, other: Qobj | complex) -> Qobj:

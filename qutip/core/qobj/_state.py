@@ -1,4 +1,4 @@
-from .qobj_base import Qobj
+from ._base import Qobj, _QobjBuilder
 
 class _StateQobj(Qobj):
     _auto_dm = ["ptrace",]
@@ -96,3 +96,9 @@ class Ket(_StateQobj):
     @property
     def isket(self) -> bool:
         return True
+
+
+_QobjBuilder.qobjtype_to_class["ket"] = Ket
+_QobjBuilder.qobjtype_to_class["bra"] = Bra
+_QobjBuilder.qobjtype_to_class["operator-ket"] = OperKet
+_QobjBuilder.qobjtype_to_class["operator-bra"] = OperBra

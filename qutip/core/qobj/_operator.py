@@ -1,4 +1,4 @@
-from .qobj_base import Qobj
+from ._base import Qobj, _QobjBuilder
 
 class _RecOperator(Qobj):
     def __init__(self, data, dims, copy):
@@ -652,3 +652,8 @@ class Operator(_RecOperator):
                                      value)
         out_data = _data.mul(out_data, 1/_data.norm.trace(out_data))
         return Qobj(out_data, dims=self._dims, isherm=True, copy=False)
+
+
+_QobjBuilder.qobjtype_to_class["scalar"] = Operator
+_QobjBuilder.qobjtype_to_class["oper"] = Operator
+_QobjBuilder.qobjtype_to_class["super"] = Operator
