@@ -1,9 +1,29 @@
 from ._base import Qobj, _QobjBuilder
+from ...settings import settings
+import numpy as np
+from qutip.typing import LayerType
+import qutip
+from typing import Any, Literal
+import numbers
+from .. import data as _data
+from ..dimensions import enumerate_flat
+import warnings
+
+
+__all__ = []
+
+
+_CALL_ALLOWED = {
+    ('super', 'oper'),
+    ('super', 'ket'),
+    ('oper', 'ket'),
+}
+
 
 class _RecOperator(Qobj):
-    def __init__(self, data, dims, copy):
-        super.__init__(data, dims, copy)
-        if self._dims.type not in ["oper", "super"]:
+    def __init__(self, data, dims, **flags):
+        super().__init__(data, dims, **flags)
+        if self._dims.type not in ["scalar", "oper", "super"]:
             raise ValueError(
                 f"Expected operator dimensions, but got {self._dims.type}"
             )
@@ -60,25 +80,25 @@ class _RecOperator(Qobj):
         """
         return qutip.dnorm(self, B)
 
-    @property
-    def ishp(self) -> bool:
-        return False
+    #@property
+    #def ishp(self) -> bool:
+    #    return False
 
-    @property
-    def iscp(self) -> bool:
-        return False
+    #@property
+    #def iscp(self) -> bool:
+    #    return False
 
-    @property
-    def istp(self) -> bool:
-        return False
+    #@property
+    #def istp(self) -> bool:
+    #    return False
 
-    @property
-    def iscptp(self) -> bool:
-        return False
+    #@property
+    #def iscptp(self) -> bool:
+    #    return False
 
-    @property
-    def isoper(self) -> bool:
-        return True
+    #@property
+    #def isoper(self) -> bool:
+    #    return True
 
     @property
     def isoperket(self) -> bool:
@@ -96,15 +116,31 @@ class _RecOperator(Qobj):
     def isket(self) -> bool:
         return False
 
+    def __call__(self, other: Qobj) -> Qobj:
+        """
+        Acts this Qobj on another Qobj either by left-multiplication,
+        or by vectorization and devectorization, as
+        appropriate.
+        """
+        if not isinstance(other, Qobj):
+            raise TypeError("Only defined for quantum objects.")
+        if (self.type, other.type) not in _CALL_ALLOWED:
+            raise TypeError(self.type + " cannot act on " + other.type)
+        if self.issuper:
+            if other.isket:
+                other = other.proj()
+            return qutip.vector_to_operator(self @ qutip.operator_to_vector(other))
+        return self.__matmul__(other)
+
 
 class Operator(_RecOperator):
-    def __init__(self, data, dims, copy):
-        super.__init__(data, dims, copy)
-        if not self._dims.issquare:
-            raise ValueError(
-                f"Expected square operator dimensions, "
-                "but got {self._dims.type}."
-            )
+    def __init__(self, data, dims, **flags):
+        super().__init__(data, dims, **flags)
+        #if not self._dims.issquare:
+        #    raise ValueError(
+        #        "Expected square operator dimensions, "
+        #        f"but got {self._dims.type}."
+        #    )
 
     def __pow__(self, n: int, m=None) -> Qobj:
         # calculates powers of Qobj
@@ -326,78 +362,6 @@ class Operator(_RecOperator):
         self._isherm = None
         return self.isherm
 
-    def ptrace(self, sel: int | list[int], dtype: LayerType = None) -> Qobj:
-        """
-        Take the partial trace of the quantum object leaving the selected
-        subspaces.  In other words, trace out all subspaces which are _not_
-        passed.
-
-        This is typically a function which acts on operators; bras and kets
-        will be promoted to density matrices before the operation takes place
-        since the partial trace is inherently undefined on pure states.
-
-        For operators which are currently being represented as states in the
-        superoperator formalism (i.e. the object has type `operator-ket` or
-        `operator-bra`), the partial trace is applied as if the operator were
-        in the conventional form.  This means that for any operator `x`,
-        ``operator_to_vector(x).ptrace(0) == operator_to_vector(x.ptrace(0))``
-        and similar for `operator-bra`.
-
-        The story is different for full superoperators.  In the formalism that
-        QuTiP uses, if an operator has dimensions (`dims`) of
-        `[[2, 3], [2, 3]]` then it can be represented as a state on a Hilbert
-        space of dimensions `[2, 3, 2, 3]`, and a superoperator would be an
-        operator which acts on this joint space.  This function performs the
-        partial trace on superoperators by letting the selected components
-        refer to elements of the _joint_ _space_, and then returns a regular
-        operator (of type `oper`).
-
-        Parameters
-        ----------
-        sel : int or iterable of int
-            An ``int`` or ``list`` of components to keep after partial trace.
-            The selected subspaces will _not_ be reordered, no matter order
-            they are supplied to `ptrace`.
-
-        Returns
-        -------
-        oper : :class:`.Qobj`
-            Quantum object representing partial trace with selected components
-            remaining.
-        """
-        try:
-            sel = sorted(sel)
-        except TypeError:
-            if not isinstance(sel, numbers.Integral):
-                raise TypeError(
-                    "selection must be an integer or list of integers"
-                ) from None
-            sel = [sel]
-        if self.isoperket:
-            dims = self.dims[0]
-            data = qutip.vector_to_operator(self).data
-        elif self.isoperbra:
-            dims = self.dims[1]
-            data = qutip.vector_to_operator(self.dag()).data
-        elif self.issuper or self.isoper:
-            dims = self.dims
-            data = self.data
-        else:
-            dims = [self.dims[0] if self.isket else self.dims[1]] * 2
-            data = _data.project(self.data)
-        if dims[0] != dims[1]:
-            raise ValueError("partial trace is not defined on non-square maps")
-        dims = flatten(dims[0])
-        new_data = _data.ptrace(data, dims, sel, dtype=dtype)
-        new_dims = [[dims[x] for x in sel]] * 2 if sel else None
-        out = Qobj(new_data, dims=new_dims, copy=False)
-        if self.isoperket:
-            return qutip.operator_to_vector(out)
-        if self.isoperbra:
-            return qutip.operator_to_vector(out).dag()
-        return out
-
-
     def eigenstates(
         self,
         sparse: bool = False,
@@ -579,23 +543,6 @@ class Operator(_RecOperator):
                 warnings.warn("Ground state may be degenerate.", UserWarning)
         return evals[0], evecs[0]
 
-    def purity(self) -> complex:
-        """Calculate purity of a quantum object.
-
-        Returns
-        -------
-        state_purity : float
-            Returns the purity of a quantum object.
-            For a pure state, the purity is 1.
-            For a mixed state of dimension `d`, 1/d<=purity<1.
-
-        """
-        if self.type in ("super", "operator-ket", "operator-bra"):
-            raise TypeError('purity is only defined for states.')
-        if self.isket or self.isbra:
-            return _data.norm.l2(self._data)**2
-        return _data.trace(_data.matmul(self._data, self._data)).real
-
     def trunc_neg(self, method: Literal["clip", "sgs"] = "clip") -> Qobj:
         """Truncates negative eigenvalues and renormalizes.
 
@@ -652,6 +599,23 @@ class Operator(_RecOperator):
                                      value)
         out_data = _data.mul(out_data, 1/_data.norm.trace(out_data))
         return Qobj(out_data, dims=self._dims, isherm=True, copy=False)
+
+    def dual_chan(self) -> Qobj:
+        """Dual channel of quantum object representing a completely positive
+        map.
+        """
+        # Uses the technique of Johnston and Kribs (arXiv:1102.0948), which
+        # is only valid for completely positive maps.
+        if not self.iscp:
+            raise ValueError("Dual channels are only implemented for CP maps.")
+        J = qutip.to_choi(self)
+        tensor_idxs = enumerate_flat(J.dims)
+        J_dual = qutip.tensor_swap(J, *(
+                list(zip(tensor_idxs[0][1], tensor_idxs[0][0])) +
+                list(zip(tensor_idxs[1][1], tensor_idxs[1][0]))
+        )).trans()
+        J_dual.superrep = 'choi'
+        return J_dual
 
 
 _QobjBuilder.qobjtype_to_class["scalar"] = Operator

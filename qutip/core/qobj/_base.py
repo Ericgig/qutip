@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import numbers
 import functools
+import scipy.sparse
 
 import qutip
 from ... import __version__
@@ -14,6 +15,17 @@ from ..dimensions import (
 from typing import Any, Literal
 from qutip.typing import LayerType, DimensionLike
 from numpy.typing import ArrayLike
+
+
+_NORM_FUNCTION_LOOKUP = {
+    'tr': _data.norm.trace,
+    'one': _data.norm.one,
+    'max': _data.norm.max,
+    'fro': _data.norm.frobenius,
+    'l2': _data.norm.l2,
+}
+_NORM_ALLOWED_MATRIX = {'tr', 'fro', 'one', 'max'}
+_NORM_ALLOWED_VECTOR = {'l2', 'max'}
 
 
 class _QobjBuilder(type):
@@ -33,11 +45,11 @@ class _QobjBuilder(type):
         else:
             data = _data.create(arg, copy=copy)
             dims = Dimensions(
-                raw_dims or [[self._data.shape[0]], [self._data.shape[1]]]
+                raw_dims or [[data.shape[0]], [data.shape[1]]]
             )
         if dims.shape != data.shape:
             raise ValueError('Provided dimensions do not match the data: ' +
-                             f"{self._dims.shape} vs {self._data.shape}")
+                             f"{dims.shape} vs {data.shape}")
 
         return data, dims, flags
 
@@ -102,6 +114,7 @@ class Qobj(metaclass=_QobjBuilder):
     dims: Dimensions
     _data: Data
     data: data
+    __array_ufunc__ = None
 
     def __init__(
         self,
@@ -113,7 +126,7 @@ class Qobj(metaclass=_QobjBuilder):
         isunitary: bool = None
     ):
         if not (isinstance(arg, _data.Data) and isinstance(dims, Dimensions)):
-            data, dims, flags = _QobjBuilder._initialize_data(arg, dims, copy)
+            arg, dims, flags = _QobjBuilder._initialize_data(arg, dims, copy)
             if isherm is None and flags["isherm"] is not None:
                 isherm = flags["isherm"]
             if isunitary is None and flags["isunitary"] is not None:
@@ -121,7 +134,7 @@ class Qobj(metaclass=_QobjBuilder):
             if superrep is not None:
                 dims = dims.replace_superrep(superrep)
 
-        self._data = data
+        self._data = arg
         self._dims = dims
         self._isherm = isherm
         self._isunitary = isunitary
@@ -200,7 +213,7 @@ class Qobj(metaclass=_QobjBuilder):
             return self.copy()
         elif type(self._data) is data_type:
             return self
-        return self.cls(
+        return self.__class__(
             _data.to(data_type, self._data),
             dims=self._dims,
             isherm=self._isherm,
@@ -283,7 +296,10 @@ class Qobj(metaclass=_QobjBuilder):
 
     def __matmul__(self, other: Qobj) -> Qobj:
         if not isinstance(other, Qobj):
-            return NotImplemented
+            try:
+                other = Qobj(other)
+            except TypeError:
+                return NotImplemented
         new_dims = self._dims @ other._dims
         if new_dims.type == 'scalar':
             return _data.inner(self._data, other._data)
@@ -415,6 +431,22 @@ class Qobj(metaclass=_QobjBuilder):
         if 'qutip_version' in state.keys():
             del state['qutip_version']
         (self.__dict__).update(state)
+
+    def __getitem__(self, ind):
+        # TODO: should we require that data-layer types implement this?  This
+        # isn't the right way of handling it, for sure.
+        if isinstance(self._data, _data.CSR):
+            data = self._data.as_scipy()
+        elif isinstance(self._data, _data.Dense):
+            data = self._data.as_ndarray()
+        else:
+            data = self._data
+        try:
+            out = data[ind]
+            return out.toarray() if scipy.sparse.issparse(out) else out
+        except TypeError:
+            pass
+        return data.to_array()[ind]
 
     def full(
         self,
@@ -617,6 +649,83 @@ class Qobj(metaclass=_QobjBuilder):
         self.data = _data.tidyup(self.data, atol)
         return self
 
+    def norm(
+        self,
+        norm: Literal["l2", "max", "fro", "tr", "one"] = None,
+        kwargs: dict[str, Any] = None
+    ) -> float:
+        """
+        Norm of a quantum object.
+
+        Default norm is L2-norm for kets and trace-norm for operators.  Other
+        ket and operator norms may be specified using the `norm` parameter.
+
+        Parameters
+        ----------
+        norm : str
+            Which type of norm to use.  Allowed values for vectors are 'l2' and
+            'max'.  Allowed values for matrices are 'tr' for the trace norm,
+            'fro' for the Frobenius norm, 'one' and 'max'.
+
+        kwargs : dict
+            Additional keyword arguments to pass on to the relevant norm
+            solver.  See details for each norm function in :mod:`.data.norm`.
+
+        Returns
+        -------
+        norm : float
+            The requested norm of the operator or state quantum object.
+        """
+        if self.type in ('oper', 'super'):
+            norm = norm or 'tr'
+            if norm not in _NORM_ALLOWED_MATRIX:
+                raise ValueError(
+                    "matrix norm must be in " + repr(_NORM_ALLOWED_MATRIX)
+                )
+        else:
+            norm = norm or 'l2'
+            if norm not in _NORM_ALLOWED_VECTOR:
+                raise ValueError(
+                    "vector norm must be in " + repr(_NORM_ALLOWED_VECTOR)
+                )
+        kwargs = kwargs or {}
+        return _NORM_FUNCTION_LOOKUP[norm](self._data, **kwargs)
+
+    def unit(
+        self,
+        inplace: bool = False,
+        norm: Literal["l2", "max", "fro", "tr", "one"] = None,
+        kwargs: dict[str, Any] = None
+    ) -> Qobj:
+        """
+        Operator or state normalized to unity.  Uses norm from Qobj.norm().
+
+        Parameters
+        ----------
+        inplace : bool
+            Do an in-place normalization
+        norm : str
+            Requested norm for states / operators.
+        kwargs : dict
+            Additional key-word arguments to be passed on to the relevant norm
+            function (see :meth:`.norm` for more details).
+
+        Returns
+        -------
+        obj : :class:`.Qobj`
+            Normalized quantum object.  Will be the `self` object if in place.
+        """
+        norm_ = self.norm(norm=norm, kwargs=kwargs)
+        if inplace:
+            self.data = _data.mul(self.data, 1 / norm_)
+            self._isherm = self._isherm if norm_.imag == 0 else None
+            self._isunitary = (self._isunitary
+                               if abs(norm_) - 1 < settings.core['atol']
+                               else None)
+            out = self
+        else:
+            out = self / norm_
+        return out
 
     def transform(
         self,
@@ -861,3 +970,72 @@ class Qobj(metaclass=_QobjBuilder):
     def isoperbra(self) -> bool:
         """Indicates if the Qobj represents a operator-bra state."""
         return self._dims.type == 'operator-bra'
+
+    @property
+    def superrep(self) -> str:
+        return self._dims.superrep
+
+    @superrep.setter
+    def superrep(self, super_rep: str):
+        self._dims = self._dims.replace_superrep(super_rep)
+
+    def ptrace(self, sel: int | list[int], dtype: LayerType = None) -> Qobj:
+        """
+        Take the partial trace of the quantum object leaving the selected
+        subspaces.  In other words, trace out all subspaces which are _not_
+        passed.
+
+        This is typically a function which acts on operators; bras and kets
+        will be promoted to density matrices before the operation takes place
+        since the partial trace is inherently undefined on pure states.
+
+        For operators which are currently being represented as states in the
+        superoperator formalism (i.e. the object has type `operator-ket` or
+        `operator-bra`), the partial trace is applied as if the operator were
+        in the conventional form.  This means that for any operator `x`,
+        ``operator_to_vector(x).ptrace(0) == operator_to_vector(x.ptrace(0))``
+        and similar for `operator-bra`.
+
+        The story is different for full superoperators.  In the formalism that
+        QuTiP uses, if an operator has dimensions (`dims`) of
+        `[[2, 3], [2, 3]]` then it can be represented as a state on a Hilbert
+        space of dimensions `[2, 3, 2, 3]`, and a superoperator would be an
+        operator which acts on this joint space.  This function performs the
+        partial trace on superoperators by letting the selected components
+        refer to elements of the _joint_ _space_, and then returns a regular
+        operator (of type `oper`).
+
+        Parameters
+        ----------
+        sel : int or iterable of int
+            An ``int`` or ``list`` of components to keep after partial trace.
+            The selected subspaces will _not_ be reordered, no matter order
+            they are supplied to `ptrace`.
+
+        dtype : type, str
+            The matrix format of output.
+
+        Returns
+        -------
+        oper : :class:`.Qobj`
+            Quantum object representing partial trace with selected components
+            remaining.
+        """
+        return qutip.ptrace(self, sel, dtype)
+
+    def purity(self) -> complex:
+        """Calculate purity of a quantum object.
+
+        Returns
+        -------
+        state_purity : float
+            Returns the purity of a quantum object.
+            For a pure state, the purity is 1.
+            For a mixed state of dimension `d`, 1/d<=purity<1.
+
+        """
+        if self.type in ("super", "operator-ket", "operator-bra"):
+            raise TypeError('purity is only defined for states.')
+        if self.isket or self.isbra:
+            return _data.norm.l2(self._data)**2
+        return _data.trace(_data.matmul(self._data, self._data)).real
