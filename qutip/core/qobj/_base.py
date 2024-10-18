@@ -28,6 +28,35 @@ _NORM_ALLOWED_MATRIX = {'tr', 'fro', 'one', 'max'}
 _NORM_ALLOWED_VECTOR = {'l2', 'max'}
 
 
+def _latex_real(x):
+    if not x:
+        return "0"
+    if not 0.001 <= abs(x) < 1000:
+        base, exp = "{:.3e}".format(x).split('e')
+        return base + r"\times10^{{ {:d} }}".format(int(exp))
+    if abs(x - int(x)) < 0.001:
+        return "{:d}".format(round(x))
+    return "{:.3f}".format(x)
+
+
+def _latex_complex(x):
+    if abs(x.imag) < 0.001:
+        return _latex_real(x.real)
+    if abs(x.real) < 0.001:
+        return _latex_real(x.imag) + "j"
+    sign = "+" if x.imag > 0 else "-"
+    return "(" + _latex_real(x.real) + sign + _latex_real(abs(x.imag)) + "j)"
+
+
+def _latex_row(row, cols, data):
+    if row is None:
+        bits = (r"\ddots" if col is None else r"\vdots" for col in cols)
+    else:
+        bits = (r"\cdots" if col is None else _latex_complex(data[row, col])
+                for col in cols)
+    return " & ".join(bits)
+
+
 class _QobjBuilder(type):
     qobjtype_to_class = {}
 
@@ -62,6 +91,15 @@ class _QobjBuilder(type):
         isherm: bool = None,
         isunitary: bool = None
     ):
+        if cls is not Qobj:
+            out = cls.__new__(cls)
+            out.__init__(
+                arg, dims,
+                copy=copy, superrep=superrep,
+                isherm=isherm, isunitary=isunitary
+            )
+            return out
+
         data, dims, flags = _QobjBuilder._initialize_data(arg, dims, copy)
         if isherm is not None:
             flags["isherm"] = isherm
@@ -116,6 +154,7 @@ class Qobj(metaclass=_QobjBuilder):
     data: data
     __array_ufunc__ = None
 
+
     def __init__(
         self,
         arg: ArrayLike | Any = None,
@@ -136,8 +175,11 @@ class Qobj(metaclass=_QobjBuilder):
 
         self._data = arg
         self._dims = dims
-        self._isherm = isherm
-        self._isunitary = isunitary
+        self._flags = {}
+        if isherm is not None:
+            self._flags["isherm"] = isherm
+        if isunitary is not None:
+            self._flags["isunitary"] = isunitary
 
     @property
     def type(self) -> str:
@@ -719,9 +761,9 @@ class Qobj(metaclass=_QobjBuilder):
         if inplace:
             self.data = _data.mul(self.data, 1 / norm_)
             self._isherm = self._isherm if norm_.imag == 0 else None
-            self._isunitary = (self._isunitary
-                               if abs(norm_) - 1 < settings.core['atol']
-                               else None)
+            self.isunitary = (self._isunitary
+                              if abs(norm_) - 1 < settings.core['atol']
+                              else None)
             out = self
         else:
             out = self / norm_
@@ -846,77 +888,34 @@ class Qobj(metaclass=_QobjBuilder):
 
     @property
     def ishp(self) -> bool:
-        # FIXME: this needs to be cached in the same ways as isherm.
-        if self.type in ["super", "oper"]:
-            try:
-                J = qutip.to_choi(self)
-                return J.isherm
-            except:
-                return False
-        else:
-            return False
+        return False
 
     @property
     def iscp(self) -> bool:
-        # FIXME: this needs to be cached in the same ways as isherm.
-        if self.type not in ["super", "oper"]:
-            return False
-        # We can test with either Choi or chi, since the basis
-        # transformation between them is unitary and hence preserves
-        # the CP and TP conditions.
-        J = self if self.superrep in ('choi', 'chi') else qutip.to_choi(self)
-        # If J isn't hermitian, then that could indicate either that J is not
-        # normal, or is normal, but has complex eigenvalues.  In either case,
-        # it makes no sense to then demand that the eigenvalues be
-        # non-negative.
-        return J.isherm and np.all(J.eigenenergies() >= -settings.core['atol'])
+        return False
 
     @property
     def istp(self) -> bool:
-        if self.type not in ['super', 'oper']:
-            return False
-        # Normalize to a super of type choi or chi.
-        # We can test with either Choi or chi, since the basis
-        # transformation between them is unitary and hence
-        # preserves the CP and TP conditions.
-        if self.issuper and self.superrep in ('choi', 'chi'):
-            qobj = self
-        else:
-            qobj = qutip.to_choi(self)
-        # Possibly collapse dims.
-        if any([len(index) > 1
-                for super_index in qobj.dims
-                for index in super_index]):
-            qobj = Qobj(qobj.data,
-                        dims=collapse_dims_super(qobj.dims),
-                        superrep=qobj.superrep,
-                        copy=False)
-        # We use the condition from John Watrous' lecture notes,
-        # Tr_1(J(Phi)) = identity_2.
-        # See: https://cs.uwaterloo.ca/~watrous/LectureNotes.html,
-        # Theory of Quantum Information (Fall 2011), theorem 5.4.
-        tr_oper = qobj.ptrace([0])
-        return np.allclose(tr_oper.full(), np.eye(tr_oper.shape[0]),
-                           atol=settings.core['atol'])
+        return False
 
     @property
     def iscptp(self) -> bool:
-        if not (self.issuper or self.isoper):
-            return False
-        reps = ('choi', 'chi')
-        q_oper = qutip.to_choi(self) if self.superrep not in reps else self
-        return q_oper.iscp and q_oper.istp
+        return False
 
     @property
     def isherm(self) -> bool:
-        if self._isherm is not None:
-            return self._isherm
-        self._isherm = _data.isherm(self._data)
-        return self._isherm
+        if self._flags.get("isherm", None) is None:
+            self._flags["isherm"] = _data.isherm(self._data)
+        return self._flags["isherm"]
 
     @isherm.setter
     def isherm(self, isherm: bool):
-        self._isherm = isherm
+        self._flags["isherm"] = isherm
+
+    @property
+    def _isherm(self) -> bool:
+        # Weak version of `isherm`, does not compute if missing
+        return self._flags.get("isherm", None)
 
     def _calculate_isunitary(self):
         """
@@ -931,10 +930,18 @@ class Qobj(metaclass=_QobjBuilder):
 
     @property
     def isunitary(self) -> bool:
-        if self._isunitary is not None:
-            return self._isunitary
-        self._isunitary = self._calculate_isunitary()
-        return self._isunitary
+        if self._flags.get("isunitary", None) is None:
+            self._flags["isunitary"] = self._calculate_isunitary()
+        return self._flags["isunitary"]
+
+    @isunitary.setter
+    def isunitary(self, isunitary: bool):
+        self._flags["isunitary"] = isunitary
+
+    @property
+    def _isunitary(self) -> bool:
+        # Weak version of `isunitary`, does not compute if missing
+        return self._flags.get("isunitary", None)
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -944,32 +951,32 @@ class Qobj(metaclass=_QobjBuilder):
     @property
     def isoper(self) -> bool:
         """Indicates if the Qobj represents an operator."""
-        return self._dims.type in ['oper', 'scalar']
+        return False
 
     @property
     def isbra(self) -> bool:
         """Indicates if the Qobj represents a bra state."""
-        return self._dims.type in ['bra', 'scalar']
+        return False
 
     @property
     def isket(self) -> bool:
         """Indicates if the Qobj represents a ket state."""
-        return self._dims.type in ['ket', 'scalar']
+        return False
 
     @property
     def issuper(self) -> bool:
         """Indicates if the Qobj represents a superoperator."""
-        return self._dims.type == 'super'
+        return False
 
     @property
     def isoperket(self) -> bool:
         """Indicates if the Qobj represents a operator-ket state."""
-        return self._dims.type == 'operator-ket'
+        return False
 
     @property
     def isoperbra(self) -> bool:
         """Indicates if the Qobj represents a operator-bra state."""
-        return self._dims.type == 'operator-bra'
+        return False
 
     @property
     def superrep(self) -> str:

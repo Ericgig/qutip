@@ -162,7 +162,7 @@ def assert_unitarity(oper, unitarity):
     assert oper.isunitary == unitarity
 
     # Force a reset of the cached value for isunitary.
-    oper._isunitary = None
+    oper.isunitary = None
     # Force a recalculation of isunitary.
     assert oper.isunitary == unitarity
 

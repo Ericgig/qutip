@@ -25,46 +25,6 @@ class _StateQobj(Qobj):
                     isherm=True,
                     copy=False)
 
-    @property
-    def ishp(self) -> bool:
-        return False
-
-    @property
-    def iscp(self) -> bool:
-        return False
-
-    @property
-    def istp(self) -> bool:
-        return False
-
-    @property
-    def iscptp(self) -> bool:
-        return False
-
-    @property
-    def isherm(self) -> bool:
-        return False
-
-    @property
-    def isunitary(self) -> bool:
-        return False
-
-    @property
-    def isoper(self) -> bool:
-        return False
-
-    @property
-    def issuper(self) -> bool:
-        return False
-
-    @property
-    def isoperket(self) -> bool:
-        return False
-
-    @property
-    def isoperbra(self) -> bool:
-        return False
-
 
 class Bra(_StateQobj):
     def __init__(self, data, dims, **flags):
@@ -78,9 +38,6 @@ class Bra(_StateQobj):
     def isbra(self) -> bool:
         return True
 
-    @property
-    def isket(self) -> bool:
-        return False
 
 
 class Ket(_StateQobj):
@@ -90,10 +47,6 @@ class Ket(_StateQobj):
             raise ValueError(
                 f"Expected ket dimensions, but got {self._dims.type}"
             )
-
-    @property
-    def isbra(self) -> bool:
-        return False
 
     @property
     def isket(self) -> bool:
@@ -109,20 +62,8 @@ class OperKet(_StateQobj):
             )
 
     @property
-    def isbra(self) -> bool:
-        return False
-
-    @property
-    def isket(self) -> bool:
-        return False
-
-    @property
     def isoperket(self) -> bool:
         return True
-
-    @property
-    def isoperbra(self) -> bool:
-        return False
 
 
 class OperBra(_StateQobj):
@@ -132,18 +73,6 @@ class OperBra(_StateQobj):
             raise ValueError(
                 f"Expected ket dimensions, but got {self._dims.type}"
             )
-
-    @property
-    def isbra(self) -> bool:
-        return False
-
-    @property
-    def isket(self) -> bool:
-        return False
-
-    @property
-    def isoperket(self) -> bool:
-        return False
 
     @property
     def isoperbra(self) -> bool:
