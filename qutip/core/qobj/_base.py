@@ -718,18 +718,19 @@ class Qobj(metaclass=_QobjBuilder):
         norm : float
             The requested norm of the operator or state quantum object.
         """
-        if self.type in ('oper', 'super'):
-            norm = norm or 'tr'
-            if norm not in _NORM_ALLOWED_MATRIX:
-                raise ValueError(
-                    "matrix norm must be in " + repr(_NORM_ALLOWED_MATRIX)
-                )
-        else:
+        if self.type in ('ket', 'bra'):
             norm = norm or 'l2'
             if norm not in _NORM_ALLOWED_VECTOR:
                 raise ValueError(
                     "vector norm must be in " + repr(_NORM_ALLOWED_VECTOR)
                 )
+        else:
+            norm = norm or 'tr'
+            if norm not in _NORM_ALLOWED_MATRIX:
+                raise ValueError(
+                    "matrix norm must be in " + repr(_NORM_ALLOWED_MATRIX)
+                )
+
         kwargs = kwargs or {}
         return _NORM_FUNCTION_LOOKUP[norm](self._data, **kwargs)
 
@@ -760,7 +761,7 @@ class Qobj(metaclass=_QobjBuilder):
         norm_ = self.norm(norm=norm, kwargs=kwargs)
         if inplace:
             self.data = _data.mul(self.data, 1 / norm_)
-            self._isherm = self._isherm if norm_.imag == 0 else None
+            self.isherm = self._isherm if norm_.imag == 0 else None
             self.isunitary = (self._isunitary
                               if abs(norm_) - 1 < settings.core['atol']
                               else None)

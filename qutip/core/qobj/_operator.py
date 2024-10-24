@@ -6,7 +6,7 @@ import qutip
 from typing import Any, Literal
 import numbers
 from .. import data as _data
-from ..dimensions import enumerate_flat
+from ..dimensions import enumerate_flat, collapse_dims_super
 import warnings
 
 
@@ -20,81 +20,10 @@ _CALL_ALLOWED = {
 }
 
 
-class _RecOperator(Qobj):
-    def __init__(self, data, dims, **flags):
-        super().__init__(data, dims, **flags)
-
-    def matrix_element(self, bra: Qobj, ket: Qobj) -> Qobj:
-        """Calculates a matrix element.
-
-        Gives the matrix element for the quantum object sandwiched between a
-        `bra` and `ket` vector.
-
-        Parameters
-        ----------
-        bra : :class:`.Qobj`
-            Quantum object of type 'bra' or 'ket'
-
-        ket : :class:`.Qobj`
-            Quantum object of type 'ket'.
-
-        Returns
-        -------
-        elem : complex
-            Complex valued matrix element.
-
-        Notes
-        -----
-        It is slightly more computationally efficient to use a ket
-        vector for the 'bra' input.
-
-        """
-        if bra.type not in ('bra', 'ket') or ket.type not in ('bra', 'ket'):
-            msg = "Can only calculate matrix elements between a bra and a ket."
-            raise TypeError(msg)
-        left, op, right = bra.data, self.data, ket.data
-        if ket.isbra:
-            right = right.adjoint()
-        return _data.inner_op(left, op, right, bra.isket)
-
-    def dnorm(self, B: Qobj = None) -> float:
-        """Calculates the diamond norm, or the diamond distance to another
-        operator.
-
-        Parameters
-        ----------
-        B : :class:`.Qobj` or None
-            If B is not None, the diamond distance d(A, B) = dnorm(A - B)
-            between this operator and B is returned instead of the diamond norm.
-
-        Returns
-        -------
-        d : float
-            Either the diamond norm of this operator, or the diamond distance
-            from this operator to B.
-
-        """
-        return qutip.dnorm(self, B)
-
+class Operator(Qobj):
     @property
     def isoper(self) -> bool:
         return True
-
-    def __call__(self, other: Qobj) -> Qobj:
-        """
-        Acts this Qobj on another Qobj either by left-multiplication,
-        or by vectorization and devectorization, as
-        appropriate.
-        """
-        if not isinstance(other, Qobj):
-            raise TypeError("Only defined for quantum objects.")
-        if (self.type, other.type) not in _CALL_ALLOWED:
-            raise TypeError(self.type + " cannot act on " + other.type)
-        if self.issuper:
-            if other.isket:
-                other = other.proj()
-            return qutip.vector_to_operator(self @ qutip.operator_to_vector(other))
-        return self.__matmul__(other)
 
     @property
     def ishp(self) -> bool:
@@ -167,15 +96,73 @@ class _RecOperator(Qobj):
             self._flags["istp"] = q_oper.istp
         return self.iscp and self.istp
 
+    def matrix_element(self, bra: Qobj, ket: Qobj) -> Qobj:
+        """Calculates a matrix element.
 
-class Operator(_RecOperator):
-    def __init__(self, data, dims, **flags):
-        super().__init__(data, dims, **flags)
-        if not self.shape[0] == self.shape[1]:
-            raise ValueError(
-                "Expected square operator dimensions, "
-                f"but got a shape {self.shape}."
-            )
+        Gives the matrix element for the quantum object sandwiched between a
+        `bra` and `ket` vector.
+
+        Parameters
+        ----------
+        bra : :class:`.Qobj`
+            Quantum object of type 'bra' or 'ket'
+
+        ket : :class:`.Qobj`
+            Quantum object of type 'ket'.
+
+        Returns
+        -------
+        elem : complex
+            Complex valued matrix element.
+
+        Notes
+        -----
+        It is slightly more computationally efficient to use a ket
+        vector for the 'bra' input.
+
+        """
+        if bra.type not in ('bra', 'ket') or ket.type not in ('bra', 'ket'):
+            msg = "Can only calculate matrix elements between a bra and a ket."
+            raise TypeError(msg)
+        left, op, right = bra.data, self.data, ket.data
+        if ket.isbra:
+            right = right.adjoint()
+        return _data.inner_op(left, op, right, bra.isket)
+
+    def dnorm(self, B: Qobj = None) -> float:
+        """Calculates the diamond norm, or the diamond distance to another
+        operator.
+
+        Parameters
+        ----------
+        B : :class:`.Qobj` or None
+            If B is not None, the diamond distance d(A, B) = dnorm(A - B)
+            between this operator and B is returned instead of the diamond norm.
+
+        Returns
+        -------
+        d : float
+            Either the diamond norm of this operator, or the diamond distance
+            from this operator to B.
+
+        """
+        return qutip.dnorm(self, B)
+
+    def __call__(self, other: Qobj) -> Qobj:
+        """
+        Acts this Qobj on another Qobj either by left-multiplication,
+        or by vectorization and devectorization, as
+        appropriate.
+        """
+        if not isinstance(other, Qobj):
+            raise TypeError("Only defined for quantum objects.")
+        if (self.type, other.type) not in _CALL_ALLOWED:
+            raise TypeError(self.type + " cannot act on " + other.type)
+        if self.issuper:
+            if other.isket:
+                other = other.proj()
+            return qutip.vector_to_operator(self @ qutip.operator_to_vector(other))
+        return self.__matmul__(other)
 
     def __pow__(self, n: int, m=None) -> Qobj:
         # calculates powers of Qobj
