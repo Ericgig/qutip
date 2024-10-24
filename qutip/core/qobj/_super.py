@@ -41,5 +41,4 @@ class SuperOperator(Operator):
         return J_dual
 
 
-_QobjBuilder.qobjtype_to_class["scalar"] = SuperOperator
 _QobjBuilder.qobjtype_to_class["super"] = SuperOperator

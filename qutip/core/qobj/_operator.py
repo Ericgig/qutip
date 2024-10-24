@@ -623,4 +623,20 @@ class Operator(Qobj):
         return Qobj(out_data, dims=self._dims, isherm=True, copy=False)
 
 
+class Scalar(Operator):
+    # Scalar can be anything
+    def __init__(self, data, dims, **flags):
+        Qobj.__init__(self, data, dims, **flags)
+        if self._dims.type not in ["scalar"]:
+            raise ValueError(
+                f"Expected scalar dimensions, but got {self._dims.type}"
+            )
+
+    @property
+    def issuper(self) -> bool:
+        """Indicates if the Qobj represents a superoperator."""
+        return self._dims.issuper
+
+
+_QobjBuilder.qobjtype_to_class["scalar"] = Scalar
 _QobjBuilder.qobjtype_to_class["oper"] = Operator
