@@ -8,7 +8,7 @@ from ...settings import settings
 class SuperOperator(Operator):
     def __init__(self, data, dims, **flags):
         super().__init__(data, dims, **flags)
-        if self._dims.type not in ["super", "scalar"]:
+        if self._dims.type not in ["super"]:
             raise ValueError(
                 f"Expected super operator dimensions, but got {self._dims.type}"
             )
