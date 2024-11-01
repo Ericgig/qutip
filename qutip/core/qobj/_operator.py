@@ -26,75 +26,47 @@ class Operator(Qobj):
         return True
 
     @property
-    def ishp(self) -> bool:
-        if self._flags.get("ishp", None) is None:
-            try:
-                J = qutip.to_choi(self)
-                self._flags["ishp"] = J.isherm
-            except:
-                self._flags["ishp"] = False
+    def isherm(self) -> bool:
+        if self._flags.get("isherm", None) is None:
+            self._flags["isherm"] = _data.isherm(self._data)
+        return self._flags["isherm"]
 
-        return self._flags["ishp"]
+    @isherm.setter
+    def isherm(self, isherm: bool):
+        self._flags["isherm"] = isherm
+
+    @property
+    def isunitary(self) -> bool:
+        if self._flags.get("isunitary", None) is None:
+            if not self.isoper or self._data.shape[0] != self._data.shape[1]:
+                self._flags["isunitary"] = False
+            else:
+                cmp = _data.matmul(self._data, self._data.adjoint())
+                iden = _data.identity_like(cmp)
+                self._flags["isunitary"] = _data.iszero(
+                    _data.sub(cmp, iden), tol=settings.core['atol']
+                )
+        return self._flags["isunitary"]
+
+    @isunitary.setter
+    def isunitary(self, isunitary: bool):
+        self._flags["isunitary"] = isunitary
+
+    @property
+    def ishp(self) -> bool:
+        return True
 
     @property
     def iscp(self) -> bool:
-        if self._flags.get("iscp", None) is None:
-            # We can test with either Choi or chi, since the basis
-            # transformation between them is unitary and hence preserves
-            # the CP and TP conditions.
-            J = self if self.superrep in ('choi', 'chi') else qutip.to_choi(self)
-            # If J isn't hermitian, then that could indicate either that J is not
-            # normal, or is normal, but has complex eigenvalues.  In either case,
-            # it makes no sense to then demand that the eigenvalues be
-            # non-negative.
-            self._flags["iscp"] = (
-                J.isherm
-                and np.all(J.eigenenergies() >= -settings.core['atol'])
-            )
-        return self._flags["iscp"]
+        return True
 
     @property
     def istp(self) -> bool:
-        if self._flags.get("istp", None) is None:
-            # Normalize to a super of type choi or chi.
-            # We can test with either Choi or chi, since the basis
-            # transformation between them is unitary and hence
-            # preserves the CP and TP conditions.
-            if self.issuper and self.superrep in ('choi', 'chi'):
-                qobj = self
-            else:
-                qobj = qutip.to_choi(self)
-            # Possibly collapse dims.
-            if any([len(index) > 1
-                    for super_index in qobj.dims
-                    for index in super_index]):
-                qobj = Qobj(qobj.data,
-                            dims=collapse_dims_super(qobj.dims),
-                            superrep=qobj.superrep,
-                            copy=False)
-            # We use the condition from John Watrous' lecture notes,
-            # Tr_1(J(Phi)) = identity_2.
-            # See: https://cs.uwaterloo.ca/~watrous/LectureNotes.html,
-            # Theory of Quantum Information (Fall 2011), theorem 5.4.
-            tr_oper = qobj.ptrace([0])
-            self._flags["istp"] = np.allclose(
-                tr_oper.full(),
-                np.eye(tr_oper.shape[0]),
-                atol=settings.core['atol']
-            )
-        return self._flags["istp"]
+        return self.isunitary
 
     @property
     def iscptp(self) -> bool:
-        if (
-            self._flags.get("istp", None) is None
-            and self._flags.get("istp", None) is None
-        ):
-            reps = ('choi', 'chi')
-            q_oper = qutip.to_choi(self) if self.superrep not in reps else self
-            self._flags["iscp"] = q_oper.iscp
-            self._flags["istp"] = q_oper.istp
-        return self.iscp and self.istp
+        return self.isunitary
 
     def matrix_element(self, bra: Qobj, ket: Qobj) -> Qobj:
         """Calculates a matrix element.
@@ -381,7 +353,7 @@ class Operator(Qobj):
         isherm : bool
             Returns the new value of isherm property.
         """
-        self._isherm = None
+        self.isherm = None
         return self.isherm
 
     def eigenstates(

@@ -905,39 +905,16 @@ class Qobj(metaclass=_QobjBuilder):
 
     @property
     def isherm(self) -> bool:
-        if self._flags.get("isherm", None) is None:
-            self._flags["isherm"] = _data.isherm(self._data)
-        return self._flags["isherm"]
-
-    @isherm.setter
-    def isherm(self, isherm: bool):
-        self._flags["isherm"] = isherm
+        return False
 
     @property
     def _isherm(self) -> bool:
         # Weak version of `isherm`, does not compute if missing
         return self._flags.get("isherm", None)
 
-    def _calculate_isunitary(self):
-        """
-        Checks whether qobj is a unitary matrix
-        """
-        if not self.isoper or self._data.shape[0] != self._data.shape[1]:
-            return False
-        cmp = _data.matmul(self._data, self._data.adjoint())
-        iden = _data.identity_like(cmp)
-        return _data.iszero(_data.sub(cmp, iden),
-                            tol=settings.core['atol'])
-
     @property
     def isunitary(self) -> bool:
-        if self._flags.get("isunitary", None) is None:
-            self._flags["isunitary"] = self._calculate_isunitary()
-        return self._flags["isunitary"]
-
-    @isunitary.setter
-    def isunitary(self, isunitary: bool):
-        self._flags["isunitary"] = isunitary
+        return False
 
     @property
     def _isunitary(self) -> bool:
