@@ -17,7 +17,9 @@ from .. import Qobj, QobjEvo, coefficient, Coefficient
 from ..core.blochredfield import bloch_redfield_tensor, SpectraCoefficient
 from ..core.cy.coefficient import InterCoefficient
 from ..core import data as _data
-from .solver_base import Solver, _solver_deprecation
+from .solver_base import (
+    Solver, _solver_deprecation, _format_oper, _format_list_oper
+)
 from .options import _SolverOptions
 from ._feedback import _QobjFeedback, _DataFeedback
 from ..typing import EopsLike, QobjEvoLike, CoefficientLike
@@ -299,15 +301,8 @@ class BRSolver(Solver):
         self.sec_cutoff = sec_cutoff
         self.options = options
 
-        if not isinstance(H, (Qobj, QobjEvo)):
-            raise TypeError("The Hamiltonian must be a Qobj or QobjEvo")
-        H = QobjEvo(H)
-
-        c_ops = c_ops or []
-        c_ops = [c_ops] if isinstance(c_ops, (Qobj, QobjEvo)) else c_ops
-        for c_op in c_ops:
-            if not isinstance(c_op, (Qobj, QobjEvo)):
-                raise TypeError("All `c_ops` must be a Qobj or QobjEvo")
+        H = _format_oper(H=H)
+        c_ops = _format_list_oper(c_ops=c_ops)
 
         a_ops = a_ops or []
         if not hasattr(a_ops, "__iter__"):
@@ -316,11 +311,13 @@ class BRSolver(Solver):
             a_ops = [a_ops]
         for oper, spectra in a_ops:
             if not isinstance(oper, (Qobj, QobjEvo)):
-                raise TypeError("All `a_ops` operators "
-                                "must be a Qobj or QobjEvo")
+                raise TypeError(
+                    "All `a_ops` operators must be a Qobj or QobjEvo"
+                )
             if not isinstance(spectra, Coefficient):
-                raise TypeError("All `a_ops` spectra "
-                                "must be a Coefficient.")
+                raise TypeError(
+                    "All `a_ops` spectra must be a Coefficient."
+                )
 
         self._system = H, a_ops, c_ops
         self._num_collapse = len(c_ops)

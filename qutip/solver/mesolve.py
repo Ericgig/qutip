@@ -14,7 +14,10 @@ from time import time
 from .. import (Qobj, QobjEvo, liouvillian, lindblad_dissipator)
 from ..typing import EopsLike, QobjEvoLike
 from ..core import data as _data
-from .solver_base import Solver, _solver_deprecation, _kwargs_migration
+from .solver_base import (
+    Solver, _solver_deprecation, _kwargs_migration,
+    _format_oper, _format_list_oper
+)
 from .sesolve import sesolve, SESolver
 from ._feedback import _QobjFeedback, _DataFeedback
 from . import Result
@@ -221,13 +224,8 @@ class MESolver(SESolver):
     ):
         _time_start = time()
 
-        if not isinstance(H, (Qobj, QobjEvo)):
-            raise TypeError("The Hamiltonian must be a Qobj or QobjEvo")
-        c_ops = c_ops or []
-        c_ops = [c_ops] if isinstance(c_ops, (Qobj, QobjEvo)) else c_ops
-        for c_op in c_ops:
-            if not isinstance(c_op, (Qobj, QobjEvo)):
-                raise TypeError("All `c_ops` must be a Qobj or QobjEvo")
+        H = _format_oper(H=H)
+        c_ops = _format_list_oper(c_ops=c_ops)
 
         self._num_collapse = len(c_ops)
 

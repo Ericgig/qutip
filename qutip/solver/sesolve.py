@@ -13,7 +13,9 @@ from typing import Any, Callable
 from .. import Qobj, QobjEvo
 from ..core import data as _data
 from ..typing import QobjEvoLike, EopsLike
-from .solver_base import Solver, _solver_deprecation, _kwargs_migration
+from .solver_base import (
+    Solver, _solver_deprecation, _kwargs_migration, _format_oper
+)
 from ._feedback import _QobjFeedback, _DataFeedback
 from . import Result
 
@@ -162,12 +164,8 @@ class SESolver(Solver):
     def __init__(self, H: Qobj | QobjEvo, *, options: dict[str, Any] = None):
         _time_start = time()
 
-        if not isinstance(H, (Qobj, QobjEvo)):
-            raise TypeError("The Hamiltonian must be a Qobj or QobjEvo")
-
+        H = _format_oper(H=H)
         rhs = -1j * H
-        if not rhs.isoper:
-            raise ValueError("The hamiltonian must be an operator")
         super().__init__(rhs, options=options)
 
     def _initialize_stats(self):

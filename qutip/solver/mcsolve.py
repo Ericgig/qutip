@@ -14,7 +14,8 @@ from ..core import QobjEvo, spre, spost, Qobj, unstack_columns, qzero_like
 from ..typing import QobjEvoLike, EopsLike
 from .multitraj import MultiTrajSolver, _MultiTrajRHS, _InitialConditions
 from .solver_base import (
-    Solver, Integrator, _solver_deprecation, _kwargs_migration
+    Solver, Integrator, _solver_deprecation, _kwargs_migration,
+    _format_oper, _format_list_oper
 )
 from .multitrajresult import McResult
 from .mesolve import mesolve, MESolver
@@ -468,9 +469,8 @@ class MCSolver(MultiTrajSolver):
     ):
         _time_start = time()
 
-        if isinstance(c_ops, (Qobj, QobjEvo)):
-            c_ops = [c_ops]
-        c_ops = [QobjEvo(c_op) for c_op in c_ops]
+        H = _format_oper(H=H)
+        c_ops = _format_list_oper(c_ops=c_ops)
 
         if H.issuper:
             self._c_ops = [
@@ -478,14 +478,14 @@ class MCSolver(MultiTrajSolver):
                 for c_op in c_ops
             ]
             self._n_ops = self._c_ops
-            rhs = QobjEvo(H)
+            rhs = H
             for c_op in c_ops:
                 cdc = c_op.dag() @ c_op
                 rhs -= 0.5 * (spre(cdc) + spost(cdc))
         else:
             self._c_ops = c_ops
             self._n_ops = [c_op.dag() * c_op for c_op in c_ops]
-            rhs = -1j * QobjEvo(H)
+            rhs = -1j * H
             for n_op in self._n_ops:
                 rhs -= 0.5 * n_op
 

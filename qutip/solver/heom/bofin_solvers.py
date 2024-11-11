@@ -25,7 +25,7 @@ from qutip.core.superoperator import liouvillian, spre, spost
 from .bofin_baths import (
     BathExponent, DrudeLorentzBath,
 )
-from ..solver_base import Solver
+from ..solver_base import Solver, _format_oper
 from .. import Result
 
 # Load MKL spsolve if avaiable
@@ -628,10 +628,8 @@ class HEOMSolver(Solver):
         _time_start = time()
         # we call bool here because odd_parity will be used in arithmetic
         self.odd_parity = bool(odd_parity)
-        if not isinstance(H, (Qobj, QobjEvo)):
-            raise TypeError("The Hamiltonian (H) must be a Qobj or QobjEvo")
+        H = _format_oper(H=H)
 
-        H = QobjEvo(H)
         self.L_sys = (
             liouvillian(H) if H.type == "oper"  # hamiltonian
             else H  # already a liouvillian

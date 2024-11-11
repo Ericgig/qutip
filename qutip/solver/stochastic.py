@@ -18,7 +18,7 @@ from .multitraj import _MultiTrajRHS, MultiTrajSolver
 from .. import Qobj, QobjEvo
 from ..core.dimensions import Dimensions
 from ..core import data as _data
-from .solver_base import _solver_deprecation
+from .solver_base import _solver_deprecation, _format_oper, _format_list_oper
 from ._feedback import _QobjFeedback, _DataFeedback, _WienerFeedback
 from ..typing import QobjEvoLike, EopsLike
 
@@ -245,23 +245,9 @@ class _StochasticRHS(_MultiTrajRHS):
 
     def __init__(self, issuper, H, sc_ops, c_ops, heterodyne):
 
-        if not isinstance(H, (Qobj, QobjEvo)) or not H.isoper:
-            raise TypeError("The Hamiltonian must be an operator")
-        self.H = QobjEvo(H)
-
-        if isinstance(sc_ops, (Qobj, QobjEvo)):
-            sc_ops = [sc_ops]
-        self.sc_ops = [QobjEvo(c_op) for c_op in sc_ops]
-
-        if isinstance(c_ops, (Qobj, QobjEvo)):
-            c_ops = [c_ops]
-        self.c_ops = [QobjEvo(c_op) for c_op in c_ops]
-
-        if any(not c_op.isoper for c_op in c_ops):
-            raise TypeError("c_ops must be operators")
-
-        if any(not c_op.isoper for c_op in sc_ops):
-            raise TypeError("sc_ops must be operators")
+        H = _format_oper(H=H)
+        c_ops = _format_list_oper(c_ops=c_ops)
+        sc_ops = _format_list_oper(sc_ops=sc_ops)
 
         self.issuper = issuper
         self.heterodyne = heterodyne
