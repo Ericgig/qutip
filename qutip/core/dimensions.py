@@ -807,6 +807,15 @@ class Dimensions(metaclass=MetaDims):
                 self.superrep = 'mixed'
         self.__setitem__ = _frozen
 
+    @classmethod
+    def from_prepost(cls, pre, post):
+        pre = Dimensions(pre)
+        post = Dimensions(post)
+        return Dimensions([
+            SuperSpace(Dimensions([pre[0], post[1]])),
+            SuperSpace(Dimensions([pre[1], post[0]])),
+        ])
+
     def __eq__(self, other: "Dimensions") -> bool:
         if isinstance(other, Dimensions):
             return (

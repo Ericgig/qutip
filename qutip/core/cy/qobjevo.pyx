@@ -265,20 +265,33 @@ cdef class QobjEvo:
         """ Read a Q_object item and return an element for that item. """
         if isinstance(op, Qobj):
             out = _ConstantElement(op.copy() if copy else op)
-            qobj = op
-        elif isinstance(op, list):
+            dims = op._dims
+        elif isinstance(op, tuple) and len(op) == 2:
+            out = _ConstantSuperElement(
+                (op[0].copy(), op[1].copy()) if copy else op
+            )
+            dims = Dimensions.from_prepost(op[0]._dims, op[1]._dims)
+        elif isinstance(op, list) and isinstance(op[0], Qobj):
             out = _EvoElement(
                 op[0].copy() if copy else op[0],
                 coefficient(op[1], tlist=tlist, args=args, order=order,
                             boundary_conditions=boundary_conditions)
             )
-            qobj = op[0]
+            dims = op[0]._dims
+        elif isinstance(op, list) and isinstance(op[0], tuple):
+            out = _EvoSuperElement(
+                (op[0][0].copy(), op[0][1].copy()) if copy else op[0],
+                coefficient(op[1], tlist=tlist, args=args, order=order,
+                            boundary_conditions=boundary_conditions)
+            )
+            dims = Dimensions.from_prepost(op[0][0]._dims, op[0][1]._dims)
         elif isinstance(op, _BaseElement):
             out = op
-            qobj = op.qobj(0)
+            dims = op.qobj(0)._dims
         elif callable(op):
             out = _FuncElement(op, args, style=function_style)
             qobj = out.qobj(0)
+            dims = qobj._dims
             if not isinstance(qobj, Qobj):
                 raise TypeError(
                     "Function based time-dependent elements must have the"
@@ -293,12 +306,12 @@ cdef class QobjEvo:
             )
 
         if self._dims is None:
-            self._dims = qobj._dims
-            self.shape = qobj.shape
-        elif self._dims != qobj._dims:
+            self._dims = dims
+            self.shape = dims.shape
+        elif self._dims != dims:
             raise ValueError(
-                f"QobjEvo term {op!r} has dims {qobj.dims!r} and shape"
-                f" {qobj.shape!r} but previous terms had dims {self.dims!r}"
+                f"QobjEvo term {op!r} has dims {dims!r} and shape"
+                f" {dims.shape!r} but previous terms had dims {self.dims!r}"
                 f" and shape {self.shape!r}."
             )
 
@@ -547,11 +560,16 @@ cdef class QobjEvo:
                 raise TypeError("incompatible dimensions" +
                                 str(self.dims) + ", " + str(other.dims))
             self.elements.append(_ConstantElement(other))
+
+        elif other == 0.:
+            pass
+
         elif (
             isinstance(other, numbers.Number) and
             self._dims[0] == self._dims[1]
         ):
             self.elements.append(_ConstantElement(other * qutip.qeye_like(self)))
+
         else:
             return NotImplemented
         return self
