@@ -5,6 +5,7 @@ from ..dimensions import enumerate_flat, collapse_dims_super
 import numpy as np
 from ...settings import settings
 
+
 class SuperOperator(Operator):
     def __init__(self, data, dims, **flags):
         super().__init__(data, dims, **flags)
@@ -15,8 +16,8 @@ class SuperOperator(Operator):
 
     @property
     def isoper(self) -> bool:
-        """Indicates if the Qobj represents a superoperator."""
-        return self._dims.type == "scalar"
+        """Indicates if the Qobj represents an operator."""
+        return False
 
     @property
     def issuper(self) -> bool:
@@ -85,7 +86,7 @@ class SuperOperator(Operator):
     @property
     def iscptp(self) -> bool:
         if (
-            self._flags.get("istp", None) is None
+            self._flags.get("iscp", None) is None
             and self._flags.get("istp", None) is None
         ):
             reps = ('choi', 'chi')
@@ -113,6 +114,143 @@ class SuperOperator(Operator):
         ).trans()
         J_dual.superrep = 'choi'
         return J_dual
+
+
+class KrausMap(SuperOperator):
+    """
+    Parameter
+    ---------
+    arg : list of Qobj
+
+    """
+    @staticmethod
+    def _check_oper(oper, dims):
+        if not isinstance(oper, Qobj) and oper.isoper:
+            raise TypeError("KrausMap componants must be operators")
+        if oper._dims != dims:
+            raise TypeError(
+                "KrausMap operators must all have the same dimensions"
+            )
+
+    def __init__(self, arg, dims=None, copy=False, **_):
+        self._data = None
+        self._kmap = []
+        self._hpmap = []
+        self._genmap = []
+        dims_ = None
+        for oper in arg:
+            if dims_ is None:
+                dims_ = oper._dims
+            KrausMap._check_oper(operm, dims_)
+            self._kmap.append(oper.copy() if copy else oper)
+
+        if dims_ is not None:
+            self._dims = Dimensions.from_prepost(dims_, dims_.tr())
+            if dims is not None and Dimensions(dims) != self._dims:
+                raise ValueError(
+                    "Provided dimensions do not match operators"
+                )
+        elif dims is not None:
+            # Dimensions but no operators, this result in a map that always
+            # a zeros state.
+            self._dims = Dimensions(dims)
+        else:
+            raise ValueError("Missing information to initialise KrausMap")
+
+        self._flags = {"ishp": True}
+        self.superrep = "kraus"
+
+    @classmethod
+    def generalizedKraus(
+        cls,
+        kraus_terms: Iterator[Operator] = (),
+        hp_terms: Iterator[Operator] = (),
+        general_terms: Iterator[tuple[Operator, Operator]] = (),
+        copy: bool = False,
+    ) -> KrausMap:
+        """
+        Create a generalized Kraus Map.
+
+            G(rho) -> sum_i A[i] @ rho @ B[i]
+
+        Internaly hermiticity preserving terms are kept appart:
+
+            G(rho) ->
+                sum_i K[i] @ rho @ K[i].dag()
+                + sum_i (H[i] @ rho + rho @ H[i].dag())
+                + sum_i A[i] @ rho @ B[i]
+
+        Parameters
+        ----------
+        kraus_terms: list of Qobj
+            Terms in the form: K[i] @ rho @ K[i].dag()
+
+        hp_terms: list of Qobj
+            Terms in the form: H[i] @ rho + rho @ H[i].dag()
+
+        general_terms: list of tuple of Qobj, Qobj
+            Terms in the form: A[i] @ rho @ B[i]
+        """
+        out = KrausMap.__new__(KrausMap)
+        dims_pre = None
+        dims_post = None
+        self._data = None
+        self._kmap = []
+        self._hpmap = []
+        self._genmap = []
+
+        for oper in kraus_terms:
+            if dims_pre is None:
+                dims_pre = oper._dims
+                dims_post = oper._dims.tr()
+            KrausMap._check_oper(oper, dims_pre)
+            self._kmap.append(oper.copy() if copy else oper)
+
+        for oper in hp_terms:
+            if dims_pre is None:
+                dims_pre = oper._dims
+                dims_post = oper._dims.tr()
+            KrausMap._check_oper(oper, dims_pre)
+            out._hpmap.append(oper.copy() if copy else oper)
+
+        for pre, post in general_terms:
+            if dims_pre is None:
+                dims_pre = pre._dims
+                dims_post = post._dims
+            KrausMap._check_oper(pre, dims_pre)
+            KrausMap._check_oper(post, dims_post)
+            out._genmap.append(
+                (pre.copy(), post.copy())
+                if copy else (pre, post)
+            )
+
+        if dims_pre is None:
+            raise ValueError(
+                "Can't initialise general kraus map from no operators"
+            )
+
+        self._dims = Dimensions.from_prepost(dims_pre, dims_post)
+        self.superrep = "generalized kraus"
+
+    def __call__(self, other: Qobj) -> Qobj:
+        if not isinstance(other, Qobj):
+            raise TypeError("Only defined for quantum objects.")
+        if (self.type, other.type) not in _CALL_ALLOWED:
+            raise TypeError(self.type + " cannot act on " + other.type)
+        if other.isket:
+            other = other.proj()
+        out = qzeros(self._dims[1])
+        for oper in self._kmap:
+            out += oper @ other @ oper.dag()
+        for oper in self._hpmap:
+            out += oper @ other + other @ oper.dag()
+        for pre, post in self._kmap:
+            out += pre @ other @ post()
+        return out
+
+    @property
+    def data(self):
+        raise ValueError("data not defined")
 
 
 _QobjBuilder.qobjtype_to_class["super"] = SuperOperator

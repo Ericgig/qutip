@@ -181,7 +181,6 @@ class Operator(Qobj):
             out = np.real(out)
         return out
 
-
     def expm(self, dtype: LayerType = None) -> Qobj:
         """Matrix exponential of quantum operator.
 
@@ -202,7 +201,7 @@ class Operator(Qobj):
         TypeError
             Quantum operator is not square.
         """
-        if not self._dims.issquare:
+        if self.shape[0] != self.shape[1]:
             raise TypeError("expm is only valid for square operators")
         if dtype is None and isinstance(self.data, (_data.CSR, _data.Dia)):
             dtype = _data.Dense
@@ -226,8 +225,8 @@ class Operator(Qobj):
         TypeError
             Quantum operator is not square.
         """
-        if not self._dims.issquare:
-            raise TypeError("expm is only valid for square operators")
+        if self.shape[0] != self.shape[1]:
+            raise TypeError("logm is only valid for square operators")
         return Qobj(_data.logm(self._data),
                     dims=self._dims,
                     isherm=self._isherm,
@@ -266,7 +265,7 @@ class Operator(Qobj):
         The sparse eigensolver is much slower than the dense version.
         Use sparse only if memory requirements demand it.
         """
-        if self._dims[0] != self._dims[1]:
+        if self.shape[0] != self.shape[1]:
             raise TypeError('sqrt only valid on square matrices')
         return Qobj(_data.sqrtm(self._data),
                     dims=self._dims,
@@ -292,7 +291,7 @@ class Operator(Qobj):
         Uses the Q.expm() method.
 
         """
-        if self._dims[0] != self._dims[1]:
+        if self.shape[0] != self.shape[1]:
             raise TypeError('invalid operand for matrix cosine')
         return 0.5 * ((1j * self).expm() + (-1j * self).expm())
 
@@ -315,7 +314,7 @@ class Operator(Qobj):
         -----
         Uses the Q.expm() method.
         """
-        if self._dims[0] != self._dims[1]:
+        if self.shape[0] != self.shape[1]:
             raise TypeError('invalid operand for matrix sine')
         return -0.5j * ((1j * self).expm() - (-1j * self).expm())
 
@@ -334,7 +333,7 @@ class Operator(Qobj):
         TypeError
             Quantum object is not square.
         """
-        if self.data.shape[0] != self.data.shape[1]:
+        if self.shape[0] != self.shape[1]:
             raise TypeError('Invalid operand for matrix inverse')
         if isinstance(self.data, _data.CSR) and not sparse:
             data = _data.to(_data.Dense, self.data)
@@ -407,6 +406,8 @@ class Operator(Qobj):
         Use sparse only if memory requirements demand it.
 
         """
+        if self.shape[0] != self.shape[1]:
+            raise TypeError('eigenstates only valid on square matrices')
         if isinstance(self.data, _data.CSR) and sparse:
             evals, evecs = _data.eigs_csr(self.data,
                                           isherm=self._isherm,
@@ -474,6 +475,8 @@ class Operator(Qobj):
         Use sparse only if memory requirements demand it.
 
         """
+        if self.shape[0] != self.shape[1]:
+            raise TypeError('eigenenergies only valid on square matrices')
         # TODO: consider another way of handling the dispatch here.
         if isinstance(self.data, _data.CSR) and sparse:
             return _data.eigs_csr(self.data,
@@ -525,6 +528,8 @@ class Operator(Qobj):
         The sparse eigensolver is much slower than the dense version.
         Use sparse only if memory requirements demand it.
         """
+        if self.shape[0] != self.shape[1]:
+            raise TypeError('groundstate only valid on square matrices')
         eigvals = 2 if safe else 1
         evals, evecs = self.eigenstates(sparse=sparse, eigvals=eigvals,
                                         tol=tol, maxiter=maxiter)
@@ -557,6 +562,8 @@ class Operator(Qobj):
         oper : :class:`.Qobj`
             A valid density operator.
         """
+        if self.shape[0] != self.shape[1]:
+            raise TypeError('trunc_neg only valid on square matrices')
         if not self.isherm:
             raise ValueError("Must be a Hermitian operator to remove negative "
                              "eigenvalues.")
