@@ -17,17 +17,6 @@ from qutip.typing import LayerType, DimensionLike
 from numpy.typing import ArrayLike
 
 
-_NORM_FUNCTION_LOOKUP = {
-    'tr': _data.norm.trace,
-    'one': _data.norm.one,
-    'max': _data.norm.max,
-    'fro': _data.norm.frobenius,
-    'l2': _data.norm.l2,
-}
-_NORM_ALLOWED_MATRIX = {'tr', 'fro', 'one', 'max'}
-_NORM_ALLOWED_VECTOR = {'l2', 'max'}
-
-
 def _latex_real(x):
     if not x:
         return "0"
@@ -408,10 +397,10 @@ class Qobj(metaclass=_QobjBuilder):
             f"dtype={self.dtype.__name__}",
         ])
         # TODO: Should this be here?
-        # if self.type in ('oper', 'super'):
-        #     out += ", isherm=" + str(self.isherm)
-        # if self.issuper and self.superrep != 'super':
-        #     out += ", superrep=" + repr(self.superrep)
+        if self.type in ('oper', 'super'):
+            out += ", isherm=" + str(self.isherm)
+        if self.issuper and self.superrep != 'super':
+            out += ", superrep=" + repr(self.superrep)
         return out
 
     def __str__(self):
@@ -690,85 +679,6 @@ class Qobj(metaclass=_QobjBuilder):
         atol = atol or settings.core['auto_tidyup_atol']
         self.data = _data.tidyup(self.data, atol)
         return self
-
-    def norm(
-        self,
-        norm: Literal["l2", "max", "fro", "tr", "one"] = None,
-        kwargs: dict[str, Any] = None
-    ) -> float:
-        """
-        Norm of a quantum object.
-
-        Default norm is L2-norm for kets and trace-norm for operators.  Other
-        ket and operator norms may be specified using the `norm` parameter.
-
-        Parameters
-        ----------
-        norm : str
-            Which type of norm to use.  Allowed values for vectors are 'l2' and
-            'max'.  Allowed values for matrices are 'tr' for the trace norm,
-            'fro' for the Frobenius norm, 'one' and 'max'.
-
-        kwargs : dict
-            Additional keyword arguments to pass on to the relevant norm
-            solver.  See details for each norm function in :mod:`.data.norm`.
-
-        Returns
-        -------
-        norm : float
-            The requested norm of the operator or state quantum object.
-        """
-        if self.type in ('ket', 'bra'):
-            norm = norm or 'l2'
-            if norm not in _NORM_ALLOWED_VECTOR:
-                raise ValueError(
-                    "vector norm must be in " + repr(_NORM_ALLOWED_VECTOR)
-                )
-        else:
-            norm = norm or 'tr'
-            if norm not in _NORM_ALLOWED_MATRIX:
-                raise ValueError(
-                    "matrix norm must be in " + repr(_NORM_ALLOWED_MATRIX)
-                )
-
-        kwargs = kwargs or {}
-        return _NORM_FUNCTION_LOOKUP[norm](self._data, **kwargs)
-
-    def unit(
-        self,
-        inplace: bool = False,
-        norm: Literal["l2", "max", "fro", "tr", "one"] = None,
-        kwargs: dict[str, Any] = None
-    ) -> Qobj:
-        """
-        Operator or state normalized to unity.  Uses norm from Qobj.norm().
-
-        Parameters
-        ----------
-        inplace : bool
-            Do an in-place normalization
-        norm : str
-            Requested norm for states / operators.
-        kwargs : dict
-            Additional key-word arguments to be passed on to the relevant norm
-            function (see :meth:`.norm` for more details).
-
-        Returns
-        -------
-        obj : :class:`.Qobj`
-            Normalized quantum object.  Will be the `self` object if in place.
-        """
-        norm_ = self.norm(norm=norm, kwargs=kwargs)
-        if inplace:
-            self.data = _data.mul(self.data, 1 / norm_)
-            self.isherm = self._isherm if norm_.imag == 0 else None
-            self.isunitary = (self._isunitary
-                              if abs(norm_) - 1 < settings.core['atol']
-                              else None)
-            out = self
-        else:
-            out = self / norm_
-        return out
 
     def transform(
         self,

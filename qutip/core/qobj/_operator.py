@@ -8,19 +8,19 @@ import numbers
 from .. import data as _data
 from ..dimensions import enumerate_flat, collapse_dims_super
 import warnings
+from typing import Any, Literal
 
 
 __all__ = []
 
-
-_CALL_ALLOWED = {
-    ('super', 'oper'),
-    ('super', 'ket'),
-    ('oper', 'ket'),
-}
-
-
 class Operator(Qobj):
+    def __init__(self, data, dims, **flags):
+        super().__init__(data, dims, **flags)
+        if self._dims.type not in ["oper"]:
+            raise ValueError(
+                f"Expected operator dimensions, but got {self._dims.type}"
+            )
+
     @property
     def isoper(self) -> bool:
         return True
@@ -128,12 +128,8 @@ class Operator(Qobj):
         """
         if not isinstance(other, Qobj):
             raise TypeError("Only defined for quantum objects.")
-        if (self.type, other.type) not in _CALL_ALLOWED:
+        if other.type not in ["ket"]:
             raise TypeError(self.type + " cannot act on " + other.type)
-        if self.issuper:
-            if other.isket:
-                other = other.proj()
-            return qutip.vector_to_operator(self @ qutip.operator_to_vector(other))
         return self.__matmul__(other)
 
     def __pow__(self, n: int, m=None) -> Qobj:
@@ -502,7 +498,7 @@ class Operator(Qobj):
     ) -> tuple[float, Qobj]:
         """Ground state Eigenvalue and Eigenvector.
 
-        Defined for quantum operators or superoperators only.
+        Defined for quantum operators only.
 
         Parameters
         ----------
@@ -600,6 +596,84 @@ class Operator(Qobj):
                                      value)
         out_data = _data.mul(out_data, 1/_data.norm.trace(out_data))
         return Qobj(out_data, dims=self._dims, isherm=True, copy=False)
+
+    def norm(
+        self,
+        norm: Literal["max", "fro", "tr", "one"] = "tr",
+        kwargs: dict[str, Any] = None
+    ) -> float:
+        """
+        Norm of a quantum object.
+
+        Default norm is the trace-norm. Other operator norms may be
+        specified using the `norm` parameter.
+
+        Parameters
+        ----------
+        norm : str, default: "tr"
+            Which type of norm to use. Allowed values are 'tr' for the trace
+            norm, 'fro' for the Frobenius norm, 'one' and 'max'.
+
+        kwargs : dict, optional
+            Additional keyword arguments to pass on to the relevant norm
+            solver.  See details for each norm function in :mod:`.data.norm`.
+
+        Returns
+        -------
+        norm : float
+            The requested norm of the operator or state quantum object.
+        """
+        norm = norm or "tr"
+        if norm not in {'tr', 'fro', 'one', 'max'}:
+            raise ValueError(
+                "matrix norm must be in {'tr', 'fro', 'one', 'max'}"
+            )
+
+        kwargs = kwargs or {}
+        return  {
+            'tr': _data.norm.trace,
+            'one': _data.norm.one,
+            'max': _data.norm.max,
+            'fro': _data.norm.frobenius,
+        }[norm](self._data, **kwargs)
+
+    def unit(
+        self,
+        inplace: bool = False,
+        norm: Literal["l2", "max", "fro", "tr", "one"] = "tr",
+        kwargs: dict[str, Any] = None
+    ) -> Qobj:
+        """
+        Operator or state normalized to unity.  Uses norm from Qobj.norm().
+
+        Parameters
+        ----------
+        inplace : bool
+            Do an in-place normalization
+        norm : str
+            Requested norm for states / operators.
+        kwargs : dict
+            Additional key-word arguments to be passed on to the relevant norm
+            function (see :meth:`.norm` for more details).
+
+        Returns
+        -------
+        obj : :class:`.Qobj`
+            Normalized quantum object.  Will be the `self` object if in place.
+        """
+        norm_ = self.norm(norm=norm, kwargs=kwargs)
+        if inplace:
+            self.data = _data.mul(self.data, 1 / norm_)
+            self.isherm = self._isherm if norm_.imag == 0 else None
+            self.isunitary = (
+                self._isunitary
+                if abs(norm_) - 1 < settings.core['atol']
+                else None
+            )
+            out = self
+        else:
+            out = self / norm_
+        return out
 
 
 class Scalar(Operator):

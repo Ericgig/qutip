@@ -811,12 +811,12 @@ class Dimensions(metaclass=MetaDims):
     def from_prepost(pre, post):
         pre = Dimensions(pre)
         post = Dimensions(post)
-        return Dimensions([
-            SuperSpace(Dimensions([pre[1], post[0]])),
-            SuperSpace(Dimensions([pre[0], post[1]])),
-        ])
+        return Dimensions(
+            SuperSpace(Dimensions(pre[1], post[0])),
+            SuperSpace(Dimensions(pre[0], post[1])),
+        )
 
-    def tr(self):
+    def transpose(self):
         return Dimensions(self.to_, self.from_)
 
     def __eq__(self, other: "Dimensions") -> bool:

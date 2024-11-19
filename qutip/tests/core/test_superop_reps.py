@@ -312,4 +312,5 @@ class TestSuperopReps:
         chiq = Qobj(
             chi_expected, dims=[[[2], [2]], [[2], [2]]], superrep='chi',
         )
-        assert (chi_actual - chiq).norm() < tol
+        with qutip.CoreOptions(atol=tol):
+            assert chi_actual == chiq

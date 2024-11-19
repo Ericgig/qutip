@@ -4,6 +4,15 @@ import qutip
 from qutip.core import gates
 
 
+def _calculate_isunitary(oper):
+    """
+    Checks whether qobj is a unitary matrix
+    """
+    if not oper.isoper or oper._data.shape[0] != oper._data.shape[1]:
+        return False
+    return oper @ oper.dag() == qutip.qeye_like(oper)
+
+
 def _infidelity(a, b):
     """Infidelity between two kets."""
     return 1 - abs(a.overlap(b))
@@ -193,7 +202,7 @@ def test_metadata(gate_func, args, alias):
     dtype = qutip.data.to.parse(alias)
     assert isinstance(gate.data, dtype)
     assert gate._isherm == qutip.data.isherm(gate.data)
-    assert gate._isunitary == gate._calculate_isunitary()
+    assert gate._isunitary == _calculate_isunitary(gate)
     with qutip.CoreOptions(default_dtype=alias):
         gate = gate_func(*args)
         assert isinstance(gate.data, dtype)
