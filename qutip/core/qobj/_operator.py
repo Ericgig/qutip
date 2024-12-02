@@ -690,6 +690,22 @@ class Scalar(Operator):
         """Indicates if the Qobj represents a superoperator."""
         return self._dims.issuper
 
+    @property
+    def isket(self) -> bool:
+        return not self.issuper
+
+    @property
+    def isbra(self) -> bool:
+        return not self.issuper
+
+    @property
+    def isoperket(self) -> bool:
+        return self.issuper
+
+    @property
+    def isoperbra(self) -> bool:
+        return self.issuper
+
 
 _QobjBuilder.qobjtype_to_class["scalar"] = Scalar
 _QobjBuilder.qobjtype_to_class["oper"] = Operator
