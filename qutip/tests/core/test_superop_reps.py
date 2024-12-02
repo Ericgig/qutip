@@ -70,7 +70,8 @@ class TestSuperopReps:
 
         # Assert both that the result is close to expected, and has the right
         # type.
-        assert (test_supe - superoperator).norm() < tol
+        with CoreOptions(atol=tol):
+            assert test_supe == superoperator
         assert choi_matrix.type == "super" and choi_matrix.superrep == "choi"
         assert test_supe.type == "super" and test_supe.superrep == "super"
 
@@ -90,7 +91,8 @@ class TestSuperopReps:
 
         # Assert both that the result is close to expected, and has the right
         # type.
-        assert (test_supe - superoperator).norm() < tol
+        with CoreOptions(atol=tol):
+            assert test_supe == superoperator
         assert choi_matrix.type == "super" and choi_matrix.superrep == "choi"
         assert chi_matrix.type == "super" and chi_matrix.superrep == "chi"
         assert test_supe.type == "super" and test_supe.superrep == "super"
@@ -105,7 +107,8 @@ class TestSuperopReps:
 
         # Assert both that the result is close to expected, and has the right
         # type.
-        assert (test_choi - choi_matrix).norm() < tol
+        with CoreOptions(atol=tol):
+            assert test_choi == choi_matrix
         assert choi_matrix.type == "super" and choi_matrix.superrep == "choi"
         assert test_choi.type == "super" and test_choi.superrep == "choi"
 
@@ -129,7 +132,8 @@ class TestSuperopReps:
         assert super.type == "super" and super.superrep == "super"
         assert_kraus_equivalence(op1[0], kraus, tol=1e-8)
         assert_kraus_equivalence(op2[0], kraus, tol=1e-8)
-        assert abs((op3 - super).norm()) < 1e-8
+        with CoreOptions(atol=1e-8):
+            assert op3 == super
 
     def test_NeglectSmallKraus(self):
         """
@@ -233,8 +237,8 @@ class TestSuperopReps:
         """
         superop = rand_super_bcsz(dimension)
         A, B = to_stinespring(superop)
-
-        assert (A - B).norm() < tol
+        with CoreOptions(atol=tol):
+            A == B
 
     @pytest.mark.repeat(3)
     def test_stinespring_agrees(self, dimension):
@@ -255,7 +259,8 @@ class TestSuperopReps:
         #        ptraced!
         q2 = (A * state * B.dag()).ptrace((0,))
 
-        assert (q1 - q2).norm('tr') <= tol
+        with CoreOptions(atol=tol):
+            q1 == q2
 
     def test_stinespring_dims(self, dimension):
         """
@@ -272,9 +277,9 @@ class TestSuperopReps:
         superop = rand_super_bcsz(dimension)
         superop = to_chi(superop)
         rt_superop = to_chi(to_choi(superop))
-        dif = (rt_superop - superop).norm()
 
-        assert dif == pytest.approx(0, abs=1e-7)
+        with CoreOptions(atol=1e-7):
+            assert rt_superop == superop
         assert rt_superop.type == superop.type
         assert rt_superop.dims == superop.dims
 
@@ -312,5 +317,5 @@ class TestSuperopReps:
         chiq = Qobj(
             chi_expected, dims=[[[2], [2]], [[2], [2]]], superrep='chi',
         )
-        with qutip.CoreOptions(atol=tol):
+        with CoreOptions(atol=tol):
             assert chi_actual == chiq

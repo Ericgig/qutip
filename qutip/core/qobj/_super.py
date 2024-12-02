@@ -508,9 +508,6 @@ class KrausMap(SuperOperator):
     def data_as(self):
         raise NotImplementedError
 
-    def data_as(self):
-        raise NotImplementedError
-
     def contract(self):
         raise NotImplementedError
 

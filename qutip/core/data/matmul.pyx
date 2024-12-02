@@ -33,6 +33,10 @@ cnp.import_array()
 cdef extern from *:
     void *PyMem_Calloc(size_t n, size_t elsize)
 
+
+cdef extern from "<complex>" namespace "std" nogil:
+    double complex conj "conj"(double complex x)
+
 # This function is templated over integral types on import to allow `idxint` to
 # be any signed integer (though likely things will only work for >=32-bit).  To
 # change integral types, you only need to change the `idxint` definitions in
@@ -243,6 +247,67 @@ cpdef Dense matmul_csr_dense_dense(CSR left, Dense right,
                 idx_r = left.col_index[ptr] * ncols
                 for _ in range(ncols):
                     out.data[idx_out] += val * right.data[idx_r]
+                    idx_out += 1
+                    idx_r += 1
+    if tmp is None:
+        return out
+    memcpy(tmp.data, out.data, ncols * nrows * sizeof(double complex))
+    return tmp
+
+
+cpdef Dense matmul_dense_csrdag_dense(
+    Dense left, CSR right,
+    double complex scale=1, Dense out=None
+):
+    """
+    Perform the operation
+        ``out := scale * (left @ right) + out``
+    where `left`, `right` and `out` are matrices.  `scale` is a complex scalar,
+    defaulting to 1.
+
+    If `out` is not given, it will be allocated as if it were a zero matrix.
+    """
+    _check_shape(left, right, out)
+    cdef Dense tmp = None
+    if out is None:
+        out = dense.zeros(left.shape[0], right.shape[1], left.fortran)
+    if bool(left.fortran) != bool(out.fortran):
+        msg = (
+            "out matrix is {}-ordered".format('Fortran' if out.fortran else 'C')
+            + " but input is {}-ordered".format('Fortran' if left.fortran else 'C')
+        )
+        warnings.warn(msg, OrderEfficiencyWarning)
+        # Rather than making loads of copies of the same code, we just moan at
+        # the user and then transpose one of the arrays.  We prefer to have
+        # `right` in Fortran-order for cache efficiency.
+        if left.fortran:
+            tmp = out
+            out = out.reorder()
+        else:
+            left = left.reorder()
+    cdef idxint row, ptr, idx_r, idx_out, nrows=left.shape[0], ncols=right.shape[1]
+    cdef double complex val
+
+    if False:
+        # A @ B.dag = (B* @ A.T).T
+        # Todo: make a conj version of _matmul_csr_vector?
+        idx_r = idx_out = 0
+        for _ in range(ncols):
+            _matmul_csr_vector(left.data, left.col_index, left.row_index,
+                               right.data + idx_r,
+                               scale,
+                               out.data + idx_out,
+                               nrows)
+            idx_out += nrows
+            idx_r += right.shape[0]
+    else:
+        for row in range(right.shape[0]):
+            for ptr in range(right.row_index[row], right.row_index[row + 1]):
+                val = scale * conj(right.data[ptr])
+                idx_out = row * right.shape[0]
+                idx_r = right.col_index[ptr] * right.shape[0]
+                for _ in range(right.shape[0]):
+                    out.data[idx_out] += val * left.data[idx_r]
                     idx_out += 1
                     idx_r += 1
     if tmp is None:
