@@ -30,7 +30,7 @@ def assert_hermicity(oper, hermicity):
     # Check the cached isherm, if any exists.
     assert oper.isherm == hermicity
     # Force a reset of the cached value for isherm.
-    oper._isherm = None
+    oper.isherm = None
     # Force a recalculation of isherm.
     assert oper.isherm == hermicity
 
@@ -162,7 +162,7 @@ def assert_unitarity(oper, unitarity):
     assert oper.isunitary == unitarity
 
     # Force a reset of the cached value for isunitary.
-    oper._isunitary = None
+    oper.isunitary = None
     # Force a recalculation of isunitary.
     assert oper.isunitary == unitarity
 
@@ -261,7 +261,7 @@ def test_QobjAddition():
 
     q4 = q1 + q2
     q4_isherm = q4.isherm
-    q4._isherm = None  # clear cached values
+    q4.isherm = None  # clear cached values
     assert q4_isherm == q4.isherm
 
     # check elementwise addition/subtraction

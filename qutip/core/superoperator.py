@@ -11,7 +11,7 @@ import numpy as np
 from .qobj import Qobj
 from .cy.qobjevo import QobjEvo
 from . import data as _data
-from .dimensions import Compound, SuperSpace, Space
+from .dimensions import Compound, SuperSpace, Space, Dimensions
 
 
 def _map_over_compound_operators(f):
@@ -140,6 +140,18 @@ def liouvillian(
                     copy=False)
 
 
+def liouvillian_kraus(H: Qobj, c_ops: list[Qobj]):
+    """
+    TODO
+    """
+    out = KrausMap.generalizedKraus(
+        kraus_terms = c_ops,
+        hp_terms = [-1.0j * H] + [c.dag() @ c * -0.5 for c in c_ops],
+    )
+    out._flags["istp"] = False
+    return out
+
+
 @overload
 def lindblad_dissipator(
     a: Qobj,
@@ -222,6 +234,18 @@ def lindblad_dissipator(
     return D.data if data_only else D
 
 
+def lindblad_dissipator_kraus(H: Qobj, c_ops: list[Qobj]):
+    """
+    TODO
+    """
+    out = KrausMap.generalizedKraus(
+        kraus_terms = c_ops,
+        hp_terms = [c.dag() @ c * -0.5 for c in c_ops],
+    )
+    out._flags["istp"] = False
+    return out
+
+
 @_map_over_compound_operators
 def operator_to_vector(op: Qobj) -> Qobj:
     """
@@ -245,7 +269,7 @@ def operator_to_vector(op: Qobj) -> Qobj:
         raise TypeError("Cannot convert object already "
                         "in super representation")
     return Qobj(stack_columns(op.data),
-                dims=[op.dims, [1]],
+                dims=[op._dims, [1]],
                 superrep="super",
                 copy=False)
 
@@ -432,12 +456,9 @@ def sprepost(A, B):
     from .cy.qobjevo import QobjEvo
     if (isinstance(A, QobjEvo) or isinstance(B, QobjEvo)):
         return spre(A) * spost(B)
-    dims = [[_drop_projected_dims(A.dims[0]),
-             _drop_projected_dims(B.dims[1])],
-            [_drop_projected_dims(A.dims[1]),
-             _drop_projected_dims(B.dims[0])]]
+
     return Qobj(_data.kron_transpose(B.data, A.data),
-                dims=dims,
+                dims=Dimensions.from_prepost(A._dims, B._dims),
                 superrep='super',
                 isherm=A._isherm and B._isherm,
                 copy=False)

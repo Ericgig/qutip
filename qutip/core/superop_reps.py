@@ -22,7 +22,7 @@ from . import data as _data
 from .superoperator import stack_columns, unstack_columns, sprepost
 from .tensor import tensor
 from .dimensions import flatten
-from .qobj import Qobj
+from .qobj import Qobj, KrausMap
 from .operators import identity, sigmax, sigmay, sigmaz
 from .states import basis
 
@@ -130,15 +130,18 @@ def _choi_to_kraus(q_oper, tol=1e-9):
     vals, vecs = q_oper.eigenstates()
     dims = [q_oper.dims[0][1], q_oper.dims[0][0]]
     shape = (np.prod(q_oper.dims[0][1]), np.prod(q_oper.dims[0][0]))
-    return [Qobj(_data.mul(unstack_columns(vec.data, shape=shape), np.sqrt(val)),
-                 dims=dims, copy='False')
-            for val, vec in zip(vals, vecs) if abs(val) >= tol]
+    opers = [
+        Qobj(_data.mul(unstack_columns(vec.data, shape=shape), np.sqrt(val)),
+             dims=dims, copy='False')
+        for val, vec in zip(vals, vecs) if abs(val) >= tol
+    ]
+    return KrausMap(opers)
 
 
 # Individual conversions from Kraus operators are public because the output
 # list of Kraus operators is not itself a quantum object.
 
-def kraus_to_choi(kraus_ops: list[Qobj]) -> Qobj:
+def kraus_to_choi(kraus_op: KrausMap) -> Qobj:
     r"""
     Convert a list of Kraus operators into Choi representation of the channel.
 
@@ -149,8 +152,8 @@ def kraus_to_choi(kraus_ops: list[Qobj]) -> Qobj:
 
     Parameters
     ----------
-    kraus_ops : list[Qobj]
-        The list of Kraus operators to be converted to Choi representation.
+    kraus_op : KrausMap
+        The kraus operators to be converted to Choi representation.
 
     Returns
     -------
@@ -158,23 +161,9 @@ def kraus_to_choi(kraus_ops: list[Qobj]) -> Qobj:
         A quantum object representing the same map as ``kraus_ops``, such that
         ``choi.superrep == "choi"``.
     """
-    len_op = np.prod(kraus_ops[0].shape)
-    # If Kraus ops have dims [M, N] in qutip notation (act on [N, N] density
-    # matrix and produce [M, M] d.m.), Choi matrix Hilbert space will
-    # be [[M, N], [M, N]] because Choi Hilbert space
-    # is (output space) x (input space).
-    choi_dims = [kraus_ops[0].dims] * 2
-    # transform a list of Qobj matrices list[sum_ij k_ij |i><j|]
-    # into an array of array vectors sum_ij k_ij |i, j>> = sum_I k_I |I>>
-    kraus_vectors = np.asarray([
-        np.reshape(kraus_op.full(), len_op, order="F")
-        for kraus_op in kraus_ops
-    ])
-    # sum_{I} |k_I|^2 |I>><<I|
-    choi_array = np.tensordot(
-        kraus_vectors, kraus_vectors.conj(), axes=([0], [0])
-    )
-    return Qobj(choi_array, choi_dims, superrep="choi", copy=False)
+    if isinstance(kraus_op, list):
+        kraus_op = KrausMap(kraus_op)
+    return kraus_op.to_choi()
 
 
 def kraus_to_super(kraus_list: list[Qobj], sparse=False) -> Qobj:
@@ -386,6 +375,8 @@ def to_choi(q_oper: Qobj) -> Qobj:
             return _super_tofrom_choi(q_oper)
         if q_oper.superrep == 'chi':
             return _chi_to_choi(q_oper)
+        elif q_oper.superrep == 'kraus':
+            return q_oper.to_choi()
         else:
             raise TypeError(q_oper.superrep)
     elif q_oper.type == 'oper':
@@ -429,6 +420,8 @@ def to_chi(q_oper: Qobj) -> Qobj:
             return _choi_to_chi(q_oper)
         elif q_oper.superrep == 'super':
             return _choi_to_chi(to_choi(q_oper))
+        elif q_oper.superrep == 'kraus':
+            return _choi_to_chi(q_oper.to_choi())
         else:
             raise TypeError(q_oper.superrep)
     elif q_oper.type == 'oper':
@@ -471,6 +464,8 @@ def to_super(q_oper: Qobj) -> Qobj:
             return _super_tofrom_choi(q_oper)
         elif q_oper.superrep == 'chi':
             return to_super(to_choi(q_oper))
+        elif q_oper.superrep == 'kraus':
+            return q_oper.to_super()
         else:
             raise ValueError(
                 "Unrecognized superrep '{}'.".format(q_oper.superrep))
@@ -511,11 +506,13 @@ def to_kraus(q_oper: Qobj, tol: float=1e-9) -> list[Qobj]:
         decomposed into Kraus operators.
     """
     if q_oper.issuper:
+        if q_oper.superrep == "kraus":
+            return q_oper.copy()
         if q_oper.superrep != 'choi':
             q_oper = to_choi(q_oper)
         return _choi_to_kraus(q_oper, tol)
     elif q_oper.isoper:  # Assume unitary
-        return [q_oper]
+        return KrausMap([q_oper])
     raise TypeError(
         "Conversion of Qobj with type={0.type} "
         "and superrep={0.superrep} to Kraus decomposition not "

@@ -205,21 +205,22 @@ class Test_average_gate_fidelity:
         """
         def agf_pre_50(oper, target=None):
             kraus = to_kraus(oper)
-            d = kraus[0].shape[0]
+            shape = kraus._pre_dims().shape
 
-            if kraus[0].shape[1] != d:
+            if shape[0] != shape[1]:
                 return TypeError(
                     "Average gate fidelity only implemented for square "
                     "superoperators.")
 
+            d = shape[0]
             if target is None:
                 return (
-                    (d + np.sum([np.abs(A_k.tr()) ** 2 for A_k in kraus])) /
+                    (d + np.sum([np.abs(A_k.tr()) ** 2 for A_k in kraus._kmap])) /
                     (d * d + d)
                 )
             return (
                 (d + np.sum([
-                    np.abs((A_k * target.dag()).tr()) ** 2 for A_k in kraus
+                    np.abs((A_k * target.dag()).tr()) ** 2 for A_k in kraus._kmap
                 ])) / (d * d + d)
             )
 

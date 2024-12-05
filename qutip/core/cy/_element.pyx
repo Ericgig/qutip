@@ -5,16 +5,22 @@
 #cython: cdvision=True
 #cython: c_api_binop_methods=True
 
+import warnings
 from .. import data as _data
 from qutip.core.cy.coefficient import coefficient_function_parameters
+from qutip.core.dimensions import Dimensions
+from qutip.core.qobj import Qobj
 from qutip.core.data cimport Dense, Data, dense
 from qutip.core.data.matmul cimport *
 from math import nan as Nan
 cdef extern from "<complex>" namespace "std" nogil:
     double complex conj(double complex x)
 
-__all__ = ['_ConstantElement', '_EvoElement',
-           '_FuncElement', '_MapElement', '_ProdElement']
+__all__ = [
+    '_ConstantElement', '_EvoElement',
+    '_ConstantSuperElement', '_EvoSuperElement',
+    '_FuncElement', '_MapElement', '_ProdElement'
+]
 
 
 cdef class _BaseElement:
@@ -321,6 +327,130 @@ cdef class _ConstantElement(_BaseElement):
     def dtype(self):
         return type(self._data)
 
+cdef class _ConstantSuperElement(_BaseElement):
+    """
+    Constant part of a list format :obj:`.QobjEvo`.
+    A constant :obj:`.QobjEvo` will contain one `_ConstantElement`::
+
+      qevo = QobjEvo(H0)
+      qevo.elements = [_ConstantElement(H0)]
+    """
+    def __init__(self, qobjs):
+        self._pre = qobjs[0]
+        self._post = qobjs[1]
+        self._pre_data = self._pre.data
+        self._post_data = self._post.data
+        self._data = None
+        self._qobj = None
+
+    def __mul__(left, right):
+        cdef _ConstantSuperElement base
+        cdef object factor
+        if type(left) is _ConstantSuperElement:
+            base = left
+            factor = right
+        if type(right) is _ConstantSuperElement:
+            base = right
+            factor = left
+        return _ConstantSuperElement((base._pre * right, base._post))
+
+    def __matmul__(left, right):
+        if (
+            type(left) is _ConstantSuperElement
+            and type(right) is _ConstantSuperElement
+        ):
+            pre_left = (<_ConstantSuperElement> left)._pre
+            pre_right = (<_ConstantSuperElement> right)._pre
+            post_left = (<_ConstantSuperElement> left)._post
+            post_right = (<_ConstantSuperElement> right)._post
+            return _ConstantSuperElement(
+                (pre_left @ pre_right, post_right @ post_left)
+            )
+        elif (
+            type(left) is _EvoSuperElement
+            or type(right) is _EvoSuperElement
+        ):
+            return NotImplemented
+        elif type(left) is _ConstantSuperElement:
+            return _ConstantElement(left.qobj(0.)) @ right
+        elif type(right) is _ConstantSuperElement:
+            return left @ _ConstantElement(right.qobj(0.))
+        raise Exception("Should never reach this.")
+
+    cpdef Data data(self, t):
+        if self._data is None:
+            self._data  = _data.kron_transpose(self._post_data, self._pre_data)
+        return self._data
+
+    cpdef object qobj(self, t):
+        if self._qobj is None:
+            dims = Dimensions.from_prepost(self._pre._dims, self._post._dims)
+            self._qobj = Qobj(
+                self.data(t),
+                dims=dims,
+                superrep='super',
+                isherm=self._pre._isherm and self._post._isherm,
+                copy=False
+            )
+        return self._qobj
+
+    cpdef object coeff(self, t):
+        return 1.
+
+    cdef Data matmul_data_t(_ConstantSuperElement self, t, Data state, Data out=None):
+        if state.shape[1] == 1 and self._post_data.shape[0] != 1:
+            # Operator ket: restack
+            if type(state) == Dense:
+                state = _data.column_unstack_dense(
+                    state, self._pre_data.shape[1], inplace=state.fortran
+                )
+            else:
+                state = _data.column_unstack(state, self._pre_data.shape[1])
+            if type(out) is Dense:
+                out = _data.column_unstack_dense(
+                    out, self._pre_data.shape[1], inplace=out.fortran
+                )
+            elif out is not None:
+                out = _data.column_unstack(out, self._pre_data.shape[1])
+
+            try:
+                out = self.matmul_data_t(t, state, out)
+            finally:
+                if state.fortran:
+                    # `state` was reshaped inplace, restore it's original shape
+                    _data.column_stack_dense(state, inplace=state.fortran)
+            if type(out) is Dense:
+                out = _data.column_stack_dense(out, inplace=out.fortran)
+            else:
+                out = _data.column_stack(out)
+            return out
+
+        # Core computation of matmul
+        rho_post = _data.matmul(state, self._post_data)
+        if out is None:
+            return _data.matmul(self._pre_data, rho_post)
+        elif type(state) is Dense and type(out) is Dense:
+            imatmul_data_dense(self._pre_data, rho_post, 1., out=out)
+            return out
+        else:
+            return _data.add(out, _data.matmul(self._pre_data, rho_post))
+
+    def linear_map(self, f, anti=False):
+        warnings.warn("Conversion from spre / spost to super", UserWarning)
+        return _ConstantElement(f(self.qobj(0.)))
+
+    def replace_arguments(self, args, cache=None):
+        return self
+
+    def __call__(self, t, args=None):
+        return self.qobj(0.)
+
+    @property
+    def dtype(self):
+        if type(self._pre_data) is  type(self._post_data):
+            return type(self._pre)
+        return None
+
 
 cdef class _EvoElement(_BaseElement):
     """
@@ -381,6 +511,120 @@ cdef class _EvoElement(_BaseElement):
     @property
     def dtype(self):
         return type(self._data)
+
+
+cdef class _EvoSuperElement(_ConstantSuperElement):
+    """
+    A pair of a :obj:`.Qobj` and a :obj:`.Coefficient` from the list format
+    time-dependent operator::
+
+      qevo = QobjEvo([[H0, coeff0], [H1, coeff1]])
+      qevo.elements = [_EvoElement(H0, coeff0), _EvoElement(H1, coeff1)]
+    """
+    def __init__(self, qobjs, coefficient):
+        self._pre = qobjs[0]
+        self._post = qobjs[1]
+        self._pre_data = self._pre.data
+        self._post_data = self._post.data
+        self._data = None
+        self._qobj = None
+        self._coefficient = coefficient
+
+    def __mul__(left, right):
+        cdef _EvoSuperElement base
+        cdef object factor
+        if type(left) is _EvoSuperElement:
+            base = left
+            factor = right
+        if type(right) is _EvoSuperElement:
+            base = right
+            factor = left
+        return _EvoSuperElement(
+            (base._pre * factor, base._post),
+            base._coefficient
+        )
+
+    def __matmul__(left, right):
+        if not isinstance(right, _ConstantSuperElement):
+            return left @ _EvoElement(right.qobj(0.), right._ceofficient)
+        if not isinstance(left, _ConstantSuperElement):
+            return _EvoElement(left.qobj(0.), left._ceofficient) @ right
+
+        pre_left = (<_ConstantSuperElement> left)._pre
+        pre_right = (<_ConstantSuperElement> right)._pre
+        post_left = (<_ConstantSuperElement> left)._post
+        post_right = (<_ConstantSuperElement> right)._post
+
+        if isinstance(left, _EvoSuperElement) and isinstance(right, _EvoSuperElement):
+            coefficient = left._coefficient * right._coefficient
+        elif isinstance(left, _EvoSuperElement):
+            coefficient = left._coefficient
+        elif isinstance(right, _EvoSuperElement):
+            coefficient = right._coefficient
+        else:
+            raise Exception("Should not be here!")
+
+        return _EvoSuperElement(
+            (pre_left @ pre_right, post_right @ post_left),
+            coefficient
+        )
+
+    cpdef object coeff(self, t):
+        return self._coefficient(t)
+
+    cdef Data matmul_data_t(_EvoSuperElement self, t, Data state, Data out=None):
+        if state.shape[1] == 1 and self._post_data.shape[0] != 1:
+            # Operator ket: restack
+            if type(state) == Dense:
+                # 1D matrix are both C and fortran.
+                # So we can always stack them inplace.
+                (<Dense> state).fortran = True
+                state = _data.column_unstack_dense(
+                    state, self._pre_data.shape[1], inplace=True
+                )
+            else:
+                state = _data.column_unstack(state, self._pre_data.shape[1])
+            if type(out) is Dense:
+                (<Dense> out).fortran = True
+                out = _data.column_unstack_dense(
+                    out, self._pre_data.shape[1], inplace=True
+                )
+            elif out is not None:
+                out = _data.column_unstack(out, self._pre_data.shape[1])
+
+            try:
+                out = self.matmul_data_t(t, state, out)
+            finally:
+                # `state` was reshaped inplace, restore it's original shape
+                _data.column_stack_dense(state, inplace=True)
+            if type(out) is Dense:
+                out = _data.column_stack_dense(out, inplace=True)
+            else:
+                out = _data.column_stack(out)
+            return out
+
+        # Core computation of matmul
+        rho_post = _data.matmul(state, self._post_data, self.coeff(t))
+        if out is None:
+            return _data.matmul(self._pre_data, rho_post)
+        elif type(rho_post) is Dense and type(out) is Dense:
+            imatmul_data_dense(self._pre_data, rho_post, 1., out=out)
+            return out
+        else:
+            return _data.add(out, _data.matmul(self._pre_data, rho_post))
+
+    def linear_map(self, f, anti=False):
+        warnings.warn("Conversion from spre / spost to super", UserWarning)
+        return _EvoElement(
+            f(self.qobj(0.)),
+            self._coefficient.conj() if anti else self._coefficient,
+        )
+
+    def replace_arguments(self, args, cache=None):
+        return _EvoSuperElement(
+            (self._pre, self._post),
+            self._coefficient.replace_arguments(args)
+        )
 
 
 cdef class _FuncElement(_BaseElement):

@@ -17,8 +17,20 @@ cdef class _ConstantElement(_BaseElement):
     cdef readonly object _qobj
 
 
+cdef class _ConstantSuperElement(_BaseElement):
+    cdef readonly object _pre
+    cdef readonly object _post
+    cdef readonly object _pre_data
+    cdef readonly object _post_data
+    cdef readonly object _qobj
+
+
 cdef class _EvoElement(_BaseElement):
     cdef readonly object _qobj
+    cdef readonly Coefficient _coefficient
+
+
+cdef class _EvoSuperElement(_ConstantSuperElement):
     cdef readonly Coefficient _coefficient
 
 

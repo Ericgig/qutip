@@ -101,7 +101,7 @@ class Solver:
         }
         if state.isket:
             norm = state.norm()
-        elif state._dims.issquare:
+        elif state._dims.issquare and not state._dims.issuper:
             # Qobj.isoper does not differientiate between rectangular operators
             # and normal ones.
             norm = state.tr()

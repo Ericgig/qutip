@@ -78,7 +78,7 @@ def _single_qobj_expect(oper, state):
     Private function used by expect to calculate expectation values of Qobjs.
     """
     if not oper.isoper or not (state.isket or state.isoper):
-        raise TypeError('invalid operand types')
+        raise TypeError(f'invalid operand types, {oper.type} and {state.type}')
     if oper.dims[1] != state.dims[0]:
         msg = (
             "incompatible dimensions "
