@@ -140,6 +140,18 @@ def liouvillian(
                     copy=False)
 
 
+def liouvillian_kraus(H: Qobj, c_ops: list[Qobj]):
+    """
+    TODO
+    """
+    out = KrausMap.generalizedKraus(
+        kraus_terms = c_ops,
+        hp_terms = [-1.0j * H] + [c.dag() @ c * -0.5 for c in c_ops],
+    )
+    out._flags["istp"] = False
+    return out
+
+
 @overload
 def lindblad_dissipator(
     a: Qobj,
@@ -220,6 +232,18 @@ def lindblad_dissipator(
         D = spre(a) * spost(b.dag()) - 0.5 * spre(ad_b) - 0.5 * spost(ad_b)
 
     return D.data if data_only else D
+
+
+def lindblad_dissipator_kraus(H: Qobj, c_ops: list[Qobj]):
+    """
+    TODO
+    """
+    out = KrausMap.generalizedKraus(
+        kraus_terms = c_ops,
+        hp_terms = [c.dag() @ c * -0.5 for c in c_ops],
+    )
+    out._flags["istp"] = False
+    return out
 
 
 @_map_over_compound_operators
