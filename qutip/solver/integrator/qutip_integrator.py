@@ -38,9 +38,13 @@ class IntegratorVern7(Integrator):
     method = 'vern7'
 
     def _prepare(self):
+        options = {
+            k: v for k, v in self.options.items()
+            if k != 'allow_sparse'
+        }
         self._ode_solver = Explicit_RungeKutta(
             self.system, method=self.method,
-            **self.options
+            **options
         )
         self.name = self.method
 
