@@ -329,6 +329,7 @@ class MCIntegrator:
     def _find_collapse_time(self, norm_old, norm, t_prev, t_final):
         """Find the time of the collapse and state just before it."""
         tries = 0
+        ratio_cutoff =  self.options['norm_min_step']
         while tries < self.options['norm_steps']:
             tries += 1
             if (t_final - t_prev) < self.options['norm_t_tol']:
@@ -341,11 +342,13 @@ class MCIntegrator:
                 np.log(norm_old / self.target_norm)
                 / np.log(norm_old / norm)
             )
-            # We have a bias on the larger side.
+            # We have a bias to larger ratio than.
             # It can get stuck in slow converging pattern when ratio is close
             # to 1
-            if ratio > 0.8:
-                ratio *= 0.8
+            if ratio < ratio_cutoff:
+                ratio = ratio_cutoff
+            if ratio > (1 - ratio_cutoff):
+                ratio = (1 - ratio_cutoff)
             t_guess = t_prev + dt * ratio
 
             if (t_guess - t_prev) < self.options['norm_t_tol']:
@@ -467,6 +470,7 @@ class MCSolver(MultiTrajSolver):
         "norm_steps": 25,
         "norm_t_tol": 1e-6,
         "norm_tol": 1e-4,
+        "norm_min_step": 0.1,
         "improved_sampling": False,
     }
 
@@ -859,6 +863,11 @@ class MCSolver(MultiTrajSolver):
 
         norm_steps: int, default: 25
             Maximum number of tries to find the collapse.
+
+        norm_min_step: float, default: 0.10
+            Minimum split used when finding jump location.
+            A small non-zero value can help avoid the worst cases convergence
+            when finding jumb at the cost of increased average steps.
 
         improved_sampling: Bool, default: False
             Whether to use the improved sampling algorithm
