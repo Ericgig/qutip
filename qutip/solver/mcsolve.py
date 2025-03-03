@@ -342,8 +342,11 @@ class MCIntegrator:
                 / np.log(norm_old / norm)
             )
             # We have a bias on the larger side.
-            # The 0.99 stop slow getting stuck in slow converging pattern
-            t_guess = t_prev + dt * ratio * 0.99
+            # It can get stuck in slow converging pattern when ratio is close
+            # to 1
+            if ratio > 0.8:
+                ratio *= 0.8
+            t_guess = t_prev + dt * ratio
 
             if (t_guess - t_prev) < self.options['norm_t_tol']:
                 t_guess = t_prev + self.options['norm_t_tol']
@@ -461,7 +464,7 @@ class MCSolver(MultiTrajSolver):
         "bitgenerator": None,
         "method": "vern7",
         "mc_corr_eps": 1e-10,
-        "norm_steps": 10,
+        "norm_steps": 25,
         "norm_t_tol": 1e-6,
         "norm_tol": 1e-4,
         "improved_sampling": False,
@@ -854,7 +857,7 @@ class MCSolver(MultiTrajSolver):
         norm_tol: float, default: 1e-4
             Tolerance in norm used when finding the collapse.
 
-        norm_steps: int, default: 5
+        norm_steps: int, default: 25
             Maximum number of tries to find the collapse.
 
         improved_sampling: Bool, default: False
