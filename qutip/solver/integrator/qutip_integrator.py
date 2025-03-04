@@ -54,10 +54,10 @@ class IntegratorVern7(Integrator):
 
     def set_state(self, t, state):
         if (
-            self.options["allow_sparse"]
+            not self.options["allow_sparse"]
             and isinstance(state, (_data.CSR, _data.Dia))
         ):
-            state = state.to(_data.Dense)
+            state = _data.to(_data.Dense, state)
         else:
             state = state.copy()
         self._ode_solver.set_initial_value(state, t)

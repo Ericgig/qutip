@@ -478,16 +478,16 @@ def test_super_H(improved_sampling, mixed_initial_state):
     n_th = 0.05
     c_ops = np.sqrt(coupling * (n_th + 1)) * a
     e_ops = [qutip.num(size)]
+    options = {"map": "serial", "improved_sampling": improved_sampling}
     mc_expected = mcsolve(H, state, times, c_ops, e_ops=e_ops, ntraj=ntraj,
                           target_tol=(0.1 if state.isket else None),
-                          options={'map': 'serial',
-                                   "improved_sampling": improved_sampling})
+                          options=options)
     mc = mcsolve(qutip.liouvillian(H), state, times, c_ops,
                  e_ops=e_ops, ntraj=ntraj,
                  target_tol=(0.1 if state.isket else None),
-                 options={'map': 'serial',
-                          "improved_sampling": improved_sampling})
+                 options=options)
     np.testing.assert_allclose(mc_expected.expect[0], mc.expect[0], atol=0.65)
+
 
 
 def test_MCSolver_run():
