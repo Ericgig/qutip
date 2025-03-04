@@ -329,7 +329,7 @@ class MCIntegrator:
     def _find_collapse_time(self, norm_old, norm, t_prev, t_final):
         """Find the time of the collapse and state just before it."""
         tries = 0
-        ratio_cutoff =  self.options['norm_min_step']
+        ratio_cutoff = self.options['norm_min_step']
         while tries < self.options['norm_steps']:
             tries += 1
             if (t_final - t_prev) < self.options['norm_t_tol']:
