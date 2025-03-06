@@ -489,7 +489,6 @@ def test_super_H(improved_sampling, mixed_initial_state):
     np.testing.assert_allclose(mc_expected.expect[0], mc.expect[0], atol=0.65)
 
 
-
 def test_MCSolver_run():
     size = 10
     a = qutip.QobjEvo([qutip.destroy(size), 'coupling'], args={'coupling': 0})

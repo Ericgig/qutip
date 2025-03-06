@@ -164,7 +164,6 @@ def _make_oper(kind, N):
 ])
 @pytest.mark.parametrize('heterodyne', [False, True])
 def test_open_system_derr(H, sc_ops, heterodyne):
-    return
     N = 5
     H = _make_oper(H, N)
     sc_ops = [_make_oper(op, N) for op in sc_ops]
