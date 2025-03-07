@@ -288,8 +288,6 @@ cdef class Explicit_RungeKutta:
             self._status = Status.NOT_INITIATED
             return
 
-        self._status = Status.NORMAL
-
         if t == self._t:
             return
 
@@ -298,8 +296,13 @@ cdef class Explicit_RungeKutta:
             return
 
         if self.interpolate and t < self._t_front:
-             self._y = self._interpolate_step(t, self._y)
-             self._t = t
+            if self._status != Status.INTERPOLATED:
+                self._prep_dense_out()
+                self._status = Status.INTERPOLATED
+            self._y = self._interpolate_step(t, self._y)
+            self._t = t
+
+        self._status = Status.NORMAL
 
         if step and self._t < self._t_front and t > self._t_front:
             # To ensure that the self._t ... t_out interval can be covered.
