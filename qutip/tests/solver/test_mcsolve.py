@@ -24,6 +24,11 @@ class callable_qobj:
         return self.oper
 
 
+def test_a():
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
+
 @pytest.mark.usefixtures("in_temporary_directory")
 class StatesAndExpectOutputCase:
     """
@@ -655,3 +660,9 @@ def test_mixed_equals_merged(improved_sampling, p):
         sum(merged_result.runs_weights + merged_result.deterministic_weights)
         == pytest.approx(1.)
     )
+
+
+def test_b():
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")

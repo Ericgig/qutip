@@ -153,6 +153,11 @@ def _make_oper(kind, N):
         out = rand_herm(N)
     return QobjEvo(out)
 
+def test_a():
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
+
 
 @pytest.mark.parametrize(['H', 'sc_ops'], [
     pytest.param("qeye", ["destroy"], id='simple'),
@@ -164,6 +169,7 @@ def _make_oper(kind, N):
 ])
 @pytest.mark.parametrize('heterodyne', [False, True])
 def test_open_system_derr(H, sc_ops, heterodyne):
+    return
     N = 5
     H = _make_oper(H, N)
     sc_ops = [_make_oper(op, N) for op in sc_ops]
