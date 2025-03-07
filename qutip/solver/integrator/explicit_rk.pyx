@@ -305,7 +305,7 @@ cdef class Explicit_RungeKutta:
             # To ensure that the self._t ... t_out interval can be covered.
             t = self._t_front
 
-        while self._t_front < t:
+        while self._t_front < t and self._status >= 0:
             self._y_prev = copy_to(self._y_front, self._y_prev)
             self._t_prev = self._t_front
             self._norm_prev = self._norm_front
