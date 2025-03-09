@@ -69,6 +69,9 @@ class StatesAndExpectOutputCase:
                          target_tol=(0.05 if state.isket else None))
         self._assert_expect(result, expected, tol)
         self._assert_states(result, expected, tol)
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
 
 class TestNoCollapse(StatesAndExpectOutputCase):
@@ -116,6 +119,9 @@ class TestNoCollapse(StatesAndExpectOutputCase):
                          c_ops=c_ops, e_ops=[], ntraj=self.ntraj,
                          options=options)
         self._assert_states(result, expected, tol)
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
     @pytest.mark.parametrize("improved_sampling", [True, False])
     def test_expect_only(self, hamiltonian, state, args, c_ops,
@@ -125,6 +131,9 @@ class TestNoCollapse(StatesAndExpectOutputCase):
                          c_ops=c_ops, e_ops=self.e_ops, ntraj=self.ntraj,
                          options=options)
         self._assert_expect(result, expected, tol)
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
 
 class TestConstantCollapse(StatesAndExpectOutputCase):
@@ -209,6 +218,9 @@ def test_stored_collapse_operators_and_times():
     assert len(result.col_times[0]) > 0
     assert len(result.col_which) == len(result.col_times)
     assert all(col in [0, 1] for col in result.col_which[0])
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 
 @pytest.mark.parametrize("improved_sampling", [True, False])
@@ -277,6 +289,9 @@ def test_states_outputs(keep_runs_results, improved_sampling,
     assert len(data.col_times) == ntraj
     assert np.max(np.hstack(data.col_which)) <= len(c_ops)
     assert data.stats['end_condition'] == "ntraj reached"
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 
 @pytest.mark.parametrize("improved_sampling", [True, False])
@@ -326,6 +341,9 @@ def test_expectation_outputs(keep_runs_results, improved_sampling,
     assert len(data.col_times) == ntraj
     assert np.max(np.hstack(data.col_which)) <= len(c_ops)
     assert data.stats['end_condition'] == "ntraj reached"
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 
 class TestSeeds:
@@ -356,6 +374,9 @@ class TestSeeds:
             np.testing.assert_equal(first_t, second_t)
         for first_w, second_w in zip(first.col_which, second.col_which):
             np.testing.assert_equal(first_w, second_w)
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
     @pytest.mark.parametrize("improved_sampling", [True, False])
     def test_seeds_are_not_reused_by_default(self, improved_sampling):
@@ -371,6 +392,10 @@ class TestSeeds:
                        for first_w, second_w in zip(first.col_which,
                                                     second.col_which))
 
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
+
     @pytest.mark.parametrize("seed", [1, np.random.SeedSequence(2)])
     @pytest.mark.parametrize("improved_sampling", [True, False])
     def test_seed_type(self, seed, improved_sampling):
@@ -382,6 +407,10 @@ class TestSeeds:
         for f_seed, s_seed in zip(first.seeds, second.seeds):
             assert f_seed.state == s_seed.state
 
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
+
     @pytest.mark.parametrize("improved_sampling", [True, False])
     def test_bad_seed(self, improved_sampling):
         args = (self.H, self.state, self.times)
@@ -389,6 +418,10 @@ class TestSeeds:
                   "options": {"improved_sampling": improved_sampling}}
         with pytest.raises(ValueError):
             mcsolve(*args, seeds=[1], **kwargs)
+
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
     @pytest.mark.parametrize("improved_sampling", [True, False])
     def test_generator(self, improved_sampling):
@@ -407,6 +440,9 @@ class TestSeeds:
         assert not all(np.array_equal(first_w, second_w)
                        for first_w, second_w in zip(first.col_which,
                                                     second.col_which))
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
     def test_stepping(self):
         size = 10
@@ -419,6 +455,9 @@ class TestSeeds:
         mcsolver.start(qutip.basis(size, size-1), 0, seed=5)
         state_2 = mcsolver.step(1, args={'alpha': 1})
         assert state_1 == state_2
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
 
 @pytest.mark.parametrize("improved_sampling", [True, False])
@@ -442,6 +481,9 @@ def test_timeout(improved_sampling, mixed_initial_state):
                            "improved_sampling": improved_sampling},
                   timeout=1e-6)
     assert res.stats['end_condition'] == 'timeout'
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 @pytest.mark.parametrize("improved_sampling", [True, False])
 def test_target_tol(improved_sampling):
@@ -465,6 +507,9 @@ def test_target_tol(improved_sampling):
     res = mcsolve(H, state, times, c_ops, e_ops=e_ops, ntraj=ntraj,
                   options=options, target_tol=1e-6)
     assert res.stats['end_condition'] == 'ntraj reached'
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 @pytest.mark.parametrize("improved_sampling", [True, False])
 @pytest.mark.parametrize("mixed_initial_state", [True, False])
@@ -492,6 +537,9 @@ def test_super_H(improved_sampling, mixed_initial_state):
                  target_tol=(0.1 if state.isket else None),
                  options=options)
     np.testing.assert_allclose(mc_expected.expect[0], mc.expect[0], atol=0.65)
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 
 def test_MCSolver_run():
@@ -512,6 +560,9 @@ def test_MCSolver_run():
         ntraj=1000, target_tol=0.1
     )
     assert 1 < res.num_trajectories < 1001
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 
 def test_MCSolver_stepping():
@@ -529,6 +580,9 @@ def test_MCSolver_stepping():
     assert qutip.expect(qutip.qeye(size), state) == pytest.approx(1)
     assert qutip.expect(qutip.num(size), state) <= size - 1
     assert state.isket
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 
 def _coeff_collapse(t, A):
@@ -567,6 +621,9 @@ def test_feedback(func, kind):
         psi0, np.linspace(0, 3, 31), e_ops=[qutip.num(10)], ntraj=10
     )
     assert np.all(result.expect[0] > 4. - tol)
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 
 @pytest.mark.parametrize(["initial_state", "ntraj"], [
@@ -613,6 +670,9 @@ def test_mixed_averaging(improved_sampling, initial_state, ntraj):
         sum(result.deterministic_weights + result.runs_weights)
         == pytest.approx(1.)
     )
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 
 @pytest.mark.parametrize("improved_sampling", [True, False])
@@ -660,9 +720,6 @@ def test_mixed_equals_merged(improved_sampling, p):
         sum(merged_result.runs_weights + merged_result.deterministic_weights)
         == pytest.approx(1.)
     )
-
-
-def test_b():
     import subprocess
     subprocess.run(["free", "-h"])
     raise Exception("Showing the output")

@@ -42,6 +42,10 @@ class TestIntegratorCte():
                             state.to_array()[0, 0], atol=2e-5)
             assert state.shape == (2, 1)
 
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
+
     def test_me_integration(self, me_method):
         evol = MESolver.avail_integrators()[me_method](self.me_system, {})
         state0 = qutip.operator_to_vector(qutip.fock_dm(2,1)).data
@@ -51,6 +55,10 @@ class TestIntegratorCte():
             assert t_ == t
             assert_allclose(self._analytical_me(t),
                             state.to_array()[0, 0], atol=2e-5)
+
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
     def test_mc_integration(self, mc_method):
         evol = MCSolver.avail_integrators()[mc_method](self.se_system, {})
@@ -72,7 +80,9 @@ class TestIntegratorCte():
                 assert_allclose(self._analytical_se(t),
                                 state.to_array()[0, 0], atol=2e-5)
                 t, state = evol.mcstep(t)
-
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
     @pytest.mark.parametrize('start', [1, -1])
     def test_mc_integration_mixed(self, start, mc_method):
@@ -92,7 +102,9 @@ class TestIntegratorCte():
             state.to_array()[0, 0]
             == pytest.approx(np.exp(t - start), abs=1e-5)
         )
-
+        import subprocess
+        subprocess.run(["free", "-h"])
+        raise Exception("Showing the output")
 
 class TestIntegrator(TestIntegratorCte):
     _analytical_se = lambda _, t: np.cos(t**2/2 * np.pi)
@@ -166,6 +178,9 @@ def test_concurent_usage(integrator):
         assert inter1.integrate(t)[1].to_array()[0, 0] == expected1
         expected2 = pytest.approx(np.exp(-t/2), abs=1e-5)
         assert inter2.integrate(t)[1].to_array()[0, 0] == expected2
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
 
 @pytest.mark.parametrize('integrator',
     [IntegratorVern7, IntegratorVern9],
@@ -189,3 +204,6 @@ def test_pickling_vern_methods(integrator):
         result1 = inter.integrate(t)[1].to_array()[0, 0]
         result2 = recreated.integrate(t)[1].to_array()[0, 0]
         assert result1 == result2 == expected
+    import subprocess
+    subprocess.run(["free", "-h"])
+    raise Exception("Showing the output")
