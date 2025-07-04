@@ -97,6 +97,23 @@ def test_build_full(specialisation, output):
                         assert isinstance(out, out_dtype)
 
 
+def test_register():
+    def func_dense(mat, /):
+        return "Dense"
+
+    dispatched = Dispatcher(func_dense, ("mat",), False)
+    dispatched.add_specialisations([
+        (_data.Dense, func_dense),
+    ])
+
+    @dispatched.register((_data.CSR))
+    def func_csr(mat):
+        return "CSR"
+
+    assert dispatched[_data.Dense] is func_dense
+    assert dispatched[_data.CSR] is func_csr
+
+
 def test_Data_low_priority_one_dispatch():
     class func():
         __name__ = "dummy name"

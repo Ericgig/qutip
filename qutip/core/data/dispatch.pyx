@@ -336,6 +336,14 @@ cdef class Dispatcher:
         if not _defer:
             self.rebuild_lookup()
 
+    def register(self, *dtype):
+
+        def _register(func):
+            self.add_specialisations([dtype + (func,)])
+            return func
+
+        return _register
+
     cdef object _find_specialization(
         self, tuple in_types, bint output,
         type default=None, int verbose=False
