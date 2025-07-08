@@ -141,9 +141,9 @@ cdef class _group_specialisation:
 
     def __repr__(self):
         if len(self.types) == 0:
-            spec = self.group.name
+            spec = self.group
         else:
-            spec = "(" + ", ".join(x.__name__ for x in self.types) + f" {self.group.name})"
+            spec = "(" + ", ".join(x.__name__ for x in self.types) + f" {self.group})"
         return "".join([
             f"<indirect specialisation {spec} of ", self._short_name, ">"
         ])
