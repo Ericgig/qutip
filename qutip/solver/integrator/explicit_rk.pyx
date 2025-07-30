@@ -9,8 +9,6 @@ from qutip.core.data.add import iadd
 from qutip.core.data.mul cimport imul_data
 from qutip.core.data.tidyup import tidyup_csr
 from qutip.core.data.norm import frobenius_data
-from .verner7efficient import vern7_coeff
-from .verner9efficient import vern9_coeff
 from cpython.exc cimport PyErr_CheckSignals
 cimport cython
 import numpy as np
@@ -100,9 +98,12 @@ cdef class Explicit_RungeKutta:
         * It also accept a tuple of runge-kutta coefficients.
         (See `Explicit_RungeKutta._init_coeff`)
     """
-    def __init__(self, QobjEvo qevo, double rtol=1e-6, double atol=1e-8,
-                 int nsteps=1000, double first_step=0, double min_step=0,
-                 double max_step=0, bint interpolate=True, method="euler"):
+    def __init__(
+        self, QobjEvo qevo, butcher_tableau=None, str method="",
+        double rtol=1e-6, double atol=1e-8, int nsteps=1000,
+        double first_step=0, double min_step=0, double max_step=0,
+        bint interpolate=True
+    ):
         # Function to integrate.
         self.qevo = qevo
         # tolerances
@@ -122,17 +123,12 @@ cdef class Explicit_RungeKutta:
         self.interpolate = interpolate
 
         self.k = []
-        if isinstance(method, dict):
-            self._init_coeff(**method)
-        elif "vern7" == method:
-            self._init_coeff(**vern7_coeff)
-        elif "vern9" == method:
-            self._init_coeff(**vern9_coeff)
-        elif "rk4" == method:
+        if butcher_tableau is None:
             self._init_coeff(**rk4_coeff)
         else:
-            self._init_coeff(**euler_coeff)
+            self._init_coeff(**butcher_tableau)
         self.method = method
+        self.butcher_tableau = butcher_tableau
         self._y_prev = None
 
     def _init_coeff(self, order, a, b, c, e=None, bi=None):
@@ -204,8 +200,9 @@ cdef class Explicit_RungeKutta:
         Helper for pickle to serialize the object
         """
         return (self.__class__, (
-            self.qevo, self.rtol, self.atol, self.max_numsteps, self.first_step,
-            self.min_step, self.max_step, self.interpolate, self.method
+            self.qevo, self.butcher_tableau, self.method,
+            self.rtol, self.atol, self.max_numsteps, self.first_step,
+            self.min_step, self.max_step, self.interpolate
         ))
 
     cpdef void set_initial_value(self, Data y0, double t) except *:

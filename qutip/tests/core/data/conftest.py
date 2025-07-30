@@ -22,7 +22,7 @@ def shuffle_indices_scipy_csr(matrix, gen=None):
     for row in range(out.shape[0]):
         ptr = (out.indptr[row], out.indptr[row + 1])
         if ptr[1] - ptr[0] > 1:
-            order = np.argsort(gen.uniform(ptr[1] - ptr[0]))
+            order = np.argsort(gen.uniform(size=(ptr[1] - ptr[0])))
             # If sorted, reverse it.
             order = np.flip(order) if np.all(order[:-1] < order[1:]) else order
             out.indices[ptr[0]:ptr[1]] = out.indices[ptr[0]:ptr[1]][order]
@@ -50,7 +50,8 @@ def random_scipy_dia(shape, density, sort=False, gen=None):
             shape[0], shape[1], shape[0] + diag, shape[1] - diag
         )
         data.append(
-            gen.uniform(num_elements) + 1j * gen.uniform(num_elements)
+            gen.uniform(size=num_elements)
+            + 1j * gen.uniform(size=num_elements)
         )
     if sort:
         order = np.argsort(offsets)
@@ -68,7 +69,7 @@ def random_scipy_csr(shape, density, sorted_, gen=None):
     if gen is None:
         gen = np.random.default_rng()
     nnz = int(shape[0] * shape[1] * density) or 1
-    data = gen.uniform(nnz) + 1j * gen.uniform(nnz)
+    data = gen.uniform(size=nnz) + 1j * gen.uniform(size=nnz)
     rows = gen.choice(np.arange(shape[0]), nnz)
     cols = gen.choice(np.arange(shape[1]), nnz)
     sci = scipy.sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
@@ -81,7 +82,7 @@ def random_numpy_dense(shape, fortran, gen=None):
     """Generate a random numpy dense matrix with the given shape."""
     if gen is None:
         gen = np.random.default_rng()
-    out = gen.uniform(*shape) + 1j*gen.uniform(*shape)
+    out = gen.uniform(size=shape) + 1j*gen.uniform(size=shape)
     if fortran:
         out = np.asfortranarray(out)
     return out
