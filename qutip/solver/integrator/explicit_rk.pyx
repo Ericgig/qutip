@@ -434,7 +434,7 @@ cdef class Explicit_RungeKutta:
     @cython.cdivision(True)
     cdef double _get_timestep(self, double t):
         """ Get the dt for the step. """
-        cdef double dt_needed = t - self._t_front
+        cdef double dt_needed = t - self._t_prev
         if not self.adaptative_step:
             return dt_needed
         if self.interpolate:

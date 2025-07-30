@@ -1,21 +1,21 @@
 """
-Provide a cython implimentation verner 'most-efficient'
-order 7 runge-Kutta method.
-See https://www.sfu.ca/~jverner/
+Tsitouras's 5/4 order Runge-Kutta method
+
+Runge–Kutta pairs of order 5(4) satisfying only the first column
+simplifying assumption,
+Ch. Tsitouras,
+Computers & Mathematics with Applications, Vol 62, Issue 2, 770-775
+Jan 2011
 """
-# Verner 7 Efficient
-# https://www.sfu.ca/~jverner/RKV76.IIa.Efficient.00001675585.081206.CoeffsOnlyFLOAT
+
 __all__ = ["tsit5_coeff"]
 import numpy as np
 order = 5
 rk_step = 7
-rk_extra_step = 7
-denseout_order = 0
 
-bh = np.zeros(rk_step, dtype=np.float64)
-a = np.zeros((rk_extra_step, rk_extra_step), dtype=np.float64)
+a = np.zeros((rk_step, rk_step), dtype=np.float64)
 b = np.zeros(rk_step, dtype=np.float64)
-c = np.zeros(rk_extra_step, dtype=np.float64)
+c = np.zeros(rk_step, dtype=np.float64)
 e = np.zeros(rk_step, dtype=np.float64)
 bi = None
 
@@ -35,13 +35,13 @@ b[4] = -3.290069515436081
 b[5] =  2.324710524099774
 b[6] = 0.
 
-bh[0] =  .001780011052226
-bh[1] =  .000816434459657
-bh[2] = -.007880878010262
-bh[3] =  .144711007173263
-bh[4] = -.582357165452555
-bh[5] =  .458082105929187
-bh[6] = 1/66
+e[0] =  .17800110522257773e-2
+e[1] =  .8164344596567463e-3
+e[2] = -.7880878010261994e-2
+e[3] =  .1447110071732629
+e[4] = -.5823571654525552
+e[5] =  .45808210592918686
+e[6] = -1/66
 
 a[1, 0] = c[1]
 
@@ -64,8 +64,5 @@ a[5, 4] = -0.02826905039406838
 a[5, 0] = c[5] - a[5, 4] - a[5, 3] - a[5, 2] - a[5, 1]
 
 a[6, :6] = b[:6]
-
-for i in range(rk_step):
-    e[i] = b[i] - bh[i]
 
 tsit5_coeff = {'order': order, 'a': a, 'b': b, 'c': c, 'e': e, 'bi': bi}

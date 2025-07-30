@@ -171,7 +171,7 @@ def test_concurent_usage(integrator):
     [IntegratorVern7, IntegratorVern9, IntegratorTsit5],
     ids=["vern7", 'vern9', 'tsit5']
 )
-def test_pickling_vern_methods(integrator):
+def test_pickling_rk_methods(integrator):
     """Test whether VernN methods can be pickled and hence used in multiprocessing"""
     opt = {'atol':1e-10, 'rtol':1e-7}
 
@@ -189,3 +189,22 @@ def test_pickling_vern_methods(integrator):
         result1 = inter.integrate(t)[1].to_array()[0, 0]
         result2 = recreated.integrate(t)[1].to_array()[0, 0]
         assert result1 == result2 == expected
+
+@pytest.mark.parametrize('integrator',
+    [IntegratorVern7, IntegratorVern9, IntegratorTsit5],
+    ids=["vern7", 'vern9', 'tsit5']
+)
+def test_rk_options(integrator):
+    """Test whether VernN methods can be pickled and hence used in multiprocessing"""
+    opt = {
+        'atol':1e-10, 'rtol':1e-7, 'interpolate':False, 'first_step':0.5
+    }
+
+    sys = qutip.QobjEvo(qutip.qeye(1))
+    inter = integrator(sys, opt)
+    inter.set_state(0, qutip.basis(1,0).data)
+
+    for t in np.linspace(0, 1, 6):
+        expected = pytest.approx(np.exp(t), abs=1e-5)
+        result1 = inter.integrate(t)[1].to_array()[0, 0]
+        assert result1 == expected
