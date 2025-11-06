@@ -92,6 +92,28 @@ cdef class _Indexer:
         if self.cumprod != NULL:
             mem.PyMem_Free(self.cumprod)
 
+
+def get_permutations(dimensions, order):
+    """
+    Obtain the permutation to reorder the subsystems from the given hilbert
+    space in the given order. Connect the `dimensions` and `indices` functions
+    in the following way:
+
+      perm = get_permutations(dims, order)
+      dimensions(mat, dims, order) == indices(mat, perm, perm)
+
+    Can be used to permute non-square operators:
+
+      perm_row = get_permutations(dims[0], order)
+      perm_col = get_permutations(dims[1], order)
+      indices(mat, perm_row, perm_col)
+    """
+    return _Indexer(
+        np.asarray(dimensions, dtype=idxint_dtype),
+        np.asarray(order, dtype=idxint_dtype),
+    ).all()
+
+
 cdef bint _check_indices(size_t size, idxint[:] order) except True:
     """
     Test whether the permutation `order` is a valid permutation of `size`

@@ -917,3 +917,15 @@ class Dimensions(metaclass=MetaDims):
     def _require_pure_dims(self, operation):
         self.from_._require_pure_dims(operation)
         self.to_._require_pure_dims(operation)
+
+    def mode_shape(self, mode):
+        if isinstance(mode, int):
+            mode = (mode,)
+
+        shape = [1, 1]
+        flat = self.flat()
+        for m in mode:
+            shape[0] *= flat[0][m]
+            shape[1] *= flat[1][m]
+
+        return shape
