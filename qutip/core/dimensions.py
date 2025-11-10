@@ -506,6 +506,13 @@ class Space(metaclass=MetaSpace):
         """
         return self
 
+    def expand_scalar_dims(self, N) -> "Space":
+        """
+        Add subsystems of one state to obtain a compound space of N spaces.
+        Only Field can be expended.
+        """
+        raise ValueError("Non Scalar space can't be expanded.")
+
     def replace_superrep(self, super_rep: str) -> "Space":
         return self
 
@@ -520,6 +527,21 @@ class Space(metaclass=MetaSpace):
                 f" number restricted space). A separate, specialized function"
                 f" may be available in the corresponding module."
             )
+
+    def _extract_modes(self, modes: tuple(int, ...)) -> "Space":
+        """
+        Extract the subspace of the modes:
+           Space(2, 3, 4, 5), modes = (2, 0) -> Space(4, 2)
+        """
+        if modes != (0,):
+            raise ValueError("Modes outside the given space.")
+        return self
+
+    def _shape_modes(self, modes: tuple(int, ...)) -> int:
+        """
+        Get the size of the subspace spanned by the given modes.
+        """
+        return self._extract_modes(modes).size
 
 
 class Field(Space):
@@ -549,6 +571,9 @@ class Field(Space):
 
     def flat(self) -> list[int]:
         return [1]
+
+    def expand_scalar_dims(self, N) -> "Space":
+        return Compound(*[self] * N)
 
 
 Field.field_instance = Field.__new__(Field)
@@ -648,6 +673,9 @@ class Compound(Space):
     def scalar_like(self) -> Space:
         return Space([space.scalar_like() for space in self.spaces])
 
+    def _extract_modes(self, modes: tuple(int, ...)) -> Space:
+        return Space(*[self.spaces[mode] for mode in modes])
+
 
 class SuperSpace(Space):
     _stored_dims = {}
@@ -703,11 +731,34 @@ class SuperSpace(Space):
     def drop_scalar_dims(self) -> "Space":
         return SuperSpace(self.oper.drop_scalar_dims(), rep=self.superrep)
 
+    def expand_scalar_dims(self, N) -> "Space":
+        return SuperSpace(
+            [
+                self.oper[0].expand_scalar_dims(N // 2),
+                self.oper[1].expand_scalar_dims(N // 2),
+            ],
+            rep=self.superrep
+        )
+
     def replace_superrep(self, super_rep: str) -> Space:
         return SuperSpace(self.oper, rep=super_rep)
 
     def scalar_like(self) -> Space:
         return SuperSpace(self.oper.scalar_like(), rep=self.superrep)
+
+    def _extract_modes(self, modes: tuple(int, ...)) -> Space:
+        # This flatten the SuperSpace into normal space...
+        # For use in oper, we flatten it to a list, so it's not an issue
+        # but is there other uses cases?
+        N = len(self.oper[0].flat())
+        return Space(*[
+            (
+                self.oper[0]._extract_modes[(mode,)]
+                if mode < N
+                else self.oper[1]._extract_modes[(mode,)]
+            )
+            for mode in modes
+        ])
 
 
 class MetaDims(type):
@@ -918,14 +969,28 @@ class Dimensions(metaclass=MetaDims):
         self.from_._require_pure_dims(operation)
         self.to_._require_pure_dims(operation)
 
-    def mode_shape(self, mode):
-        if isinstance(mode, int):
-            mode = (mode,)
+    def _shape_modes(self, modes: tuple(int, ...)) -> (int, int):
+        """
+        Get the shape of the subspace spanned by the given modes.
+        """
+        if isinstance(modes, int):
+            modes = (modes,)
 
-        shape = [1, 1]
+        shape_l = 1
+        shape_r = 1
         flat = self.flat()
-        for m in mode:
-            shape[0] *= flat[0][m]
-            shape[1] *= flat[1][m]
+        for m in modes:
+            shape_l *= flat[0][m]
+            shape_r *= flat[1][m]
 
-        return shape
+        return shape_l, shape_r
+
+    def _extract_modes(self, modes: tuple(int, ...)) -> Dimensions:
+        """
+        Extract the modes for the dimension:
+           Dimensions([[2, 3], [4, 5]]), modes = (0) -> Dimensions([[2], [4]])
+        """
+        return Dimensions([
+            self.to_._extract_modes(modes),
+            self.from_._extract_modes(modes)
+        ])

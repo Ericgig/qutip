@@ -35,3 +35,16 @@ adjoint_transform = {
     Transform.TRANSPOSE : Transform.CONJ,
     Transform.ADJOINT : Transform.DIRECT,
 }
+
+def _apply_transform(matrix, transform):
+    match transform:
+        case Transform.DIRECT:
+            out = matrix
+        case Transform.CONJ:
+            out = matrix.conj()
+        case Transform.TRANSPOSE:
+            out = matrix.transpose()
+        case Transform.ADJOINT:
+            out = matrix.adjoint()
+
+    return out
