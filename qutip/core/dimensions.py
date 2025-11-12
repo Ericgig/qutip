@@ -437,6 +437,9 @@ class Space(metaclass=MetaSpace):
     def __repr__(self) -> str:
         return f"Space({self.size})"
 
+    def __len__(self):
+        return 1
+
     def as_list(self) -> list[int]:
         return [self.size]
 
@@ -623,6 +626,9 @@ class Compound(Space):
         parts_rep = ", ".join(repr(space) for space in self.spaces)
         return f"Compound({parts_rep})"
 
+    def __len__(self):
+        return len(self.spaces)
+
     def as_list(self) -> list[int]:
         return sum([space.as_list() for space in self.spaces], [])
 
@@ -704,6 +710,9 @@ class SuperSpace(Space):
 
     def __repr__(self) -> str:
         return f"Super({repr(self.oper)}, rep={self.superrep})"
+
+    def __len__(self):
+        return len(self.oper[0]) + len(self.oper[1])
 
     def as_list(self) -> list[list[int]]:
         return self.oper.as_list()
