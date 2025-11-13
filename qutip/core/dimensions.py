@@ -514,7 +514,9 @@ class Space(metaclass=MetaSpace):
         Add subsystems of one state to obtain a compound space of N spaces.
         Only Field can be expended.
         """
-        raise ValueError("Non Scalar space can't be expanded.")
+        if N != 1:
+            raise ValueError("Non Scalar space can't be expanded.")
+        return self
 
     def replace_superrep(self, super_rep: str) -> "Space":
         return self
@@ -670,6 +672,15 @@ class Compound(Space):
         if len(new_spaces) == 1:
             return new_spaces[0]
         return Compound(*new_spaces)
+
+    def expand_scalar_dims(self, N) -> "Space":
+        """
+        Add subsystems of one state to obtain a compound space of N spaces.
+        Only Field can be expended.
+        """
+        if N != len(space):
+            raise ValueError("Non Scalar space can't be expanded.")
+        return self
 
     def replace_superrep(self, super_rep: str) -> Space:
         return Compound(
