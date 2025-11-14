@@ -5,6 +5,7 @@ __all__ = [
     "conj_transform",
     "trans_transform",
     "adjoint_transform",
+    "apply_transform",
 ]
 
 
@@ -36,7 +37,7 @@ adjoint_transform = {
     Transform.ADJOINT : Transform.DIRECT,
 }
 
-def _apply_transform(matrix, transform):
+def apply_transform(matrix, transform):
     match transform:
         case Transform.DIRECT:
             out = matrix

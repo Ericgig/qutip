@@ -10,7 +10,11 @@ from qutip.settings import settings
 from qutip.typing import LayerType
 
 from qutip.core._qobj.utils import (
-    Transform, conj_transform, trans_transform, adjoint_transform, _apply_transform
+    Transform,
+    conj_transform,
+    trans_transform,
+    adjoint_transform,
+    apply_transform
 )
 
 __all__ = ["Operator"]
@@ -23,7 +27,7 @@ class ProdTerm(NamedTuple):
     ``operator`` is the matrix that is first transformed by ``transform`` then
     applied on the modes of a quantum system of the given dimensions.
     """
-    operator: Any
+    operator: Any  # Data or Element?
     modes: tuple[int]
     in_space: Space
     out_space: Space
@@ -37,7 +41,6 @@ class Term(NamedTuple):
 
 def _pterm_to_data(pterm: ProdTerm, hilbert_space: list, issuper: bool) -> Data:
     in_hilbert = hilbert_space.copy()
-    print(issuper)
     if pterm.in_space == pterm.out_space:
         out_hilbert = in_hilbert
     else:
@@ -55,7 +58,7 @@ def _pterm_to_data(pterm: ProdTerm, hilbert_space: list, issuper: bool) -> Data:
         modes = list(pterm.modes)
     order = list(modes)
 
-    oper = _apply_transform(pterm.operator, pterm.transform)
+    oper = apply_transform(pterm.operator, pterm.transform)
 
     for i in range(len(in_hilbert)):
         if i in modes: continue
@@ -252,7 +255,7 @@ class Operator:
         elif max_modes == 1:
             opers = [None] * len(self._dims[1])
             for pterm in term.prod_terms:
-                oper = _apply_transform(pterm.operator, pterm.transform)
+                oper = apply_transform(pterm.operator, pterm.transform)
                 mode = pterm.modes[0]
                 if opers[mode] is not None:
                     opers[mode] = oper @ opers[mode]
