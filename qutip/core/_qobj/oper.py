@@ -1,4 +1,5 @@
 from typing import NamedTuple, Any
+from dataclass import dataclass
 import itertools
 import numpy as np
 
@@ -20,7 +21,8 @@ from qutip.core._qobj.utils import (
 __all__ = ["Operator"]
 
 
-class ProdTerm(NamedTuple):
+@dataclass(frozen=True)
+class _ProdTerm:
     """
     Elementary operator inserted in a larger quantum object.
 
@@ -33,49 +35,114 @@ class ProdTerm(NamedTuple):
     out_space: Space
     transform: Transform
 
+    def to_data(self: _ProdTerm, hilbert_space: list, issuper: bool) -> Data:
+        in_hilbert = hilbert_space.copy()
+        if self.in_space == self.out_space:
+            out_hilbert = in_hilbert
+        else:
+            out_hilbert = hilbert_space.copy()
+            for i, mode in enumerate(self.modes):
+                out_hilbert[mode] = self.out_space.flat()[i]
 
-class Term(NamedTuple):
-    prod_terms: tuple[ProdTerm]
+        in_sizes = self.in_space.flat()
+        out_sizes = self.out_space.flat()
+
+        if super:
+            N = len(hilbert_space)
+            modes = [((mode + N // 2) % N) for mode in self.modes]
+        else:
+            modes = list(self.modes)
+        order = list(modes)
+
+        oper = apply_transform(self.operator, self.transform)
+
+        for i in range(len(in_hilbert)):
+            if i in modes: continue
+            if issuper:
+                mode_size = in_hilbert[(i + N//2) % N]
+            else:
+                mode_size = in_hilbert[i ]
+            oper = _data.kron(oper, _data.identity(mode_size))
+            in_sizes.append(mode_size)
+            out_sizes.append(mode_size)
+            order.append(i)
+
+        order = np.argsort(order)
+        perm_row = get_permutations(out_sizes, order)
+        perm_col = get_permutations(in_sizes, order)
+
+        return out_hilbert, _data.permute.indices(oper, perm_row, perm_col)
+
+
+@dataclass(frozen=True)
+class _Term:
+    prod_terms: tuple[_ProdTerm]
     factor: complex
 
+    def to_data(self, hilbert_space: list, dtype):
+        """
+        Convert a term to a Data object.
+        """
+        max_modes = 0
+        modes_affected = [0] * len(hilbert_space._dims[1].flat())
 
-def _pterm_to_data(pterm: ProdTerm, hilbert_space: list, issuper: bool) -> Data:
-    in_hilbert = hilbert_space.copy()
-    if pterm.in_space == pterm.out_space:
-        out_hilbert = in_hilbert
-    else:
-        out_hilbert = hilbert_space.copy()
-        for i, mode in enumerate(pterm.modes):
-            out_hilbert[mode] = pterm.out_space.flat()[i]
+        for pterm in self.prod_terms:
+            modes = pterm.modes
+            max_modes = max(max_modes, len(modes))
+            for mode in modes:
+                modes_affected[mode] += 1
 
-    in_sizes = pterm.in_space.flat()
-    out_sizes = pterm.out_space.flat()
+        if max_modes == 0:
+            # Empty prod term:
+            if not hilbert_space._dims.issquare:
+                raise ValueError("Empty, non-square...")
+            out = _data.identity[dtype](
+                hilbert_space._dims.shape[0], scale=self.factor
+            )
 
-    if super:
-        N = len(hilbert_space)
-        modes = [((mode + N // 2) % N) for mode in pterm.modes]
-    else:
-        modes = list(pterm.modes)
-    order = list(modes)
+        elif max_modes == 1:
+            opers = [None] * len(hilbert_space._dims[1])
+            for pterm in self.prod_terms:
+                oper = apply_transform(pterm.operator, pterm.transform)
+                mode = pterm.modes[0]
+                if opers[mode] is not None:
+                    opers[mode] = oper @ opers[mode]
+                else:
+                    opers[mode] = oper
 
-    oper = apply_transform(pterm.operator, pterm.transform)
+            for i in range(len(opers)):
+                if opers[i] is not None:
+                    continue
+                opers[i] = _data.identity[dtype](hilbert_space.flat()[i])
 
-    for i in range(len(in_hilbert)):
-        if i in modes: continue
-        if issuper:
-            mode_size = in_hilbert[(i + N//2) % N]
+            if not hilbert_space._dims.issuper:
+                out = _data.mul(opers[0], self.factor)
+                for oper in opers[1:]:
+                    out = _data.kron(out, oper)
+            else:
+                N = len(hilbert_space._dims[1]) // 2
+                pre = opers[0]
+                post = _data.mul(opers[N], self.factor)
+                for i in range(1, N):
+                    pre = _data.kron(pre, opers[i])
+                    post = _data.kron(post, opers[i + N])
+                # superrep = super: inverted post.T & pre
+                # The transpose already accounted for in pterm.transform
+                out = _data.kron(post, pre)
+
         else:
-            mode_size = in_hilbert[i ]
-        oper = _data.kron(oper, _data.identity(mode_size))
-        in_sizes.append(mode_size)
-        out_sizes.append(mode_size)
-        order.append(i)
+            # TODO: To optimize
+            # It's not always needed to expand to the full space before the
+            #   product.
+            out = _data.identity[dtype](hilbert_space._dims[1].size)
+            hilbert = hilbert_space._dims[1].flat()
+            for prod_term in self.prod_terms:
+                hilbert, oper = prod_term.to_data(
+                    hilbert, hilbert_space._dims.issuper
+                )
+                out = oper @ out
 
-    order = np.argsort(order)
-    perm_row = get_permutations(out_sizes, order)
-    perm_col = get_permutations(in_sizes, order)
-
-    return out_hilbert, _data.permute.indices(oper, perm_row, perm_col)
+        return out
 
 
 def _read_dims(shape, dimension):
@@ -113,7 +180,6 @@ class Operator:
     There is no dual representation, super operator will have the hilbert space
     doubled, with the operation being applied to the right first and
     transposed.
-    # TODO: How super / Rectangular are supported?
     """
     terms: list
     _dims: Dimensions
@@ -146,8 +212,8 @@ class Operator:
             if dimension is None:
                 if modes != (0,):
                     raise ValueError(
-                        "Dimensions are needed when creating an operator acting"
-                        " on multiples modes."
+                        "Dimensions are needed when creating an operator "
+                        "acting on multiples modes."
                     )
                 self._dims = _read_dims(arg.shape, None)
             else:
@@ -156,7 +222,7 @@ class Operator:
                 self._dims = dimension
 
             self.terms.append(
-                Term((ProdTerm(
+                _Term((_ProdTerm(
                     arg,
                     modes,
                     self._dims[1]._extract_modes(modes),
@@ -169,9 +235,9 @@ class Operator:
             raise TypeError(f"{type(arg)} not supported.")
 
     @classmethod
-    def identity(self, dimension):
-        out = Operator(dimension=[dimension] * 2)
-        out.terms.append(Term((), 1))
+    def identity(self, hilbert_space):
+        out = Operator(dimension=[hilbert_space] * 2)
+        out.terms.append(_Term((), 1))
         return out
 
     @classmethod
@@ -179,120 +245,21 @@ class Operator:
         return Operator(qobj.data, dimension=qobj._dims)
 
     @property
-    def hilbert_space(self):
+    def hilbert_space(self) -> Space | NoneType:
         if self._dims.issquare and not self._dims.issuper:
             return self._dims[0]
         elif self._dims.issquare and self._dims[0].oper.issquare:
             return self._dims[0].oper[0]
-        elif not self._dims.issuper:
-            return (self._dims[0], self._dims[1])
         else:
-            return (
-                (self._dims[0].oper[0], self._dims[0].oper[1]),
-                (self._dims[1].oper[0], self._dims[1].oper[1])
-            )
+            return None
 
     @property
-    def left_hilbert_space(self):
-        if self._dims.issquare and not self._dims.issuper:
-            return self._dims[0].as_list()
-        elif self._dims.issquare and self._dims[0].oper.issquare:
-            return self._dims[0].oper[0].as_list() * 2
-        elif not self._dims.issuper:
-            return self._dims[0].as_list()
-        else:
-            return self._dims[0].oper[0].as_list() + self._dims[0].oper[1].as_list()
-
-    @property
-    def right_hilbert_space(self):
-        if self._dims.issquare and not self._dims.issuper:
-            return self._dims[0].as_list()
-        elif self._dims.issquare and self._dims[0].oper.issquare:
-            return self._dims[0].oper[0].as_list() * 2
-        elif not self._dims.issuper:
-            return self._dims[1].as_list()
-        else:
-            return self._dims[1].oper[0].as_list() + self._dims[1].oper[1].as_list()
+    def dims(self):
+        return self._dims.as_list()
 
     @property
     def shape(self):
         return self._dims.shape
-
-    @property
-    def nnz(self):
-        """
-        Approximate number of non-zeros elements.
-        """
-        # TODO:
-        return self.shape[0] * self.shape[1]
-
-    def _dtype(self):
-        """
-        Guess best dtype when merging.
-        """
-        # TODO:
-        return _data.Dia
-
-    def _term_to_data(self, term, dtype):
-        """
-        Convert a term to a Data object.
-        """
-        max_modes = 0
-        modes_affected = [0] * len(self._dims[1])
-
-        for pterm in term.prod_terms:
-            modes = pterm.modes
-            max_modes = max(max_modes, len(modes))
-            for mode in modes:
-                modes_affected[mode] += 1
-
-        if max_modes == 0:
-            # Empty prod term:
-            if not self._dims.issquare:
-                raise ValueError("Empty, non-square...")
-            out = _data.identity[dtype](self._dims.shape[0], scale=term.factor)
-
-        elif max_modes == 1:
-            opers = [None] * len(self._dims[1])
-            for pterm in term.prod_terms:
-                oper = apply_transform(pterm.operator, pterm.transform)
-                mode = pterm.modes[0]
-                if opers[mode] is not None:
-                    opers[mode] = oper @ opers[mode]
-                else:
-                    opers[mode] = oper
-
-            for i in range(len(opers)):
-                if opers[i] is not None:
-                    continue
-                opers[i] = _data.identity[dtype](self.right_hilbert_space[i])
-
-            if not self._dims.issuper:
-                out = _data.mul(opers[0], term.factor)
-                for oper in opers[1:]:
-                    out = _data.kron(out, oper)
-            else:
-                N = len(self._dims[1]) // 2
-                pre = opers[0]
-                post = _data.mul(opers[N], term.factor)
-                for i in range(1, N):
-                    pre = _data.kron(pre, opers[i])
-                    post = _data.kron(post, opers[i + N])
-                # superrep = super: inverted post.T & pre
-                # The transpose already accounted for in pterm.transform
-                out = _data.kron(post, pre)
-
-        else:
-            # TODO: To optimize
-            # - It is not always needed to expand to the full space before the
-            # product.
-            out = _data.identity[dtype](self._dims[1].size)
-            hilbert = self._dims[1].flat()
-            for prod_term in term.prod_terms:
-                hilbert, oper = _pterm_to_data(prod_term, hilbert, self._dims.issuper)
-                out = oper @ out
-
-        return out
 
     def to_data(self, dtype: LayerType = None):
         """
@@ -304,15 +271,16 @@ class Operator:
             Format of the output Data instance.
         """
         if dtype is None:
-            dtype = self._dtype()
+            # Lowest priority in many operation
+            dtype = _data.Dia
 
         if len(self.terms) == 0:
             return _data.zeros[dtype](*self.shape)
 
-        out = self._term_to_data(self.terms[0], dtype)
+        out = self.terms[0].to_data(self._dims, dtype)
 
         for term in self.terms[1:]:
-            out = out + self._term_to_data(term, dtype)
+            out = out + term.to_data(self._dims, dtype)
         return out
 
     def to_array(self):
@@ -326,14 +294,14 @@ class Operator:
         for term in self.terms:
             pterms = []
             for pterm in term.prod_terms:
-                pterms.append(ProdTerm(
+                pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
                     pterm.in_space,
                     pterm.out_space,
                     conj_transform[pterm.transform],
                 ))
-            new.terms.append(Term(tuple(pterms), term.factor.conjugate()))
+            new.terms.append(_Term(tuple(pterms), term.factor.conjugate()))
         return new
 
     def transpose(self):
@@ -341,14 +309,14 @@ class Operator:
         for term in self.terms:
             pterms = []
             for pterm in term.prod_terms[::-1]:
-                pterms.append(ProdTerm(
+                pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
                     pterm.out_space,
                     pterm.in_space,
                     trans_transform[pterm.transform],
                 ))
-            new.terms.append(Term(tuple(pterms), term.factor))
+            new.terms.append(_Term(tuple(pterms), term.factor))
         return new
 
     def adjoint(self):
@@ -356,14 +324,14 @@ class Operator:
         for term in self.terms:
             pterms = []
             for pterm in term.prod_terms[::-1]:
-                pterms.append(ProdTerm(
+                pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
                     pterm.out_space,
                     pterm.in_space,
                     adjoint_transform[pterm.transform],
                 ))
-            new.terms.append(Term(tuple(pterms), term.factor.conjugate()))
+            new.terms.append(_Term(tuple(pterms), term.factor.conjugate()))
         return new
 
     def __neg__(self):
@@ -394,14 +362,14 @@ class Operator:
         for term in self.terms:
             pterms = []
             for pterm in term.prod_terms:
-                pterms.append(ProdTerm(
+                pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
                     pterm.in_space,
                     pterm.out_space,
                     pterm.transform,
                 ))
-            new.terms.append(Term(tuple(pterms), term.factor * other))
+            new.terms.append(_Term(tuple(pterms), term.factor * other))
         return new
 
     def __truediv__(self, other):
@@ -416,7 +384,7 @@ class Operator:
 
         for term_left, term_right in itertools.product(self.terms, other.terms):
             new.terms.append(
-                Term(
+                _Term(
                     term_right.prod_terms + term_left.prod_terms,
                     term_left.factor * term_right.factor,
                 )
@@ -437,27 +405,27 @@ class Operator:
         for term in left.terms:
             pterms = []
             for pterm in term.prod_terms:
-                pterms.append(ProdTerm(
+                pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
                     pterm.in_space,
                     pterm.out_space,
                     pterm.transform,
                 ))
-            left_ext.terms.append(Term(tuple(pterms), factor=term.factor))
+            left_ext.terms.append(_Term(tuple(pterms), factor=term.factor))
 
         right_shifted = Operator(dimension=dims)
         for term in right.terms:
             pterms = []
             for pterm in term.prod_terms:
-                pterms.append(ProdTerm(
+                pterms.append(_ProdTerm(
                     pterm.operator,
                     tuple(i + N for i in pterm.modes),
                     pterm.in_space,
                     pterm.out_space,
                     pterm.transform,
                 ))
-            right_shifted.terms.append(Term(tuple(pterms), factor=term.factor))
+            right_shifted.terms.append(_Term(tuple(pterms), factor=term.factor))
 
         return left_ext @ right_shifted
 
@@ -470,7 +438,7 @@ class Operator:
         super_op = Operator(dimension=[self._dims, self._dims])
         for term in self.terms:
             super_op.terms.append(
-                Term(term.prod_terms, factor=term.factor)
+                _Term(term.prod_terms, factor=term.factor)
             )
 
         return super_op
@@ -486,14 +454,14 @@ class Operator:
         for term in self.terms:
             pterms = []
             for pterm in term.prod_terms[::-1]:
-                pterms.append(ProdTerm(
+                pterms.append(_ProdTerm(
                     pterm.operator,
                     tuple(i + N for i in pterm.modes),
                     pterm.out_space,
                     pterm.in_space,
                     trans_transform[pterm.transform],
                 ))
-            super_op.terms.append(Term(tuple(pterms), factor=term.factor))
+            super_op.terms.append(_Term(tuple(pterms), factor=term.factor))
 
         return super_op
 
@@ -511,18 +479,18 @@ class Operator:
         N = len(self.hilbert_space)
         for term in self.terms:
             pre_part.terms.append(
-                Term(term.prod_terms, factor=term.factor)
+                _Term(term.prod_terms, factor=term.factor)
             )
         for term in post.terms:
             pterms = []
             for pterm in term.prod_terms[::-1]:
-                pterms.append(ProdTerm(
+                pterms.append(_ProdTerm(
                     pterm.operator,
                     tuple(i + N for i in pterm.modes),
                     pterm.out_space,
                     pterm.in_space,
                     trans_transform[pterm.transform],
                 ))
-            post_part.terms.append(Term(tuple(pterms), factor=term.factor))
+            post_part.terms.append(_Term(tuple(pterms), factor=term.factor))
 
         return pre_part @ post_part
