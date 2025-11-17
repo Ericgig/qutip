@@ -146,6 +146,8 @@ class _Term:
 
 
 def _read_dims(shape, dimension):
+    if dimension is None and shape is None:
+        return None
     if dimension is None:
         return Dimensions([[shape[0]], [shape[1]]])
     dimensions = Dimensions(dimension)
