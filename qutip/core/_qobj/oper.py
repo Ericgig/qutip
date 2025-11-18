@@ -47,9 +47,15 @@ class _ProdTerm:
 
         in_sizes = self.in_space.flat()
         out_sizes = self.out_space.flat()
+        N = len(hilbert_space)
 
         if issuper:
-            N = len(hilbert_space)
+            super_element = not (
+                all(mode < N//2 for mode in self.modes)
+                or all(mode >= N//2 for mode in self.modes)
+            )
+
+        if issuper and not super_element:
             modes = [((mode + N // 2) % N) for mode in self.modes]
         else:
             modes = list(self.modes)
@@ -249,7 +255,11 @@ class Operator:
 
     @classmethod
     def from_qobj(self, qobj):
-        return Operator(qobj.data, dimension=qobj._dims)
+        return Operator(
+            qobj.data,
+            dimension=qobj._dims,
+            modes=tuple(range(len(qobj._dims[0].as_list())))
+        )
 
     @property
     def hilbert_space(self) -> Space | NoneType:
@@ -401,12 +411,48 @@ class Operator:
 
         return new
 
+    def _tensor_super(left, right):
+        N = len(left.hilbert_space)
+        dims = [[left._dims[0],  right._dims[0]], [left._dims[1],  right._dims[1]]]
+
+        left_ext = Operator(dimension=dims)
+        for term in left.terms:
+            pterms = []
+            for pterm in term.prod_terms:
+                pterms.append(_ProdTerm(
+                    pterm.operator,
+                    pterm.modes,
+                    pterm.in_space,
+                    pterm.out_space,
+                    pterm.transform,
+                ))
+            left_ext.terms.append(_Term(tuple(pterms), factor=term.factor))
+
+        right_shifted = Operator(dimension=dims)
+        for term in right.terms:
+            pterms = []
+            for pterm in term.prod_terms:
+                pterms.append(_ProdTerm(
+                    pterm.operator,
+                    tuple(i + N for i in pterm.modes),
+                    pterm.in_space,
+                    pterm.out_space,
+                    pterm.transform,
+                ))
+            right_shifted.terms.append(_Term(tuple(pterms), factor=term.factor))
+
+        return left_ext @ right_shifted
+
+
+
     def __and__(left, right):
         """
         `kron` operation.
         """
+        if left._dims.issuper and right._dims.issuper:
+            return _tensor_super(left, right)
         if left._dims.issuper or right._dims.issuper:
-            raise TypeError("Already a superoperator")
+            raise TypeError("Can't compound normal and super space together.")
         N = len(left.hilbert_space)
         dims = [[left._dims[0],  right._dims[0]], [left._dims[1],  right._dims[1]]]
 
