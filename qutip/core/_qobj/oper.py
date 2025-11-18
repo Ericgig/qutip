@@ -1,5 +1,6 @@
 from typing import NamedTuple, Any
-from dataclass import dataclass
+from types import NoneType
+from dataclasses import dataclass
 import itertools
 import numpy as np
 
@@ -35,7 +36,7 @@ class _ProdTerm:
     out_space: Space
     transform: Transform
 
-    def to_data(self: _ProdTerm, hilbert_space: list, issuper: bool) -> Data:
+    def to_data(self, hilbert_space: list, issuper: bool) -> Data:
         in_hilbert = hilbert_space.copy()
         if self.in_space == self.out_space:
             out_hilbert = in_hilbert
@@ -47,7 +48,7 @@ class _ProdTerm:
         in_sizes = self.in_space.flat()
         out_sizes = self.out_space.flat()
 
-        if super:
+        if issuper:
             N = len(hilbert_space)
             modes = [((mode + N // 2) % N) for mode in self.modes]
         else:
@@ -55,17 +56,21 @@ class _ProdTerm:
         order = list(modes)
 
         oper = apply_transform(self.operator, self.transform)
+        out_side = 1
 
         for i in range(len(in_hilbert)):
             if i in modes: continue
             if issuper:
                 mode_size = in_hilbert[(i + N//2) % N]
             else:
-                mode_size = in_hilbert[i ]
-            oper = _data.kron(oper, _data.identity(mode_size))
+                mode_size = in_hilbert[i]
+            out_side *= mode_size
             in_sizes.append(mode_size)
             out_sizes.append(mode_size)
             order.append(i)
+
+        if len(in_hilbert) > len(modes):
+            oper = _data.kron(oper, _data.identity(out_side))
 
         order = np.argsort(order)
         perm_row = get_permutations(out_sizes, order)
@@ -84,7 +89,7 @@ class _Term:
         Convert a term to a Data object.
         """
         max_modes = 0
-        modes_affected = [0] * len(hilbert_space._dims[1].flat())
+        modes_affected = [0] * len(hilbert_space[1].flat())
 
         for pterm in self.prod_terms:
             modes = pterm.modes
@@ -94,14 +99,14 @@ class _Term:
 
         if max_modes == 0:
             # Empty prod term:
-            if not hilbert_space._dims.issquare:
+            if not hilbert_space.issquare:
                 raise ValueError("Empty, non-square...")
             out = _data.identity[dtype](
-                hilbert_space._dims.shape[0], scale=self.factor
+                hilbert_space.shape[0], scale=self.factor
             )
 
         elif max_modes == 1:
-            opers = [None] * len(hilbert_space._dims[1])
+            opers = [None] * len(hilbert_space[1])
             for pterm in self.prod_terms:
                 oper = apply_transform(pterm.operator, pterm.transform)
                 mode = pterm.modes[0]
@@ -113,14 +118,14 @@ class _Term:
             for i in range(len(opers)):
                 if opers[i] is not None:
                     continue
-                opers[i] = _data.identity[dtype](hilbert_space.flat()[i])
+                opers[i] = _data.identity[dtype](hilbert_space[0].flat()[i])
 
-            if not hilbert_space._dims.issuper:
+            if not hilbert_space.issuper:
                 out = _data.mul(opers[0], self.factor)
                 for oper in opers[1:]:
                     out = _data.kron(out, oper)
             else:
-                N = len(hilbert_space._dims[1]) // 2
+                N = len(hilbert_space[1]) // 2
                 pre = opers[0]
                 post = _data.mul(opers[N], self.factor)
                 for i in range(1, N):
@@ -134,11 +139,11 @@ class _Term:
             # TODO: To optimize
             # It's not always needed to expand to the full space before the
             #   product.
-            out = _data.identity[dtype](hilbert_space._dims[1].size)
-            hilbert = hilbert_space._dims[1].flat()
+            out = _data.identity[dtype](hilbert_space[1].size)
+            hilbert = hilbert_space[1].flat()
             for prod_term in self.prod_terms:
                 hilbert, oper = prod_term.to_data(
-                    hilbert, hilbert_space._dims.issuper
+                    hilbert, hilbert_space.issuper
                 )
                 out = oper @ out
 
@@ -383,6 +388,8 @@ class Operator:
 
         out_dims = self._dims @ other._dims
         new = Operator(dimension=out_dims)
+
+        # TODO: Term contraction missing
 
         for term_left, term_right in itertools.product(self.terms, other.terms):
             new.terms.append(
