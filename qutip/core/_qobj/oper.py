@@ -8,6 +8,7 @@ from qutip.core.data import Data
 from qutip.core import data as _data
 from qutip.core.dimensions import Space, Dimensions
 from qutip.core.data.permute import get_permutations
+from qutip.core.coefficient import Coefficient
 from qutip.settings import settings
 from qutip.typing import LayerType
 
@@ -32,23 +33,24 @@ class _ProdTerm:
     """
     operator: Any  # Data or Element?
     modes: tuple[int]
-    in_space: Space
-    out_space: Space
+    in_space: list
+    out_space: list
     transform: Transform
 
     def to_data(self, hilbert_space: list, issuper: bool) -> Data:
         in_hilbert = hilbert_space.copy()
+        in_sizes = self.in_space
+        out_sizes = self.out_space
+        N = len(hilbert_space)
+
         if self.in_space == self.out_space:
             out_hilbert = in_hilbert
         else:
             out_hilbert = hilbert_space.copy()
             for i, mode in enumerate(self.modes):
-                out_hilbert[mode] = self.out_space.flat()[i]
+                out_hilbert[mode] = out_sizes[i]
 
-        in_sizes = self.in_space.flat()
-        out_sizes = self.out_space.flat()
-        N = len(hilbert_space)
-
+        super_element = False
         if issuper:
             super_element = not (
                 all(mode < N//2 for mode in self.modes)
@@ -60,12 +62,13 @@ class _ProdTerm:
         else:
             modes = list(self.modes)
         order = list(modes)
+        modes = set(modes)
+        not_modes = set(range(N)) - modes
 
         oper = apply_transform(self.operator, self.transform)
         out_side = 1
 
-        for i in range(len(in_hilbert)):
-            if i in modes: continue
+        for i in not_modes:
             if issuper:
                 mode_size = in_hilbert[(i + N//2) % N]
             else:
@@ -84,18 +87,25 @@ class _ProdTerm:
 
         return out_hilbert, _data.permute.indices(oper, perm_row, perm_col)
 
+    def __hash__(self):
+        return hash((
+            id(self.operator), self.modes, tuple(self.in_space),
+            tuple(self.out_space), self.transform
+        ))
+
 
 @dataclass(frozen=True)
 class _Term:
-    prod_terms: tuple[_ProdTerm]
+    prod_terms: list[_ProdTerm]
+    hilbert_space: Dimensions
     factor: complex
 
-    def to_data(self, hilbert_space: list, dtype):
+    def to_data(self, t: float, dtype):
         """
         Convert a term to a Data object.
         """
         max_modes = 0
-        modes_affected = [0] * len(hilbert_space[1].flat())
+        modes_affected = [0] * len(self.hilbert_space[1].flat())
 
         for pterm in self.prod_terms:
             modes = pterm.modes
@@ -105,14 +115,14 @@ class _Term:
 
         if max_modes == 0:
             # Empty prod term:
-            if not hilbert_space.issquare:
+            if not self.hilbert_space.issquare:
                 raise ValueError("Empty, non-square...")
             out = _data.identity[dtype](
-                hilbert_space.shape[0], scale=self.factor
+                self.hilbert_space.shape[0], scale=self.factor(t)
             )
 
         elif max_modes == 1:
-            opers = [None] * len(hilbert_space[1])
+            opers = [None] * len(self.hilbert_space[1])
             for pterm in self.prod_terms:
                 oper = apply_transform(pterm.operator, pterm.transform)
                 mode = pterm.modes[0]
@@ -124,16 +134,16 @@ class _Term:
             for i in range(len(opers)):
                 if opers[i] is not None:
                     continue
-                opers[i] = _data.identity[dtype](hilbert_space[0].flat()[i])
+                opers[i] = _data.identity[dtype](self.hilbert_space[0].flat()[i])
 
-            if not hilbert_space.issuper:
-                out = _data.mul(opers[0], self.factor)
+            if not self.hilbert_space.issuper:
+                out = _data.mul(opers[0], self.factor(t))
                 for oper in opers[1:]:
                     out = _data.kron(out, oper)
             else:
-                N = len(hilbert_space[1]) // 2
+                N = len(self.hilbert_space[1]) // 2
                 pre = opers[0]
-                post = _data.mul(opers[N], self.factor)
+                post = _data.mul(opers[N], self.factor(t))
                 for i in range(1, N):
                     pre = _data.kron(pre, opers[i])
                     post = _data.kron(post, opers[i + N])
@@ -145,15 +155,104 @@ class _Term:
             # TODO: To optimize
             # It's not always needed to expand to the full space before the
             #   product.
-            out = _data.identity[dtype](hilbert_space[1].size)
-            hilbert = hilbert_space[1].flat()
+            space = self.hilbert_space[1]
+            out = _data.identity[dtype](space.size, scale=self.factor(t))
+            hilbert = space.flat()
             for prod_term in self.prod_terms:
                 hilbert, oper = prod_term.to_data(
-                    hilbert, hilbert_space.issuper
+                    hilbert, self.hilbert_space.issuper
                 )
                 out = oper @ out
 
         return out
+
+    def _compressed(self: _Term):
+        """
+        Reorder and merge prod_terms.
+        Return a new _Term.
+        """
+        if len(self.prod_terms) == 0:
+            return self
+
+        # make_layer = lambda : [[] for _ in range(len(self.hilbert_space))]
+        # commute = lambda layer, modes: not any(layer[m] for m in modes)
+        # compatible = lambda layer, modes: (
+        #     layer[modes[0]]
+        #     and layer[modes[0]][0].modes == modes
+        # )
+
+        N = len(self.hilbert_space[1].flat())
+        layers = []
+        front = {mode: -1 for mode in range(N)}
+
+        for term in self.prod_terms:
+            modes = term.modes
+            target_layer_idx = max(front[mode] for mode in modes)
+
+            can_merge = False
+            if target_layer_idx >= 0:
+                layer = layers[target_layer_idx]
+                if modes in layer:
+                    can_merge = True
+
+            if can_merge:
+                layers[target_layer_idx][modes].append(pterm)
+            else:
+                target_layer_idx += 1
+                if target_layer_idx == len(layers):
+                    layers.append({})
+                layers[target_layer_idx][modes] = [pterm]
+                for m in modes:
+                    frontier[m] = new_idx
+            """
+            layer_num_loc = len(layers)
+            while layer_num_loc:
+                if commute(layers[layer_num_loc-1], modes):
+                    layer_num_loc -= 1
+                else:
+                    break
+            if (
+                layer[layer_num_loc]
+                and not compatible(layers[layer_num_loc], modes)
+            ):
+                layer_num_loc += 1
+
+            if layer_num_loc == len(layers):
+                layers.append(make_layer())
+
+            for mode in modes:
+                layers[layer_num_loc][mode].append(term)
+            """
+
+        # Now we have each layer[n][modes] is a list of operator that can act
+        # on the same modes and can be merged together.
+
+        pterm = []
+        for layer in layers:
+            done_modes = set()
+            for mode, terms in enumerate(layer):
+                if mode in done_modes:
+                    continue
+                if not terms:
+                    continue
+                if len(terms) == 1:
+                    pterm.append(terms[0])
+                    continue
+
+                oper = apply_transform(term[0].operator, term[0].transform)
+                done_modes |= set(terms[0].modes)
+                # TODO: We probably should not always merge. `ket @ bra` in dense format
+                # in probably faster as 2 operations. etc.
+                for term in terms[1:]:
+                    oper = apply_transform(pterm.operator, pterm.transform) @ oper
+                pterm.append(_ProdTerm(
+                    oper,
+                    terms[0].modes,
+                    terms[0].in_space,
+                    terms[-1].out_space,
+                    Transform.DIRECT,
+                ))
+        return _Term(tuple(pterm), self.hilbert_space, self.factor)
 
 
 def _read_dims(shape, dimension):
@@ -238,10 +337,10 @@ class Operator:
                 _Term((_ProdTerm(
                     arg,
                     modes,
-                    self._dims[1]._extract_modes(modes),
-                    self._dims[0]._extract_modes(modes),
+                    self._dims[1]._extract_modes(modes).to_list(),
+                    self._dims[0]._extract_modes(modes).to_list(),
                     Transform.DIRECT
-                ),), 1.+0j)
+                ),), self._dims, coefficent(1.))
             )
 
         else:
@@ -250,7 +349,7 @@ class Operator:
     @classmethod
     def identity(self, hilbert_space):
         out = Operator(dimension=[hilbert_space] * 2)
-        out.terms.append(_Term((), 1))
+        out.terms.append(_Term((), out._dims, coefficient(1)))
         return out
 
     @classmethod
@@ -278,7 +377,14 @@ class Operator:
     def shape(self):
         return self._dims.shape
 
-    def to_data(self, dtype: LayerType = None):
+    @property
+    def isconstant(self):
+        return all(
+            isinstance(term.factor, ConstantCoefficient)
+            for term in self.terms
+        )
+
+    def to_data(self, t=0, dtype: LayerType = None):
         """
         Convert to a single Data instance.
 
@@ -294,10 +400,10 @@ class Operator:
         if len(self.terms) == 0:
             return _data.zeros[dtype](*self.shape)
 
-        out = self.terms[0].to_data(self._dims, dtype)
+        out = self.terms[0].to_data(t, dtype)
 
         for term in self.terms[1:]:
-            out = out + term.to_data(self._dims, dtype)
+            out = out + term.to_data(t, dtype)
         return out
 
     def to_array(self):
@@ -314,11 +420,11 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
-                    pterm.in_space,
-                    pterm.out_space,
+                    pterm.in_space.to_list(),
+                    pterm.out_space.to_list(),
                     conj_transform[pterm.transform],
                 ))
-            new.terms.append(_Term(tuple(pterms), term.factor.conjugate()))
+            new.terms.append(_Term(tuple(pterms), self._dims, term.factor.conj()))
         return new
 
     def transpose(self):
@@ -329,11 +435,11 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
-                    pterm.out_space,
-                    pterm.in_space,
+                    pterm.out_space.to_list(),
+                    pterm.in_space.to_list(),
                     trans_transform[pterm.transform],
                 ))
-            new.terms.append(_Term(tuple(pterms), term.factor))
+            new.terms.append(_Term(tuple(pterms), new._dims, term.factor))
         return new
 
     def adjoint(self):
@@ -344,11 +450,11 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
-                    pterm.out_space,
-                    pterm.in_space,
+                    pterm.out_space.to_list(),
+                    pterm.in_space.to_list(),
                     adjoint_transform[pterm.transform],
                 ))
-            new.terms.append(_Term(tuple(pterms), term.factor.conjugate()))
+            new.terms.append(_Term(tuple(pterms), new._dims, term.factor.conj()))
         return new
 
     def __neg__(self):
@@ -375,6 +481,10 @@ class Operator:
         return self + -other
 
     def __mul__(self, other):
+        if isinstance(other, (int, float, complex)):
+            other = coefficent(other)
+        if not isinstance(other, Coefficient):
+            return NotImplemented
         new = Operator(dimension=self._dims)
         for term in self.terms:
             pterms = []
@@ -382,11 +492,11 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
-                    pterm.in_space,
-                    pterm.out_space,
+                    pterm.in_space.to_list(),
+                    pterm.out_space.to_list(),
                     pterm.transform,
                 ))
-            new.terms.append(_Term(tuple(pterms), term.factor * other))
+            new.terms.append(_Term(tuple(pterms), self._dims, term.factor * other))
         return new
 
     def __truediv__(self, other):
@@ -405,10 +515,12 @@ class Operator:
             new.terms.append(
                 _Term(
                     term_right.prod_terms + term_left.prod_terms,
+                    out_dims,
                     term_left.factor * term_right.factor,
                 )
             )
 
+        new.merge_terms()
         return new
 
     def _tensor_super(left, right):
@@ -422,11 +534,11 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
-                    pterm.in_space,
-                    pterm.out_space,
+                    pterm.in_space.to_list(),
+                    pterm.out_space.to_list(),
                     pterm.transform,
                 ))
-            left_ext.terms.append(_Term(tuple(pterms), factor=term.factor))
+            left_ext.terms.append(_Term(tuple(pterms), dims, factor=term.factor))
 
         right_shifted = Operator(dimension=dims)
         for term in right.terms:
@@ -435,15 +547,13 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     tuple(i + N for i in pterm.modes),
-                    pterm.in_space,
-                    pterm.out_space,
+                    pterm.in_space.to_list(),
+                    pterm.out_space.to_list(),
                     pterm.transform,
                 ))
-            right_shifted.terms.append(_Term(tuple(pterms), factor=term.factor))
+            right_shifted.terms.append(_Term(tuple(pterms), dims, factor=term.factor))
 
         return left_ext @ right_shifted
-
-
 
     def __and__(left, right):
         """
@@ -463,11 +573,11 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     pterm.modes,
-                    pterm.in_space,
-                    pterm.out_space,
+                    pterm.in_space.to_list(),
+                    pterm.out_space.to_list(),
                     pterm.transform,
                 ))
-            left_ext.terms.append(_Term(tuple(pterms), factor=term.factor))
+            left_ext.terms.append(_Term(tuple(pterms), dims, factor=term.factor))
 
         right_shifted = Operator(dimension=dims)
         for term in right.terms:
@@ -476,11 +586,11 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     tuple(i + N for i in pterm.modes),
-                    pterm.in_space,
-                    pterm.out_space,
+                    pterm.in_space.to_list(),
+                    pterm.out_space.to_list(),
                     pterm.transform,
                 ))
-            right_shifted.terms.append(_Term(tuple(pterms), factor=term.factor))
+            right_shifted.terms.append(_Term(tuple(pterms), dims, factor=term.factor))
 
         return left_ext @ right_shifted
 
@@ -493,7 +603,7 @@ class Operator:
         super_op = Operator(dimension=[self._dims, self._dims])
         for term in self.terms:
             super_op.terms.append(
-                _Term(term.prod_terms, factor=term.factor)
+                _Term(term.prod_terms, super_op._dims, factor=term.factor)
             )
 
         return super_op
@@ -512,11 +622,11 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     tuple(i + N for i in pterm.modes),
-                    pterm.out_space,
-                    pterm.in_space,
+                    pterm.out_space.to_list(),
+                    pterm.in_space.to_list(),
                     trans_transform[pterm.transform],
                 ))
-            super_op.terms.append(_Term(tuple(pterms), factor=term.factor))
+            super_op.terms.append(_Term(tuple(pterms), super_op._dims, factor=term.factor))
 
         return super_op
 
@@ -542,10 +652,37 @@ class Operator:
                 pterms.append(_ProdTerm(
                     pterm.operator,
                     tuple(i + N for i in pterm.modes),
-                    pterm.out_space,
-                    pterm.in_space,
+                    pterm.out_space.to_list(),
+                    pterm.in_space.to_list(),
                     trans_transform[pterm.transform],
                 ))
-            post_part.terms.append(_Term(tuple(pterms), factor=term.factor))
+            post_part.terms.append(_Term(tuple(pterms), out_dims, factor=term.factor))
 
         return pre_part @ post_part
+
+    def merge_terms(self):
+        grouped_terms = {}
+
+        for term in self.terms:
+            signature = []
+            for pterm in term.prod_terms:
+                signature.append(hash(pterm))
+
+            key = tuple(signature)
+
+            if key in grouped_terms:
+                term, factor = grouped_terms[key]
+                grouped_terms[key] = (term, factor + term.factor)
+            else:
+                grouped_terms[key] = (term, term.factor)
+
+        new_terms = []
+        for term, factor in grouped_terms.values():
+            if (
+                isinstance(factor, ConstantCoefficient)
+                and abs(factor(0)) > settings.core["atol"]
+            ):
+                continue
+            new_terms.append(_Term(term.prod_terms, self._dims, factor))
+
+        self.terms = new_terms
