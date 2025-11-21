@@ -90,6 +90,14 @@ cdef class Dense(base.Data):
     def sparcity(self):
         return "dense"
 
+    def frozen(self, inplace):
+        if self.immutable:
+            return self
+
+        out = self if inplace else self.copy()
+        out.immutable = True  # The flag is applied in _fix_flags
+        return out
+
     def __reduce__(self):
         return (fast_from_numpy, (self.as_ndarray(),))
 
@@ -133,6 +141,8 @@ cdef class Dense(base.Data):
         unnecessary speed penalty for users who do not need it (including
         low-level C code).
         """
+        if self.immutable:
+            return self
         cdef Dense out = Dense.__new__(Dense)
         cdef size_t size = (
             _mul_mem_checked(self.shape[0], self.shape[1], sizeof(double complex))
@@ -157,6 +167,8 @@ cdef class Dense(base.Data):
         cdef cnp.npy_intp *strides = cnp.PyArray_STRIDES(array)
         # Not necessary when creating a new array because this will already
         # have been done, but needed for as_ndarray() if we have been mutated.
+        if self.immutable:
+            disable = cnp.NPY_ARRAY_WRITEABLE
         dims[0] = self.shape[0]
         dims[1] = self.shape[1]
         if self.shape[0] == 1 or self.shape[1] == 1:
@@ -266,7 +278,7 @@ cdef Dense wrap(double complex *data, base.idxint rows, base.idxint cols, bint f
     return out
 
 
-cpdef Dense empty(base.idxint rows, base.idxint cols, bint fortran=True):
+cdef Dense empty(base.idxint rows, base.idxint cols, bint fortran=True):
     """
     Return a new Dense type of the given shape, with the data allocated but
     uninitialised.
@@ -286,7 +298,7 @@ cpdef Dense empty(base.idxint rows, base.idxint cols, bint fortran=True):
     return out
 
 
-cpdef Dense empty_like(Dense other, int fortran=-1):
+cdef Dense empty_like(Dense other, int fortran=-1):
     cdef bint fortran_
     if fortran < 0:
         fortran_ = other.fortran

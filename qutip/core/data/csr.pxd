@@ -21,13 +21,16 @@ cdef class CSR(base.Data):
     cdef size_t size
     cdef object _scipy
     cdef bint _deallocate
+    cdef bint immutable
     cpdef CSR copy(CSR self)
+    cdef void _make_scipy(self, full=*)
     cpdef object as_scipy(CSR self, bint full=*)
     cpdef CSR sort_indices(CSR self)
     cpdef double complex trace(CSR self)
     cpdef CSR adjoint(CSR self)
     cpdef CSR conj(CSR self)
     cpdef CSR transpose(CSR self)
+    cdef void _tidyup(CSR self, double tol)
 
 
 cdef struct Accumulator:
@@ -152,9 +155,9 @@ cdef class Sorter:
 cpdef CSR fast_from_scipy(object sci)
 cpdef CSR copy_structure(CSR matrix)
 cpdef CSR sorted(CSR matrix)
-cpdef base.idxint nnz(CSR matrix) nogil
-cpdef CSR empty(base.idxint rows, base.idxint cols, base.idxint size)
-cpdef CSR empty_like(CSR other)
+cpdef base.idxint nnz(CSR matrix) noexcept nogil
+cdef CSR empty(base.idxint rows, base.idxint cols, base.idxint size)
+cdef CSR empty_like(CSR other)
 cpdef CSR zeros(base.idxint rows, base.idxint cols)
 cpdef CSR identity(base.idxint dimension, double complex scale=*)
 

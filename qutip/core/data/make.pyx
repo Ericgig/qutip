@@ -1,5 +1,8 @@
 from .dispatch import Dispatcher as _Dispatcher
-from . import csr, dense, dia, CSR, Dense, Dia
+from qutip.core.data cimport CSR, Dense, Dia, csr, dense, dia
+from . import csr as py_csr
+from . import dense as py_dense
+from . import dia as py_dia
 import numpy as np
 
 __all__ = [
@@ -39,9 +42,9 @@ def _diag_signature(diagonals, offsets=0, shape=None):
 
 diag = _Dispatcher(_diag_signature, name='diag', inputs=(), out=True)
 diag.add_specialisations([
-    (CSR, csr.diags),
-    (Dia, dia.diags),
-    (Dense, dense.diags),
+    (CSR, py_csr.diags),
+    (Dia, py_dia.diags),
+    (Dense, py_dense.diags),
 ], _defer=True)
 
 del _diag_signature
@@ -65,12 +68,14 @@ def one_element_csr(shape, position, value=1.0):
     if not (0 <= position[0] < shape[0] and 0 <= position[1] < shape[1]):
         raise ValueError("Position of the elements out of bound: " +
                          str(position) + " in " + str(shape))
-    data = csr.empty(*shape, 1)
-    sci = data.as_scipy(full=True)
-    sci.data[0] = value
-    sci.indices[0] = position[1]
-    sci.indptr[:position[0]+1] = 0
-    sci.indptr[position[0]+1:] = 1
+    cdef size_t i
+    cdef CSR data = csr.empty(shape[0], shape[1], 1)
+    data.data[0] = value
+    data.col_index[0] = position[1]
+    for i in range(position[0]+1):
+        data.row_index[i] = 0
+    for i in range(position[0]+1, shape[0]+1):
+        data.row_index[i] = 1
     return data
 
 
@@ -92,9 +97,11 @@ def one_element_dense(shape, position, value=1.0):
     if not (0 <= position[0] < shape[0] and 0 <= position[1] < shape[1]):
         raise ValueError("Position of the elements out of bound: " +
                          str(position) + " in " + str(shape))
-    data = dense.zeros(*shape, 1)
-    nda = data.as_ndarray()
-    nda[position] = value
+    cdef Dense data = dense.zeros(shape[0], shape[1], 1)
+    cdef size_t stride_row, stride_col
+    stride_row = 1 if data.fortran else data.shape[1]
+    stride_col = data.shape[0] if data.fortran else 1
+    data.data[position[0] * stride_row + position[1] * stride_col] = value
     return data
 
 
@@ -119,7 +126,7 @@ def one_element_dia(shape, position, value=1.0):
     data = np.zeros((1, shape[1]), dtype=complex)
     data[0, position[1]] = value
     offsets = np.array([position[1]-position[0]])
-    return Dia((data, offsets), copy=None, shape=shape)
+    return Dia((data, offsets), shape=shape)
 
 
 one_element = _Dispatcher(one_element_dense, name='one_element',

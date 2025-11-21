@@ -22,7 +22,6 @@ from qutip.core.data.base cimport idxint, Data
 from qutip.core.data.dense cimport Dense
 from qutip.core.data.csr cimport CSR
 from qutip.core.data.dia cimport Dia
-from qutip.core.data.tidyup cimport tidyup_dia
 from qutip.core.data cimport csr, dense, dia
 from qutip.core.data.add cimport iadd_dense, add_csr
 from qutip.core.data.mul cimport imul_dense
@@ -861,7 +860,7 @@ cpdef Dia multiply_dia(Dia left, Dia right):
       out.num_diag = out_diag
 
     if settings.core['auto_tidyup']:
-        tidyup_dia(out, settings.core['auto_tidyup_atol'], True)
+        out._tidyup(settings.core['auto_tidyup_atol'])
     return out
 
 

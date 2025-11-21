@@ -34,7 +34,6 @@ from scipy.linalg cimport cython_blas as blas
 from qutip.core.data cimport base, Dense, CSR
 from qutip.core.data.adjoint import adjoint_dia, transpose_dia, conj_dia
 from qutip.core.data.trace import trace_dia
-from qutip.core.data.tidyup import tidyup_dia
 from .base import idxint_dtype
 from qutip.settings import settings
 
@@ -42,6 +41,7 @@ cnp.import_array()
 
 cdef extern from *:
     void PyArray_ENABLEFLAGS(cnp.ndarray arr, int flags)
+    void PyArray_CLEARFLAGS(cnp.ndarray arr, int flags)
     void *PyDataMem_NEW(size_t size)
     void PyDataMem_FREE(void *ptr)
 
@@ -76,7 +76,7 @@ cdef class Dia(base.Data):
     def __cinit__(self, *args, **kwargs):
         self._deallocate = True
 
-    def __init__(self, arg=None, shape=None, copy=True, bint tidyup=False):
+    def __init__(self, arg=None, shape=None, copy=True, tidyup=False):
         cdef size_t ptr
         cdef base.idxint col
         cdef object data, offsets
@@ -142,11 +142,45 @@ cdef class Dia(base.Data):
 
         self._scipy = _dia_matrix(data, offsets, self.shape)
         if tidyup:
-            tidyup_dia(self, settings.core['auto_tidyup_atol'], True)
+            if tidyup is True:
+               tidyup = settings.core['auto_tidyup_atol']
+            self._tidyup(tidyup)
+        clean_dia(self, True)
 
     @classmethod
     def sparcity(self):
         return "diagonal"
+
+    cdef void _make_scipy(self, full=False):
+        if self._scipy is not None:
+            return
+
+        cdef cnp.npy_intp num_diag = self.num_diag if not full else self._max_diag
+        cdef cnp.npy_intp size = self.shape[1]
+        data = cnp.PyArray_SimpleNewFromData(2, [num_diag, size],
+                                             cnp.NPY_COMPLEX128,
+                                             self.data)
+        offsets = cnp.PyArray_SimpleNewFromData(1, [num_diag],
+                                                base.idxint_DTYPE,
+                                                self.offsets)
+        PyArray_ENABLEFLAGS(data, cnp.NPY_ARRAY_OWNDATA)
+        PyArray_ENABLEFLAGS(offsets, cnp.NPY_ARRAY_OWNDATA)
+        if self.immutable:
+            PyArray_CLEARFLAGS(data, cnp.NPY_ARRAY_WRITEABLE)
+            PyArray_CLEARFLAGS(offsets, cnp.NPY_ARRAY_WRITEABLE)
+        self._deallocate = False
+        self._scipy = _dia_matrix(data, offsets, self.shape)
+
+    def frozen(self, inplace=False):
+        if self.immutable:
+            return self
+
+        out = self if inplace else self.copy()
+        out.immutable = True
+        if self._scipy is not None:
+            PyArray_CLEARFLAGS(out._scipy.data, cnp.NPY_ARRAY_WRITEABLE)
+            PyArray_CLEARFLAGS(out._scipy.offsets, cnp.NPY_ARRAY_WRITEABLE)
+        return out
 
     def __reduce__(self):
         return (fast_from_scipy, (self.as_scipy(),))
@@ -163,6 +197,8 @@ cdef class Dia(base.Data):
         unnecessary speed penalty for users who do not need it (including
         low-level C code).
         """
+        if self.immutable:
+            return self
         cdef Dia out = empty_like(self)
         out.num_diag = self.num_diag
         memcpy(out.data, self.data, self.num_diag * self.shape[1] * sizeof(double complex))
@@ -199,21 +235,20 @@ cdef class Dia(base.Data):
         # relatively expensive method, but also because we transferred
         # ownership of our data to the numpy arrays, and we can't allow them to
         # be collected while we're alive.
-        if self._scipy is not None:
-            return self._scipy
-        cdef cnp.npy_intp num_diag = self.num_diag if not full else self._max_diag
-        cdef cnp.npy_intp size = self.shape[1]
-        data = cnp.PyArray_SimpleNewFromData(2, [num_diag, size],
-                                             cnp.NPY_COMPLEX128,
-                                             self.data)
-        offsets = cnp.PyArray_SimpleNewFromData(1, [num_diag],
-                                                base.idxint_DTYPE,
-                                                self.offsets)
-        PyArray_ENABLEFLAGS(data, cnp.NPY_ARRAY_OWNDATA)
-        PyArray_ENABLEFLAGS(offsets, cnp.NPY_ARRAY_OWNDATA)
-        self._deallocate = False
-        self._scipy = _dia_matrix(data, offsets, self.shape)
-        return self._scipy
+        self._make_scipy(full)
+        if self.immutable:
+            return _dia_matrix(
+                self._scipy.data,
+                self._scipy.offsets,
+                self.shape
+            )
+        # Scipy's copy is slower and goes through safety check that exclude
+        # empty dia
+        return _dia_matrix(
+            self._scipy.data.copy(),
+            self._scipy.offsets.copy(),
+            self.shape
+        )
 
     cpdef double complex trace(self):
         return trace_dia(self)
@@ -253,6 +288,47 @@ cdef class Dia(base.Data):
                 return False
         return True
 
+    cdef void _tidyup(self, double tol):
+        cdef base.idxint diag=0, new_diag=0, ONE=1, start, end, col
+        cdef bint re, im, has_data
+        cdef double complex value
+        cdef int length
+
+        if self.immutable:
+            raise ValueError("Can't tidyup a readonly matrix.")
+
+        while diag < self.num_diag:
+            start = max(0, self.offsets[diag])
+            end = min(self.shape[1], self.shape[0] + self.offsets[diag])
+            has_data = False
+            for col in range(start, end):
+                re = False
+                im = False
+                if fabs(self.data[diag * self.shape[1] + col].real) < tol:
+                    re = True
+                    self.data[diag * self.shape[1] + col].real = 0
+                if fabs(self.data[diag * self.shape[1] + col].imag) < tol:
+                    im = True
+                    self.data[diag * self.shape[1] + col].imag = 0
+                has_data |= not (re & im)
+
+            if has_data and new_diag < diag:
+                length = self.shape[1]
+                blas.zcopy(
+                    &length,
+                    &self.data[diag * self.shape[1]], &ONE,
+                    &self.data[new_diag * self.shape[1]], &ONE
+                )
+                self.offsets[new_diag] = self.offsets[diag]
+
+            if has_data:
+                new_diag += 1
+            diag += 1
+        self.num_diag = new_diag
+        if self._scipy is not None:
+            self._scipy.data = self._scipy.data[:new_diag]
+            self._scipy.offsets = self._scipy.offsets[:new_diag]
+
 
 cpdef Dia fast_from_scipy(object sci):
     """
@@ -271,7 +347,7 @@ cpdef Dia fast_from_scipy(object sci):
     return out
 
 
-cpdef Dia empty(base.idxint rows, base.idxint cols, base.idxint num_diag):
+cdef Dia empty(base.idxint rows, base.idxint cols, base.idxint num_diag):
     """
     Allocate an empty Dia matrix of the given shape, ``with num_diag``
     diagonals.
@@ -304,7 +380,7 @@ cpdef Dia empty(base.idxint rows, base.idxint cols, base.idxint num_diag):
     return out
 
 
-cpdef Dia empty_like(Dia other):
+cdef Dia empty_like(Dia other):
     return empty(other.shape[0], other.shape[1], other.num_diag)
 
 
@@ -353,7 +429,7 @@ cpdef Dia from_dense(Dense matrix):
             out.data[(col - row + matrix.shape[0] - 1) * out.shape[1] + col] = matrix.data[row * strideR + col * strideC]
 
     if settings.core["auto_tidyup"]:
-        tidyup_dia(out, settings.core["auto_tidyup_atol"], True)
+        out._tidyup(settings.core["auto_tidyup_atol"])
 
     return out
 
@@ -381,7 +457,6 @@ cpdef Dia clean_dia(Dia matrix, bint inplace=False):
     cdef Dia out = matrix if inplace else matrix.copy()
     cdef base.idxint diag=0, new_diag=0, start, end, col
     cdef double complex zONE=1.
-    cdef bint has_duplicate
     cdef int length=out.shape[1], ONE=1
 
     if out.num_diag == 0:
@@ -393,12 +468,10 @@ cpdef Dia clean_dia(Dia matrix, bint inplace=False):
         smallest_offsets = out.offsets[new_diag]
         smallest_diag = new_diag
         comp_diag = new_diag + 1
-        has_duplicate = False
         for comp_diag in range(new_diag + 1, out.num_diag):
             if out.offsets[comp_diag] < smallest_offsets:
                 smallest_offsets = out.offsets[comp_diag]
                 smallest_diag = comp_diag
-                has_duplicate = False
             elif out.offsets[comp_diag] == smallest_offsets:
                 blas.zaxpy(
                     &length, &zONE,

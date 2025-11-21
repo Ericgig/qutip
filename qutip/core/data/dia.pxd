@@ -20,17 +20,20 @@ cdef class Dia(base.Data):
     cdef readonly size_t num_diag, _max_diag
     cdef object _scipy
     cdef bint _deallocate
+    cdef bint immutable
     cpdef Dia copy(Dia self)
     cpdef object as_scipy(Dia self, bint full=*)
+    cdef void _make_scipy(self, full=*)
     cpdef double complex trace(Dia self)
     cpdef Dia adjoint(Dia self)
     cpdef Dia conj(Dia self)
     cpdef Dia transpose(Dia self)
+    cdef void _tidyup(Dia self, double tol)
     cdef bint _is_sorted(Dia self)
 
 cpdef Dia fast_from_scipy(object sci)
-cpdef Dia empty(base.idxint rows, base.idxint cols, base.idxint num_diag)
-cpdef Dia empty_like(Dia other)
+cdef Dia empty(base.idxint rows, base.idxint cols, base.idxint num_diag)
+cdef Dia empty_like(Dia other)
 cpdef Dia zeros(base.idxint rows, base.idxint cols)
 cpdef Dia identity(base.idxint dimension, double complex scale=*)
 cpdef Dia from_dense(Dense matrix)

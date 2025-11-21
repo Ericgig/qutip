@@ -10,7 +10,6 @@ from qutip.settings import settings
 from qutip.core.data.base cimport idxint, Data
 from qutip.core.data.dense cimport Dense
 from qutip.core.data.dia cimport Dia
-from qutip.core.data.tidyup cimport tidyup_dia
 from qutip.core.data.csr cimport (
     CSR, Accumulator, acc_alloc, acc_free, acc_scatter, acc_gather, acc_reset,
 )
@@ -302,7 +301,7 @@ cpdef Dia add_dia(Dia left, Dia right, double complex scale=1):
     if not sorted:
         dia.clean_dia(out, True)
     if settings.core['auto_tidyup']:
-        tidyup_dia(out, settings.core['auto_tidyup_atol'], True)
+        out._tidyup(settings.core['auto_tidyup_atol'])
     return out
 
 
