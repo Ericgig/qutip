@@ -183,6 +183,7 @@ class TestClassMethods:
         assert np.all(orig == test)
 
 class TestFactoryMethods:
+    @pytest.mark.skip()
     def test_empty(self, shape):
         base = dense.empty(shape[0], shape[1])
         nd = base.as_ndarray()

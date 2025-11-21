@@ -41,8 +41,9 @@ _SINGLE_QUBIT_PAULI_BASIS = (
 def _superpauli_basis(nq=1):
     dims = [[[2] * nq] * 2] * 2
     nnz = 8**nq
-    data = _data.csr.empty(4**nq, 4**nq, nnz)
-    sci = data.as_scipy(full=True)
+    data = np.empty(nnz, dtype=complex)
+    indices = np.empty(nnz, dtype=np.int32)
+    indptr = np.empty(4**nq + 1, dtype=np.int32)
     ptr, ptr_inc = 0, 2**nq
     # Construct the Pauli basis by vertically stacking rows in sparse format.
     # The CSR format is much more efficient at handling row-stacking, so we
@@ -54,12 +55,16 @@ def _superpauli_basis(nq=1):
         for pauli in paulis[1:]:
             basis = _data.kron_csr(basis, pauli.data)
         basis_ket_sci = _data.column_stack_csr(basis).transpose().as_scipy()
-        sci.data[ptr : ptr+ptr_inc] = basis_ket_sci.data
-        sci.indices[ptr : ptr+ptr_inc] = basis_ket_sci.indices
-        sci.indptr[i] = ptr
+        data[ptr : ptr+ptr_inc] = basis_ket_sci.data
+        indices[ptr : ptr+ptr_inc] = basis_ket_sci.indices
+        indptr[i] = ptr
         ptr += ptr_inc
-    sci.indptr[-1] = nnz
-    return Qobj(data.adjoint(),
+    indptr[-1] = nnz
+    return Qobj(_data.CSR(
+                    (data, indices, indptr),
+                    shape=(4**nq, 4**nq),
+                    copy=False
+                ).adjoint(),
                 dims=dims,
                 superrep='super',
                 isherm=False,
