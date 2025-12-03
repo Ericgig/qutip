@@ -678,7 +678,7 @@ class Compound(Space):
         Add subsystems of one state to obtain a compound space of N spaces.
         Only Field can be expended.
         """
-        if N != len(space):
+        if N != len(self.spaces):
             raise ValueError("Non Scalar space can't be expanded.")
         return self
 

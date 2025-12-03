@@ -20,12 +20,17 @@ def random_data(shape):
 
 def _make_data_oper_pair_single(dims, modes):
     shape = [1, 1]
-    for mode in modes:
-        shape[0] *= dims[0][mode]
-        shape[1] *= dims[1][mode]
-    a = random_data(shape)
-    oper_a = Operator(a, modes=modes, dimension=dims)
-    return a, oper_a
+    kron_size = [1, 1]
+    for mode in range(len(dims[0])):
+        if mode in modes:
+            shape[0] *= dims[0][mode]
+            shape[1] *= dims[1][mode]
+        elif mode < modes[0]:
+            kron_size[0] *= dims[0][mode]
+        else:
+            kron_size[1] *= dims[0][mode]
+    oper = Operator(random_data(shape), modes=modes, dimension=dims)
+    return oper.to_data(), oper
 
 
 def _make_data_oper_pair_multi(dims, modes):
@@ -42,13 +47,12 @@ def _make_data_oper_pair_multi(dims, modes):
     dims_a[1][modes[0]] = N
     dims_b[0][modes[0]] = N
 
-    a = random_data((shape[0], N))
-    b = random_data((N, shape[1]))
-    c = random_data(shape)
-    oa = Operator(a, modes=modes, dimension=dims)
-    ob = Operator(b, modes=modes, dimension=dims)
-    oc = Operator(c, modes=modes, dimension=dims)
-    return a @ b + c, a @ b + c
+    a = Operator(random_data((shape[0], N)), modes=modes, dimension=dims_a)
+    b = Operator(random_data((N, shape[1])), modes=modes, dimension=dims_b)
+    c = Operator(random_data(shape), modes=modes, dimension=dims)
+    oper = a @ b + c
+    data = a.to_data() @ b.to_data() + c.to_data()
+    return data, oper
 
 
 @pytest.mark.parametrize("shape", [(1, 1), (5, 5), (1, 10), (4, 2)])
@@ -90,7 +94,7 @@ def test_binary_operation(shape, mode, factory):
     assert (a + a) == (oper_a + oper_a).to_data()
     assert (a @ b) == (oper_a @ oper_b).to_data()
     assert (b - b) == (oper_b - oper_b).to_data()
-    assert qutip.data.core.kron(a, b) == (oper_a & oper_b).to_data()
+    assert _data.kron(a, b) == (oper_a & oper_b).to_data()
 
 
 @pytest.mark.parametrize("mode", [(0,), (0, 1)])
@@ -107,7 +111,7 @@ def test_super_operation(mode, factory):
     assert sprepost(Qobj(a), Qobj(b)).data == oper_a.sprepost(oper_b).to_data()
 
 
-def test_super_tensor(mode, factory):
+def test_super_tensor():
     dims = [[2], [2]]
     a, oper_a = _make_data_oper_pair_multi(dims, (0,))
     b, oper_b = _make_data_oper_pair_multi(dims, (0,))
