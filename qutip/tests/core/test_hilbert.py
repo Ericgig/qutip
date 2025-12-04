@@ -117,6 +117,7 @@ def test_super_tensor():
     b, oper_b = _make_data_oper_pair_multi(dims, (0,))
     a, b = Qobj(a), Qobj(b)
 
-    c = sprepost(a & b, a & b).data
+    c = sprepost(a & b, a & b)
     oper_c = oper_a.sprepost(oper_a) & oper_b.sprepost(oper_b)
-    assert c == oper_c.to_data()
+    assert c.data == oper_c.to_data()
+    assert c._dims == oper_c._dims

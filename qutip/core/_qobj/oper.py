@@ -517,22 +517,32 @@ class Operator:
         return new
 
     def _tensor_super(left, right):
-        N = len(left._dims[0])
-        dims = [
-            [left._dims[0],  right._dims[0]],
-            [left._dims[1],  right._dims[1]]
+        N = len(left._dims[0]) // 2
+        M = len(right._dims[0]) // 2
+
+        space_out = [
+            [left._dims[0].oper[0], right._dims[0].oper[0]],
+            [left._dims[0].oper[1], right._dims[0].oper[1]],
+        ]
+        space_mid = [
+            [left._dims[0].oper[0], right._dims[1].oper[0]],
+            [left._dims[0].oper[1], right._dims[1].oper[1]],
+        ]
+        space_in = [
+            [left._dims[1].oper[0], right._dims[1].oper[0]],
+            [left._dims[1].oper[1], right._dims[1].oper[1]],
         ]
 
-        left_ext = Operator(dimension=[
-            [left._dims[0],  right._dims[0]],
-            [left._dims[1],  right._dims[0]]
-        ])
+        left_ext = Operator(dimension=[space_out, space_mid])
         for term in left.terms:
             pterms = []
             for pterm in term.prod_terms:
                 pterms.append(_ProdTerm(
                     pterm.operator,
-                    pterm.modes,
+                    tuple(
+                        i if i < N else i + M
+                        for i in pterm.modes
+                    ),
                     pterm.in_space,
                     pterm.out_space,
                     pterm.transform,
@@ -541,11 +551,7 @@ class Operator:
                 _Term(tuple(pterms), left_ext._dims, factor=term.factor)
             )
 
-        right_shifted = Operator(dimension=[
-            [left._dims[1],  right._dims[0]],
-            [left._dims[1],  right._dims[1]]
-        ])
-        M = len(right._dims[0])
+        right_shifted = Operator(dimension=[space_mid, space_in])
         for term in right.terms:
             pterms = []
             for pterm in term.prod_terms:
