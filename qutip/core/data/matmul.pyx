@@ -201,6 +201,7 @@ cpdef CSR matmul_csr(CSR left, CSR right, double complex scale=1, CSR out=None):
             out.row_index[row_l + 1] = nnz
     mem.PyMem_Free(sums)
     mem.PyMem_Free(nxt)
+    out.frozen(True)
     return out
 
 
@@ -411,6 +412,7 @@ cpdef Dia matmul_dia(Dia left, Dia right, double complex scale=1):
                 * right.data[diag_right * right.shape[1] + col]
               )
 
+    out.frozen(True)
     return out
 
 
@@ -797,6 +799,7 @@ cpdef CSR multiply_csr(CSR left, CSR right):
             left.shape[0], left.shape[1], nnz
         )
         out = add_csr(out, nans_csr)
+    out.frozen(True)
     return out
 
 
@@ -861,6 +864,7 @@ cpdef Dia multiply_dia(Dia left, Dia right):
 
     if settings.core['auto_tidyup']:
         out._tidyup(settings.core['auto_tidyup_atol'])
+    out.frozen(True)
     return out
 
 

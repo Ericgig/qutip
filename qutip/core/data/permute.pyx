@@ -144,6 +144,7 @@ cdef CSR _indices_csr_rowonly(CSR matrix, idxint[:] rows):
         len = matrix.row_index[row + 1] - ptr_in
         memcpy(&out.col_index[ptr_out], &matrix.col_index[ptr_in], len * sizeof(idxint))
         memcpy(&out.data[ptr_out], &matrix.data[ptr_in], len * sizeof(double complex))
+    out.frozen(True)
     return out
 
 cdef CSR _indices_csr_full(CSR matrix, idxint[:] rows, idxint[:] cols):
@@ -177,6 +178,7 @@ cdef CSR _indices_csr_full(CSR matrix, idxint[:] rows, idxint[:] cols):
                   &matrix.data[ptr_in], new_cols,
                   len)
     mem.PyMem_Free(new_cols)
+    out.frozen(True)
     return out
 
 cpdef CSR indices_csr(CSR matrix, object row_perm=None, object col_perm=None):

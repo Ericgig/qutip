@@ -229,7 +229,7 @@ cdef class CSR(base.Data):
     def __reduce__(self):
         return (fast_from_scipy, (self.as_scipy(),))
 
-    cpdef CSR copy(self):
+    cpdef CSR copy(self, deep=False):
         """
         Return a complete (deep) copy of this object.
 
@@ -241,7 +241,7 @@ cdef class CSR(base.Data):
         unnecessary speed penalty for users who do not need it (including
         low-level C code).
         """
-        if self.immutable:
+        if self.immutable and not deep:
             return self
         cdef base.idxint nnz_ = nnz(self)
         cdef CSR out = empty_like(self)
@@ -678,6 +678,7 @@ cpdef CSR zeros(base.idxint rows, base.idxint cols):
     cdef CSR out = empty(rows, cols, 1)
     out.data[0] = out.col_index[0] = 0
     memset(out.row_index, 0, (rows + 1) * sizeof(base.idxint))
+    out.frozen(True)
     return out
 
 
@@ -694,6 +695,7 @@ cpdef CSR identity(base.idxint dimension, double complex scale=1):
         out.col_index[i] = i
         out.row_index[i] = i
     out.row_index[dimension] = dimension
+    out.frozen(True)
     return out
 
 cpdef CSR from_dense(Dense matrix):
@@ -718,6 +720,7 @@ cpdef CSR from_dense(Dense matrix):
                 ptr_out += 1
             ptr_in += col_stride
         out.row_index[row + 1] = ptr_out
+    out.frozen(True)
     return out
 
 cdef CSR from_coo_pointers(
@@ -773,6 +776,7 @@ cdef CSR from_coo_pointers(
     mem.PyMem_Free(data_tmp)
     mem.PyMem_Free(cols_tmp)
     acc_free(&acc)
+    out.frozen(True)
     return out
 
 

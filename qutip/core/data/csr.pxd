@@ -22,7 +22,7 @@ cdef class CSR(base.Data):
     cdef object _scipy
     cdef bint _deallocate
     cdef bint immutable
-    cpdef CSR copy(CSR self)
+    cpdef CSR copy(CSR self, deep=*)
     cdef void _make_scipy(self, full=*)
     cpdef object as_scipy(CSR self, bint full=*)
     cpdef CSR sort_indices(CSR self)

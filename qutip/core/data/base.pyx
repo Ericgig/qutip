@@ -44,7 +44,7 @@ cdef class Data:
     cpdef Data transpose(self):
         raise NotImplementedError
 
-    cpdef Data copy(self):
+    cpdef Data copy(self, deep=False):
         raise NotImplementedError
 
     def __add__(left, right):

@@ -49,6 +49,7 @@ cpdef CSR reshape_csr(CSR matrix, idxint n_rows_out, idxint n_cols_out):
             cur += n_cols_in
         for row_out in range(n_rows_out):
             out.row_index[row_out + 1] += out.row_index[row_out]
+    out.frozen(True)
     return out
 
 
@@ -78,9 +79,11 @@ cpdef Dense reshape_dense(Dense matrix, idxint n_rows_out, idxint n_cols_out):
 cpdef Dia reshape_dia(Dia matrix, idxint n_rows_out, idxint n_cols_out):
     _reshape_check_input(matrix, n_rows_out, n_cols_out)
     # Once reshaped, diagonals are no longer ligned up.
-    return Dia(
+    out = Dia(
         matrix.as_scipy().reshape((n_rows_out, n_cols_out)).todia(), copy=False
     )
+    out.frozen(True)
+    return out
 
 
 cpdef CSR column_stack_csr(CSR matrix):

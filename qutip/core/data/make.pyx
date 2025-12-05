@@ -1,3 +1,5 @@
+#cython: language_level=3
+
 from .dispatch import Dispatcher as _Dispatcher
 from qutip.core.data cimport CSR, Dense, Dia, csr, dense, dia
 from . import csr as py_csr
@@ -76,6 +78,7 @@ def one_element_csr(shape, position, value=1.0):
         data.row_index[i] = 0
     for i in range(position[0]+1, shape[0]+1):
         data.row_index[i] = 1
+    data.frozen(True)
     return data
 
 
@@ -126,7 +129,9 @@ def one_element_dia(shape, position, value=1.0):
     data = np.zeros((1, shape[1]), dtype=complex)
     data[0, position[1]] = value
     offsets = np.array([position[1]-position[0]])
-    return Dia((data, offsets), shape=shape)
+    out = Dia((data, offsets), shape=shape)
+    out.frozen(True)
+    return out
 
 
 one_element = _Dispatcher(one_element_dense, name='one_element',

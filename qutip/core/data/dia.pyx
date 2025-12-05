@@ -185,7 +185,7 @@ cdef class Dia(base.Data):
     def __reduce__(self):
         return (fast_from_scipy, (self.as_scipy(),))
 
-    cpdef Dia copy(self):
+    cpdef Dia copy(self, deep=False):
         """
         Return a complete (deep) copy of this object.
 
@@ -197,7 +197,7 @@ cdef class Dia(base.Data):
         unnecessary speed penalty for users who do not need it (including
         low-level C code).
         """
-        if self.immutable:
+        if self.immutable and not deep:
             return self
         cdef Dia out = empty_like(self)
         out.num_diag = self.num_diag
@@ -394,6 +394,7 @@ cpdef Dia zeros(base.idxint rows, base.idxint cols):
     cdef Dia out = empty(rows, cols, 0)
     memset(out.data, 0, out.shape[1] * sizeof(double complex))
     out.offsets[0] = 0
+    out.frozen(True)
     return out
 
 
@@ -408,6 +409,7 @@ cpdef Dia identity(base.idxint dimension, double complex scale=1):
         out.data[i] = scale
     out.offsets[0] = 0
     out.num_diag = 1
+    out.frozen(True)
     return out
 
 
@@ -431,6 +433,7 @@ cpdef Dia from_dense(Dense matrix):
     if settings.core["auto_tidyup"]:
         out._tidyup(settings.core["auto_tidyup_atol"])
 
+    out.frozen(True)
     return out
 
 
@@ -446,7 +449,9 @@ cpdef Dia from_csr(CSR matrix):
             diag = matrix.col_index[ptr] - row
             idx = np.searchsorted(diags, diag)
             data[idx, matrix.col_index[ptr]] = matrix.data[ptr]
-    return Dia((data, diags), shape=matrix.shape, copy=False)
+    cdef Dia out = Dia((data, diags), shape=matrix.shape, copy=False)
+    out.frozen(True)
+    return out
 
 
 cpdef Dia clean_dia(Dia matrix, bint inplace=False):
