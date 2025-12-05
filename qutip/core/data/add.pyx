@@ -167,6 +167,7 @@ cpdef CSR add_csr(CSR left, CSR right, double complex scale=1):
     else:
         _add_csr_scale(&acc, left, right, out, scale, tol)
     acc_free(&acc)
+    out.frozen(True)
     return out
 
 
@@ -302,6 +303,7 @@ cpdef Dia add_dia(Dia left, Dia right, double complex scale=1):
         dia.clean_dia(out, True)
     if settings.core['auto_tidyup']:
         out._tidyup(settings.core['auto_tidyup_atol'])
+    out.frozen(True)
     return out
 
 

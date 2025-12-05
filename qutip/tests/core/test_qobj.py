@@ -86,7 +86,8 @@ def test_QobjCopyArgument(original_data, copy):
             assert np.shares_memory(qobj_data, original_data) != copy
 
         else:
-            assert (original_data is qobj_data) != copy
+            # copy don't work for immutable object
+            assert (original_data is qobj_data) or copy
 
 
 def test_QobjType():

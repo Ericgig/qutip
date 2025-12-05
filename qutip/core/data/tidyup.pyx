@@ -17,33 +17,33 @@ __all__ = [
 ]
 
 
-cpdef CSR tidyup_csr(CSR matrix, double tol, bint inplace=True):
+cpdef CSR tidyup_csr(CSR matrix, double tol, bint inplace=False):
     if inplace and matrix.immutable:
         raise RuntimeError("Matrix is immutable.")
-    cdef CSR out = matrix if inplace else matrix.copy()
+    cdef CSR out = matrix if inplace else matrix.copy(deep=True)
     out._tidyup(tol)
     return out
 
 
-cpdef Dense tidyup_dense(Dense matrix, double tol, bint inplace=True):
+cpdef Dense tidyup_dense(Dense matrix, double tol, bint inplace=False):
     if inplace and matrix.immutable:
         raise RuntimeError("Matrix is immutable.")
-    cdef Dense out = matrix if inplace else matrix.copy()
+    cdef Dense out = matrix if inplace else matrix.copy(deep=True)
     cdef double complex value
     cdef size_t ptr
-    for ptr in range(matrix.shape[0] * matrix.shape[1]):
-        value = matrix.data[ptr]
+    for ptr in range(out.shape[0] * out.shape[1]):
+        value = out.data[ptr]
         if fabs(value.real) < tol:
-            matrix.data[ptr].real = 0
+            out.data[ptr].real = 0
         if fabs(value.imag) < tol:
-            matrix.data[ptr].imag = 0
+            out.data[ptr].imag = 0
     return out
 
 
-cpdef Dia tidyup_dia(Dia matrix, double tol, bint inplace=True):
+cpdef Dia tidyup_dia(Dia matrix, double tol, bint inplace=False):
     if inplace and matrix.immutable:
         raise RuntimeError("Matrix is immutable.")
-    cdef Dia out = matrix if inplace else matrix.copy()
+    cdef Dia out = matrix if inplace else matrix.copy(deep=True)
     out._tidyup(tol)
     return out
 

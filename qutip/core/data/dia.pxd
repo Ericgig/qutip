@@ -21,7 +21,7 @@ cdef class Dia(base.Data):
     cdef object _scipy
     cdef bint _deallocate
     cdef bint immutable
-    cpdef Dia copy(Dia self)
+    cpdef Dia copy(Dia self, deep=*)
     cpdef object as_scipy(Dia self, bint full=*)
     cdef void _make_scipy(self, full=*)
     cpdef double complex trace(Dia self)

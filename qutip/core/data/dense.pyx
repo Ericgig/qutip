@@ -129,7 +129,7 @@ cdef class Dense(base.Data):
                 idx_out += stride
         return out
 
-    cpdef Dense copy(self):
+    cpdef Dense copy(self, deep=False):
         """
         Return a complete (deep) copy of this object.
 
@@ -141,7 +141,7 @@ cdef class Dense(base.Data):
         unnecessary speed penalty for users who do not need it (including
         low-level C code).
         """
-        if self.immutable:
+        if self.immutable and not deep:
             return self
         cdef Dense out = Dense.__new__(Dense)
         cdef size_t size = (

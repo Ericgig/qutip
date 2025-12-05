@@ -150,6 +150,7 @@ def ptrace_dia(matrix, dims, sel):
     data = np.array(list(data.values()), dtype=complex)
     out = Dia((data, offsets), shape=(size, size), copy=False)
     out = dia.clean_dia(out, True)
+    out.frozen(True)
     return out
 
 

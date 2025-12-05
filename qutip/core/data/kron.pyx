@@ -69,6 +69,7 @@ cpdef CSR kron_csr(CSR left, CSR right):
 
                     ptr_start_out += dist_r
                     ptr_end_out += dist_r
+    out.frozen(True)
     return out
 
 
@@ -172,6 +173,7 @@ cpdef Dia kron_dia(Dia left, Dia right):
             out = _to(Dia, out_dense)
 
     out = dia.clean_dia(out, True)
+    out.frozen(True)
     return out
 
 

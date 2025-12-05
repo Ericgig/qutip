@@ -29,6 +29,7 @@ cpdef CSR mul_csr(CSR matrix, double complex value):
     with nogil:
         for ptr in range(csr.nnz(matrix)):
             out.data[ptr] = value * matrix.data[ptr]
+    out.frozen(True)
     return out
 
 cpdef CSR neg_csr(CSR matrix):
@@ -38,6 +39,7 @@ cpdef CSR neg_csr(CSR matrix):
     with nogil:
         for ptr in range(csr.nnz(matrix)):
             out.data[ptr] = -matrix.data[ptr]
+    out.frozen(True)
     return out
 
 
@@ -62,15 +64,17 @@ cpdef Dia mul_dia(Dia matrix, double complex value):
         for ptr in range(matrix.num_diag):
             out.offsets[ptr] = matrix.offsets[ptr]
         out.num_diag = matrix.num_diag
+    out.frozen(True)
     return out
 
 cpdef Dia neg_dia(Dia matrix):
     """Unary negation of this Dia `matrix`.  Return a new object."""
-    cdef Dia out = matrix.copy()
+    cdef Dia out = matrix.copy(deep=True)
     cdef idxint ptr, l = matrix.num_diag * matrix.shape[1]
     with nogil:
         for ptr in range(l):
             out.data[ptr] = -matrix.data[ptr]
+    out.frozen(True)
     return out
 
 

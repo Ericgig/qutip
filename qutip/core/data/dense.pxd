@@ -14,7 +14,7 @@ cdef class Dense(base.Data):
     cdef bint immutable
     cdef void _fix_flags(Dense self, object array, bint make_owner=*)
     cpdef Dense reorder(Dense self, int fortran=*)
-    cpdef Dense copy(Dense self)
+    cpdef Dense copy(Dense self, deep=*)
     cpdef object as_ndarray(Dense self)
     cpdef object to_array(Dense self)
     cpdef double complex trace(Dense self)
