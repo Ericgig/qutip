@@ -159,11 +159,10 @@ class _Term:
             # TODO: To optimize
             # It's not always needed to expand to the full space before the
             #   product.
-            out = _data.identity[dtype](
-                np.prod(self.hilbert_space), scale=self.factor(t)
-            )
             hilbert = self.hilbert_space
-            for pterm in self.prod_terms[::-1]:
+            hilbert, out = self.prod_terms[-1].to_data(hilbert, self.issuper)
+            out = _data.mul(out, self.factor(t))
+            for pterm in self.prod_terms[-2::-1]:
                 hilbert, oper = pterm.to_data(hilbert, self.issuper)
                 out = oper @ out
 
