@@ -12,6 +12,7 @@ from qutip.core.data.permute import get_permutations
 from qutip.core.coefficient import Coefficient, coefficient, ConstantCoefficient
 from qutip.settings import settings
 from qutip.typing import LayerType
+from ._pterm import _ProdTerm
 
 from qutip.core._qobj.utils import (
     Transform,
@@ -24,88 +25,26 @@ from qutip.core._qobj.utils import (
 __all__ = ["Operator"]
 
 
-@dataclass(frozen=True)
-class _ProdTerm:
-    """
-    Elementary operator inserted in a larger quantum object.
 
-    ``operator`` is the matrix that is first transformed by ``transform`` then
-    applied on the modes of a quantum system of the given dimensions.
-    """
-    operator: Any  # Data or Element?
-    modes: tuple[int]
-    in_space: list
-    out_space: list
-    transform: Transform
-
-    def to_data(self, hilbert_space: list=None, issuper: bool=None) -> Data:
-        if hilbert_space is None:
-            return apply_transform(self.operator, self.transform)
-
-        in_hilbert = hilbert_space.copy()
-        in_sizes = self.in_space.copy()
-        out_sizes = self.out_space.copy()
-        N = len(hilbert_space)
-
-        if self.in_space == self.out_space:
-            out_hilbert = in_hilbert
-        else:
-            out_hilbert = hilbert_space.copy()
-            for i, mode in enumerate(self.modes):
-                out_hilbert[mode] = out_sizes[i]
-
-        super_element = False
-        if issuper:
-            super_element = not (
-                all(mode < N//2 for mode in self.modes)
-                or all(mode >= N//2 for mode in self.modes)
-            )
-
-        if issuper and not super_element:
-            modes = [((mode + N // 2) % N) for mode in self.modes]
-        else:
-            modes = list(self.modes)
-        order = list(modes)
-        modes = set(modes)
-        not_modes = set(range(N)) - modes
-        print(hilbert_space, out_hilbert, N, not_modes)
-
-        oper = apply_transform(self.operator, self.transform)
-        out_side = 1
-
-        for i in not_modes:
-            if issuper:
-                mode_size = in_hilbert[(i + N//2) % N]
-            else:
-                mode_size = in_hilbert[i]
-            out_side *= mode_size
-            in_sizes.append(mode_size)
-            out_sizes.append(mode_size)
-            order.append(i)
-
-        if len(in_hilbert) > len(modes):
-            oper = _data.kron(oper, _data.identity(out_side))
-
-        print(order, out_sizes, in_sizes)
-        order = np.argsort(order)
-        perm_row = get_permutations(out_sizes, order)
-        perm_col = get_permutations(in_sizes, order)
-
-        return out_hilbert, _data.permute.indices(oper, perm_row, perm_col)
-
-    def __hash__(self):
-        return hash((
-            id(self.operator), self.modes, tuple(self.in_space),
-            tuple(self.out_space), self.transform
-        ))
-
-
-@dataclass(frozen=True)
 class _Term:
-    prod_terms: list[_ProdTerm]
+    prod_terms: tuple[_ProdTerm]
     hilbert_space: tuple[int]
     issuper: bool
-    factor: complex
+    factor: Coefficient
+
+    def __init__(self, prod_terms, hilbert_space, issuper, factor):
+        self.prod_terms = tuple(prod_terms)
+        self.hilbert_space = tuple(hilbert_space)
+        self.issuper = bool(issuper)
+        self.factor = coefficient(factor)
+
+    def copy(self):
+        return _Term(
+            self.prod_terms,
+            self.hilbert_space,
+            self.issuper,
+            self.factor
+        )
 
     def to_data(self, t: float, dtype):
         """
@@ -160,10 +99,10 @@ class _Term:
             # It's not always needed to expand to the full space before the
             #   product.
             hilbert = self.hilbert_space
-            hilbert, out = self.prod_terms[-1].to_data(hilbert, self.issuper)
+            hilbert, out = self.prod_terms[-1].expand_data(hilbert, self.issuper)
             out = _data.mul(out, self.factor(t))
             for pterm in self.prod_terms[-2::-1]:
-                hilbert, oper = pterm.to_data(hilbert, self.issuper)
+                hilbert, oper = pterm.expand_data(hilbert, self.issuper)
                 out = oper @ out
 
         return out
@@ -175,13 +114,6 @@ class _Term:
         """
         if len(self.prod_terms) == 0:
             return self
-
-        # make_layer = lambda : [[] for _ in range(len(self.hilbert_space))]
-        # commute = lambda layer, modes: not any(layer[m] for m in modes)
-        # compatible = lambda layer, modes: (
-        #     layer[modes[0]]
-        #     and layer[modes[0]][0].modes == modes
-        # )
 
         N = len(self.hilbert_space[1].flat())
         layers = []
@@ -206,9 +138,6 @@ class _Term:
                 layers[target_layer_idx][modes] = [pterm]
                 for m in modes:
                     frontier[m] = new_idx
-
-        # Now we have each layer[n][modes] is a list of operator that can act
-        # on the same modes and can be merged together.
 
         pterm = []
         for layer in layers:
