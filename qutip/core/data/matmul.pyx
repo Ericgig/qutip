@@ -89,6 +89,8 @@ cdef int _check_shape(Data left, Data right, Data out=None) except -1 nogil:
             + " but needed "
             + str((left.shape[0], right.shape[1]))
         )
+    if out is not None and out.immutable:
+        raise RuntimeError("state is immutable")
     return 0
 
 cdef idxint _matmul_csr_estimate_nnz(CSR left, CSR right):
@@ -201,7 +203,8 @@ cpdef CSR matmul_csr(CSR left, CSR right, double complex scale=1, CSR out=None):
             out.row_index[row_l + 1] = nnz
     mem.PyMem_Free(sums)
     mem.PyMem_Free(nxt)
-    out.frozen(True)
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -412,7 +415,6 @@ cpdef Dia matmul_dia(Dia left, Dia right, double complex scale=1):
                 * right.data[diag_right * right.shape[1] + col]
               )
 
-    out.frozen(True)
     return out
 
 
@@ -799,7 +801,9 @@ cpdef CSR multiply_csr(CSR left, CSR right):
             left.shape[0], left.shape[1], nnz
         )
         out = add_csr(out, nans_csr)
-    out.frozen(True)
+
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -864,7 +868,8 @@ cpdef Dia multiply_dia(Dia left, Dia right):
 
     if settings.core['auto_tidyup']:
         out._tidyup(settings.core['auto_tidyup_atol'])
-    out.frozen(True)
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 

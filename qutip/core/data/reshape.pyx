@@ -49,7 +49,8 @@ cpdef CSR reshape_csr(CSR matrix, idxint n_rows_out, idxint n_cols_out):
             cur += n_cols_in
         for row_out in range(n_rows_out):
             out.row_index[row_out + 1] += out.row_index[row_out]
-    out.frozen(True)
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -73,6 +74,8 @@ cpdef Dense reshape_dense(Dense matrix, idxint n_rows_out, idxint n_cols_out):
     for idx_in in range(size):
         out.data[idx_out] = matrix.data[idx_in]
         idx_out = _reshape_dense_reindex(idx_out + stride, size)
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -82,7 +85,8 @@ cpdef Dia reshape_dia(Dia matrix, idxint n_rows_out, idxint n_cols_out):
     out = Dia(
         matrix.as_scipy().reshape((n_rows_out, n_cols_out)).todia(), copy=False
     )
-    out.frozen(True)
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 

@@ -74,7 +74,7 @@ class IntegratorVern7(Integrator):
         return self._ode_solver.t, state.copy() if copy else state
 
     def set_state(self, t, state):
-        self._ode_solver.set_initial_value(state.copy(), t)
+        self._ode_solver.set_initial_value(state.copy(deep=True), t)
         self._is_set = True
 
     def integrate(self, t, copy=True):

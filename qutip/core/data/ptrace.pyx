@@ -150,7 +150,8 @@ def ptrace_dia(matrix, dims, sel):
     data = np.array(list(data.values()), dtype=complex)
     out = Dia((data, offsets), shape=(size, size), copy=False)
     out = dia.clean_dia(out, True)
-    out.frozen(True)
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -172,6 +173,9 @@ cpdef Dense ptrace_csr_dense(CSR matrix, object dims, object sel):
             _i2_k_t(ii, tensor_table, pos_r)
             if pos_c[1] == pos_r[1]:
                 out.data[pos_r[0]*size + pos_c[0]] += matrix.data[jj]
+
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
