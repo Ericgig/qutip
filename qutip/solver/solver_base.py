@@ -125,6 +125,8 @@ class Solver:
         )
         if self.rhs._dims[1] == state._dims:
             return stack_columns(state.data)
+        if state.data.immutable:
+            return state.data.copy(deep=True)
         return state.data
 
     def _restore_state(self, data, *, copy=True):

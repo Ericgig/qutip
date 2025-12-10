@@ -167,7 +167,8 @@ cpdef CSR add_csr(CSR left, CSR right, double complex scale=1):
     else:
         _add_csr_scale(&acc, left, right, out, scale, tol)
     acc_free(&acc)
-    out.frozen(True)
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -202,6 +203,8 @@ cpdef Dense add_dense(Dense left, Dense right, double complex scale=1):
 
 cpdef Dense iadd_dense(Dense left, Dense right, double complex scale=1):
     _check_shape(left, right)
+    if left.immutable:
+        raise RuntimeError("The matrix is immutable.")
     if scale == 0:
         return left
     cdef int size = left.shape[0] * left.shape[1]
@@ -220,6 +223,8 @@ cpdef Dense iadd_dense(Dense left, Dense right, double complex scale=1):
 
 cpdef Data iadd_data(Data left, Data right, double complex scale=1):
     _check_shape(left, right)
+    if left.immutable:
+        raise RuntimeError("The matrix is immutable.")
     if scale == 0:
         return left
     return add(left, right, scale)
@@ -228,6 +233,8 @@ cpdef Data iadd_data(Data left, Data right, double complex scale=1):
 cpdef Dense iadd_dense_data_dense(Dense left, Data right, double complex scale=1):
     """ Helper function to manually set the priority of the dispatcher. """
     _check_shape(left, right)
+    if left.immutable:
+        raise RuntimeError("The matrix is immutable.")
     if scale == 0:
         return left
     return iadd_dense(left, _to(Dense, right), scale)
@@ -303,7 +310,8 @@ cpdef Dia add_dia(Dia left, Dia right, double complex scale=1):
         dia.clean_dia(out, True)
     if settings.core['auto_tidyup']:
         out._tidyup(settings.core['auto_tidyup_atol'])
-    out.frozen(True)
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 

@@ -160,14 +160,14 @@ cdef class Dense(base.Data):
         out._deallocate = True
         return out
 
-    cdef void _fix_flags(self, object array, bint make_owner=False):
+    cdef void _fix_flags(self, object array, bint make_owner=False, bint iscopy=False):
         cdef int enable = cnp.NPY_ARRAY_OWNDATA if make_owner else 0
         cdef int disable = 0
         cdef cnp.npy_intp *dims = cnp.PyArray_DIMS(array)
         cdef cnp.npy_intp *strides = cnp.PyArray_STRIDES(array)
         # Not necessary when creating a new array because this will already
         # have been done, but needed for as_ndarray() if we have been mutated.
-        if self.immutable:
+        if self.immutable and not iscopy:
             disable = cnp.NPY_ARRAY_WRITEABLE
         dims[0] = self.shape[0]
         dims[1] = self.shape[1]
@@ -208,7 +208,7 @@ cdef class Dense(base.Data):
         cdef object out =\
             cnp.PyArray_SimpleNewFromData(2, [self.shape[0], self.shape[1]],
                                           cnp.NPY_COMPLEX128, ptr)
-        self._fix_flags(out, make_owner=True)
+        self._fix_flags(out, make_owner=True, iscopy=True)
         return out
 
     cpdef object as_ndarray(self):

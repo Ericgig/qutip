@@ -9,6 +9,7 @@ cdef int idxint_DTYPE
 
 cdef class Data:
     cdef readonly (idxint, idxint) shape
+    cdef readonly bint immutable
     cpdef object to_array(self)
     cpdef double complex trace(self)
     cpdef Data adjoint(self)
