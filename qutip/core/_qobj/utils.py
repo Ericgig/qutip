@@ -17,25 +17,26 @@ class Transform(Enum):
 
 
 conj_transform = {
-    Transform.DIRECT : Transform.CONJ,
-    Transform.CONJ : Transform.DIRECT,
-    Transform.TRANSPOSE : Transform.ADJOINT,
-    Transform.ADJOINT : Transform.TRANSPOSE,
+    Transform.DIRECT: Transform.CONJ,
+    Transform.CONJ: Transform.DIRECT,
+    Transform.TRANSPOSE: Transform.ADJOINT,
+    Transform.ADJOINT: Transform.TRANSPOSE,
 }
 
 trans_transform = {
-    Transform.DIRECT : Transform.TRANSPOSE,
-    Transform.CONJ : Transform.ADJOINT,
-    Transform.TRANSPOSE : Transform.DIRECT,
-    Transform.ADJOINT : Transform.CONJ,
+    Transform.DIRECT: Transform.TRANSPOSE,
+    Transform.CONJ: Transform.ADJOINT,
+    Transform.TRANSPOSE: Transform.DIRECT,
+    Transform.ADJOINT: Transform.CONJ,
 }
 
 adjoint_transform = {
-    Transform.DIRECT : Transform.ADJOINT,
-    Transform.CONJ : Transform.TRANSPOSE,
-    Transform.TRANSPOSE : Transform.CONJ,
-    Transform.ADJOINT : Transform.DIRECT,
+    Transform.DIRECT: Transform.ADJOINT,
+    Transform.CONJ: Transform.TRANSPOSE,
+    Transform.TRANSPOSE: Transform.CONJ,
+    Transform.ADJOINT: Transform.DIRECT,
 }
+
 
 def apply_transform(matrix, transform):
     match transform:
