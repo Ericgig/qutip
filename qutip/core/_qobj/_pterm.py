@@ -11,7 +11,7 @@ from qutip.core._qobj.utils import Transform, apply_transform
 __all__ = []
 
 
-def _prepare_meta(modes, hilbert_space, space_in, space_out, issuper):
+def _prepare_meta(modes, hilbert_space, space_in, space_out):
     hilbert_out = list(hilbert_space)
     if space_in != space_out:
         for i, mode in enumerate(modes):
@@ -23,18 +23,13 @@ def _prepare_meta(modes, hilbert_space, space_in, space_out, issuper):
     before = 1
     after = 1
 
-    if not issuper:
-        internal_modes = [mode - start for mode in modes]
-        internal_hilbert_in = hilbert_space[start : end + 1]
-        internal_hilbert_out = hilbert_out[start : end + 1]
-        for size in hilbert_space[:start]:
-            before *= size
-        for size in hilbert_space[end + 1:]:
-            after *= size
-    else:
-        internal_modes = [mode for mode in modes]
-        internal_hilbert_in = hilbert_space
-        internal_hilbert_out = hilbert_out
+    internal_modes = [mode - start for mode in modes]
+    internal_hilbert_in = hilbert_space[start : end + 1]
+    internal_hilbert_out = hilbert_out[start : end + 1]
+    for size in hilbert_space[:start]:
+        before *= size
+    for size in hilbert_space[end + 1:]:
+        after *= size
 
     if len(modes) == 1 or np.all(np.diff(np.array(internal_modes)) == 1):
         return hilbert_out, None, None, None, before, after
@@ -103,7 +98,6 @@ def _insert(before: int, oper: Data, after: int):
     return oper
 
 
-
 @dataclass(frozen=True)
 class _ProdTerm:
     """
@@ -126,44 +120,8 @@ class _ProdTerm:
         self, t=None, hilbert_space: list = None, issuper: bool = None
     ) -> Data:
         N = len(hilbert_space)
-        super_element = False
-        if issuper:
-            super_element = not (
-                all(mode < N // 2 for mode in self.modes)
-                or all(mode >= N // 2 for mode in self.modes)
-            )
-
-        print("super_element", super_element)
-
-        if super_element:
-            return self.expand_data_2(t, hilbert_space, issuper)
-
-        out_hilbert, in_sizes, out_sizes, order, before, after = _prepare_meta(
-            self.modes, hilbert_space, self.in_space, self.out_space, issuper
-        )
-        if order is not None:
-            oper = _reorder(self.to_data(t), in_sizes, out_sizes, order)
-        else:
-            oper = self.to_data(t)
-
-        print(out_hilbert, hilbert_space, self.modes, issuper)
-        print(self.in_space, self.out_space)
-        print(before, oper.shape, after)
-        print(_insert(before, oper, after).shape)
-        return out_hilbert, _insert(before, oper, after)
-
-    def expand_data_2(
-        self, t=None, hilbert_space: list = None, issuper: bool = None
-    ) -> Data:
-        in_hilbert = list(hilbert_space)
-        out_hilbert = in_hilbert.copy()
-        in_sizes = self.in_space.copy()
-        out_sizes = self.out_space.copy()
-        N = len(hilbert_space)
-
-        if self.in_space != self.out_space:
-            for i, mode in enumerate(self.modes):
-                out_hilbert[mode] = out_sizes[i]
+        in_space = self.in_space
+        out_space = self.out_space
 
         super_element = False
         if issuper:
@@ -174,34 +132,20 @@ class _ProdTerm:
 
         if issuper and not super_element:
             modes = [((mode + N // 2) % N) for mode in self.modes]
+            in_space = in_space[N//2:] + in_space[:N//2]
+            out_space = out_space[N//2:] + out_space[:N//2]
         else:
             modes = list(self.modes)
 
-        order = list(modes)
-        modes = set(modes)
-        not_modes = set(range(N)) - modes
+        out_hilbert, in_sizes, out_sizes, order, before, after = _prepare_meta(
+            modes, hilbert_space, in_space, out_space
+        )
+        if order is not None:
+            oper = _reorder(self.to_data(t), in_sizes, out_sizes, order)
+        else:
+            oper = self.to_data(t)
 
-        oper = apply_transform(self.operator, self.transform)
-        out_side = 1
-
-        for i in not_modes:
-            if issuper:
-                mode_size = in_hilbert[(i + N // 2) % N]
-            else:
-                mode_size = in_hilbert[i]
-            out_side *= mode_size
-            in_sizes.append(mode_size)
-            out_sizes.append(mode_size)
-            order.append(i)
-
-        if len(in_hilbert) > len(modes):
-            oper = _data.kron(oper, _data.identity(out_side))
-
-        order = np.argsort(order)
-        perm_row = get_permutations(out_sizes, order)
-        perm_col = get_permutations(in_sizes, order)
-
-        return out_hilbert, _data.permute.indices(oper, perm_row, perm_col)
+        return out_hilbert, _insert(before, oper, after)
 
     def __hash__(self):
         return hash(
