@@ -289,7 +289,7 @@ class Operator:
     def identity(self, hilbert_space):
         out = Operator(dimension=[hilbert_space] * 2)
         out.terms.append(
-            _Term((), self._dims[1].flat(), self._dims.issuper, coefficient(1))
+            _Term((), out._dims[1].flat(), out._dims.issuper, coefficient(1))
         )
         return out
 
@@ -502,11 +502,11 @@ class Operator:
             for pterm in term.prod_terms:
                 local_dim = Dimensions([
                     [
-                        [left._dims[1].oper[0], right.pterm[0].oper[0]],
-                        [left._dims[1].oper[1], right.pterm[0].oper[1]],
+                        [left._dims[1].oper[0], pterm.dimension[0].oper[0]],
+                        [left._dims[1].oper[1], pterm.dimension[0].oper[1]],
                     ], [
-                        [left._dims[1].oper[0], right.pterm[1].oper[0]],
-                        [left._dims[1].oper[1], right.pterm[1].oper[1]],
+                        [left._dims[1].oper[0], pterm.dimension[1].oper[0]],
+                        [left._dims[1].oper[1], pterm.dimension[1].oper[1]],
                     ]
                 ])
                 pterms.append(
@@ -622,7 +622,7 @@ class Operator:
                 pterms.append(
                     _ProdTerm(
                         pterm.operator,
-                        tuple(i + N for i in pterm.modes),
+                        pterm.modes,
                         local_dim,
                         pterm.transform,
                     )
@@ -676,8 +676,10 @@ class Operator:
 
     def sprepost(self, post):
         if not self._dims.issquare:
+            # TODO: implement
             raise NotImplementedError("sprepost only implemented for square dimensions")
         if self._dims != post._dims:
+            # TODO: implement
             raise NotImplementedError("sprepost only implemented for operators of same dimensions")
         if self._dims.issuper or post._dims.issuper:
             raise TypeError("Already a superoperator")
@@ -704,14 +706,14 @@ class Operator:
                 pterms.append(
                     _ProdTerm(
                         pterm.operator,
-                        tuple(i + N for i in pterm.modes),
+                        pterm.modes,
                         local_dim,
                         pterm.transform,
                     )
                 )
             pre_part.terms.append(
                 _Term(
-                    term.prod_terms,
+                    pterms,
                     out_dims[1].flat(),
                     out_dims.issuper,
                     factor=term.factor,
@@ -736,7 +738,7 @@ class Operator:
                 )
             post_part.terms.append(
                 _Term(
-                    tuple(pterms),
+                    pterms,
                     out_dims[1].flat(),
                     out_dims.issuper,
                     factor=term.factor,
