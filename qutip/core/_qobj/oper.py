@@ -593,7 +593,7 @@ class Operator:
                 )
             right_shifted.terms.append(
                 _Term(
-                    tuple(pterms),
+                    pterms,
                     right_shifted._dims[1].flat(),
                     right_shifted._dims.issuper,
                     factor=term.factor,
