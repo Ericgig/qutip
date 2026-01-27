@@ -366,6 +366,7 @@ iadd = _Dispatcher(
     module=__name__,
     inputs=('left', 'right'),
     out=True,
+    inplace=(0,),
 )
 iadd.__doc__ =\
     """

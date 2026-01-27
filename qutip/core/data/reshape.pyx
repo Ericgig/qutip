@@ -98,16 +98,26 @@ cpdef CSR column_stack_csr(CSR matrix):
 
 cpdef Dense column_stack_dense(Dense matrix, bint inplace=False):
     cdef Dense out
-    if inplace and matrix.fortran:
-        matrix.shape = (matrix.shape[0] * matrix.shape[1], 1)
-        return matrix
+    if inplace and matrix.fortran and not matrix.immutable:
+        out = Dense.__new__(Dense)
+        out.shape = (matrix.shape[0] * matrix.shape[1], 1)
+        out.immutable = False
+        out.alive = True
+        out.data = matrix.data
+        out.fortran = True
+        out._np = matrix._np
+        out._deallocate = matrix._deallocate
+        matrix.alive = False
+        matrix._deallocate = False
+        matrix.data = 0
+        return out
     if matrix.fortran:
-        out = matrix.copy()
+        out = matrix.copy(deep=True)
         out.shape = (matrix.shape[0]*matrix.shape[1], 1)
         return out
     if inplace:
         warnings.warn("cannot stack columns inplace for C-ordered matrix")
-    out = dense.zeros(matrix.shape[0] * matrix.shape[1], 1)
+    out = dense.empty(matrix.shape[0] * matrix.shape[1], 1)
     cdef idxint col
     cdef int ONE=1
     for col in range(matrix.shape[1]):
@@ -143,11 +153,19 @@ cpdef CSR column_unstack_csr(CSR matrix, idxint rows):
 cpdef Dense column_unstack_dense(Dense matrix, idxint rows, bint inplace=False):
     _column_unstack_check_shape(matrix, rows)
     cdef idxint cols = matrix.shape[0] // rows
-    if inplace and matrix.fortran:
-        matrix.shape = (rows, cols)
-        return matrix
-    elif inplace:
-        warnings.warn("cannot unstack columns inplace for C-ordered matrix")
+    if inplace and not matrix.immutable:
+        out = Dense.__new__(Dense)
+        out.shape = (rows, cols)
+        out.immutable = False
+        out.alive = True
+        out.data = matrix.data
+        out.fortran = True
+        out._np = matrix._np
+        out._deallocate = matrix._deallocate
+        matrix.alive = False
+        matrix._deallocate = False
+        matrix.data = 0
+        return out
     out = dense.empty(rows, cols, fortran=True)
     memcpy(out.data, matrix.data, rows*cols * sizeof(double complex))
     return out

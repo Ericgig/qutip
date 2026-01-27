@@ -185,6 +185,7 @@ cdef class CSR(base.Data):
             PyArray_CLEARFLAGS(data, cnp.NPY_ARRAY_WRITEABLE)
             PyArray_CLEARFLAGS(col_index, cnp.NPY_ARRAY_WRITEABLE)
             PyArray_CLEARFLAGS(row_index, cnp.NPY_ARRAY_WRITEABLE)
+        self.alive = True
 
     @classmethod
     def sparcity(self):
@@ -391,6 +392,8 @@ cpdef CSR fast_from_scipy(object sci):
     out.col_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indices, 0)
     out.row_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indptr, 0)
     out.size = cnp.PyArray_SIZE(sci.data)
+    out.immutable = True  # Could lead to user being able the modify object.
+    out.alive = True
     return out
 
 
@@ -661,6 +664,8 @@ cdef CSR empty(base.idxint rows, base.idxint cols, base.idxint size):
         )
     # Set the number of non-zero elements to 0.
     out.row_index[rows] = 0
+    out.alive = True
+    out.immutable = False
     return out
 
 
@@ -915,6 +920,8 @@ cdef CSR diags_(
             out.col_index[nnz] = row + offset
             nnz += 1
         out.row_index[row + 1] = nnz
+
+    out.frozen(True)
     return out
 
 @cython.wraparound(True)
