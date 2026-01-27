@@ -18,7 +18,9 @@ from qutip import settings
 __all__ = ['Dispatcher']
 
 
-cdef object _conversion_weight(tuple froms, tuple tos, dict weight_map, bint out):
+cdef object _conversion_weight(
+        tuple froms, tuple tos, dict weight_map, bint out, tuple inplace
+    ):
     """
     Find the total weight of conversion if the types in `froms` are converted
     element-wise to the types in `tos`.  `weight_map` is a mapping of
@@ -35,9 +37,15 @@ cdef object _conversion_weight(tuple froms, tuple tos, dict weight_map, bint out
         )
     if out:
         n = n - 1
-        weight = weight + weight_map[froms[n], tos[n]]
+        factor = 1.
+        if inplace:
+            factor = 100.
+        weight = weight + weight_map[froms[n], tos[n]] * factor
     for i in range(n):
-        weight = weight + weight_map[tos[i], froms[i]]
+        factor = 1.
+        if i in inplace:
+            factor = 100.
+        weight = weight + weight_map[tos[i], froms[i]] * factor
     return weight
 
 
@@ -173,6 +181,9 @@ cdef class Dispatcher:
     cdef readonly bint _pass_on_dtype
     cdef readonly tuple inputs
     cdef readonly bint output
+    cdef readonly tuple inplace
+    cdef readonly bint _lazy
+    cdef readonly object _lazy_shape
     cdef public str __doc__
     cdef public str __name__
     # cdef public str __module__
@@ -180,7 +191,8 @@ cdef class Dispatcher:
     cdef readonly str __text_signature__
 
     def __init__(self, signature_source, inputs, bint out=False,
-                 str name=None, str module=None):
+                 str name=None, str module=None, tuple inplace=(),
+                 object get_shape=None):
         """
         Create a new data layer dispatching operator.
 
@@ -220,6 +232,28 @@ cdef class Dispatcher:
             .. note::
 
                 Commented for now because of a bug in cython 3 (cython#5472)
+
+        inplace : tuple[int], optional
+            If given, list the index of the inputs that are "inplace" for the
+            purpose of the operation. They will be given heavier weight when
+            determining the specialisation to use and when make a copy of
+            immutable object if needed.
+
+            .. note ::
+
+                For the purpose of the dispatcher, "inplace" operation means
+                that the associated memory of the Data object can be reuse by
+                the operation, not that input will necessary becomes the output.
+
+                B = imul(A, 2)
+                f(B)  # Ok, B is twice A.
+                f(A)  # Error, A can't be used anymore.
+
+        get_shape : function(*args, **kwargs) -> shape, optional
+            A function with the same signature as this dispatcher that
+            precompute the output shape, without doing any heacy computation.
+            When provided, the dispatcher may return a symbolic Data object
+            with only the shape and recipe.
         """
         if isinstance(inputs, str):
             inputs = (inputs,)
@@ -261,6 +295,13 @@ cdef class Dispatcher:
         self._n_inputs = len(self.inputs)
         self._n_dispatch = len(self.inputs) + self.output
         self._pass_on_dtype = 'dtype' in self.__signature__.parameters
+        self.inplace = inplace
+        for i in self.inplace:
+            if not 0 <= i <= self._n_inputs:
+                raise ValueError("Inplace index outside of the number of inputs")
+        self._lazy = get_shape is not None
+        self._lazy_shape = get_shape
+
         # Add ourselves to the list of dispatchers to be updated.
         _to.dispatchers.append(self)
 
@@ -412,7 +453,9 @@ cdef class Dispatcher:
             print(f"Building {self.__name__}{[in_type.__name__ for in_type in in_types]}")
         for out_types, out_function in self._specialisations.items():
             cur = _conversion_weight(
-                in_types, out_types[:n_dispatch], _to.weight, out=output
+                in_types, out_types[:n_dispatch],
+                _to.weight, out=output,
+                inplace=self.inplace,
             )
             if verbose:
                 print(f"    {out_function.__name__}: {cur}")
@@ -510,8 +553,35 @@ cdef class Dispatcher:
                 "All dispatched data input must be passed "
                 "as positional arguments."
             )
+
+        immutable_input = all(args[i].immutable for i in range(self._n_inputs))
+
+        if False and self._lazy:
+            raise NotImplementedError("Comming soon!")
+            """
+            if immutable_input:
+                shape = self._lazy_shape(*args, **kwargs)
+                return LazyOperator(
+                    self,
+                    args[:self._n_inputs],
+                    args[self._n_inputs:],
+                    kwargs,
+                    shape
+                )
+            """
+
+        if self.inplace:
+            # The dispatcher keep the philosophy that it should simply work.
+            args = list(args)
+            for idx in self.inplace:
+               if args[idx].immutable:
+                   args[idx] = args[idx].copy(deep=True)
+            args = tuple(args)
+
         for i in range(self._n_inputs):
             dispatch.append(type(args[i]))
+            if not (<Data> args[i]).alive:
+                raise RuntimeError("Matrix is out of scope.")
 
         if self.output and dtype is not None:
             dtype = _to.parse(dtype)
@@ -520,4 +590,16 @@ cdef class Dispatcher:
             function = self._lookup[tuple(dispatch)]
         except KeyError:
             raise TypeError("unknown types to dispatch on: " + str(dispatch)) from None
-        return function(*args, **kwargs)
+        out = function(*args, **kwargs)
+        if not self.output:
+            return out
+        if immutable_input:
+            out.frozen(True)
+
+        if self.inplace:
+            for idx in self.inplace:
+                if args[idx] is not out:
+                    print(self.__name__)
+                    (<Data> args[idx]).alive = False
+
+        return out

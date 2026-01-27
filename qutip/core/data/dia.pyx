@@ -97,7 +97,7 @@ cdef class Dia(base.Data):
             # np2 accept None which act as np1's False
             copy = builtins.bool(copy)
         data = np.array(arg[0], dtype=np.complex128, copy=copy, order='C')
-        offsets = np.array(arg[1], dtype=idxint_dtype, copy=copy, order='C')
+        offsets = np.array(arg[1], dtype=idxint_dtype, copy=True, order='C')
 
         self.num_diag = offsets.shape[0]
         self._max_diag = self.num_diag
@@ -146,6 +146,11 @@ cdef class Dia(base.Data):
                tidyup = settings.core['auto_tidyup_atol']
             self._tidyup(tidyup)
         clean_dia(self, True)
+        self.alive = True
+        self.immutable = not np.shares_memory(self._scipy.data, arg[0])
+        if self.immutable:
+            PyArray_CLEARFLAGS(self._scipy.data, cnp.NPY_ARRAY_WRITEABLE)
+            PyArray_CLEARFLAGS(self._scipy.offsets, cnp.NPY_ARRAY_WRITEABLE)
 
     @classmethod
     def sparcity(self):
@@ -344,6 +349,8 @@ cpdef Dia fast_from_scipy(object sci):
     out.offsets = <base.idxint *> cnp.PyArray_GETPTR1(sci.offsets, 0)
     out.num_diag  = sci.offsets.shape[0]
     out._max_diag  = sci.offsets.shape[0]
+    out.immutable = True  # Could lead to user being able the modify object.
+    out.alive = True
     return out
 
 
@@ -377,6 +384,8 @@ cdef Dia empty(base.idxint rows, base.idxint cols, base.idxint num_diag):
             f"Failed to allocate the `offsets` of a ({rows}, {cols}) "
             f"Dia array of {num_diag} diagonals."
         )
+    out.immutable = False
+    out.alive = True
     return out
 
 
@@ -552,6 +561,8 @@ cdef Dia diags_(
         offset = max(offsets[i], 0)
         for col in range(len(diagonals[i])):
             out.data[i * out.shape[1] + col + offset] = diagonals[i][col]
+
+    out.frozen(True)
     return out
 
 @cython.wraparound(True)

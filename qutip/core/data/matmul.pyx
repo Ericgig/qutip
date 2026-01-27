@@ -690,6 +690,8 @@ cpdef Dense matmul_dag_dense(
             + " but needed "
             + str((left.shape[0], right.shape[0]))
         )
+    if out.immutable:
+        out = out.copy(deep=True)
     cdef Dense a, b, out_add=None
     cdef double complex alpha = 1., out_scale = 0.
     cdef int m, n, k = left.shape[1], lda, ldb, ldc
@@ -743,6 +745,9 @@ cpdef Dense matmul_dag_dense(
     if out_add is not None:
         # Add computed result (out) into user's buffer (out_add) and return it
         out = iadd_dense(out_add, out)
+
+    if right.immutable and left.immutable:
+        out.frozen(True)
 
     return out
 
@@ -1008,7 +1013,12 @@ cpdef Dense multiply_dense(Dense left, Dense right):
             + " and "
             + str(right.shape)
         )
-    return Dense(left.as_ndarray() * right.as_ndarray(), copy=False)
+    cdef Dense out =  Dense(
+        left.as_ndarray() * right.as_ndarray(), copy=False,
+    )
+    if right.immutable and left.immutable:
+        out.frozen(True)
+    return out
 
 
 from .dispatch import Dispatcher as _Dispatcher

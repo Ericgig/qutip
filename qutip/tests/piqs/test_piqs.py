@@ -727,6 +727,8 @@ class TestDicke:
             [0.0 + 0.0j, 0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j],
         ]
 
+        print(sigmaz())
+
         assert_array_equal(spin_algebra(2, "x")[0].full(), sx1)
         assert_array_equal(spin_algebra(2, "x")[1].full(), sx2)
         assert_array_equal(spin_algebra(2, "y")[0].full(), sy1)

@@ -24,6 +24,7 @@ idxint_size = _idxint_size
 cdef class Data:
     def __init__(self, shape):
         self.shape = shape
+        self.alive = True
 
     @classmethod
     def sparcity(self):

@@ -140,6 +140,7 @@ imul = _Dispatcher(
     module=__name__,
     inputs=('matrix',),
     out=True,
+    inplace=(0,),
 )
 imul.__doc__ =\
     """Multiply inplace a matrix element-wise by a scalar."""
