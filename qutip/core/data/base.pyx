@@ -24,6 +24,7 @@ idxint_size = _idxint_size
 cdef class Data:
     def __init__(self, shape):
         self.shape = shape
+        self.alive = True
 
     @classmethod
     def sparcity(self):
@@ -44,7 +45,7 @@ cdef class Data:
     cpdef Data transpose(self):
         raise NotImplementedError
 
-    cpdef Data copy(self):
+    cpdef Data copy(self, deep=False):
         raise NotImplementedError
 
     def __add__(left, right):

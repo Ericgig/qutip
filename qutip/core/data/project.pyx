@@ -86,10 +86,12 @@ cpdef CSR project_csr(CSR state):
     if state.shape[1] == 1:
         out = csr.empty(state.shape[0], state.shape[0], nnz_in*nnz_in)
         _project_ket_csr(state, out)
+        out.frozen(True)
         return out
     if state.shape[0] == 1:
         out = csr.empty(state.shape[1], state.shape[1], nnz_in*nnz_in)
         _project_bra_csr(state, out)
+        out.frozen(True)
         return out
     raise ValueError("state must be a ket or a bra.")
 
@@ -182,6 +184,7 @@ cpdef Dia project_dia(Dia state):
                 )
 
     out.num_diag = num_diag
+    out.frozen(True)
     return out
 
 

@@ -22,7 +22,6 @@ from qutip.core.data.base cimport idxint, Data
 from qutip.core.data.dense cimport Dense
 from qutip.core.data.csr cimport CSR
 from qutip.core.data.dia cimport Dia
-from qutip.core.data.tidyup cimport tidyup_dia
 from qutip.core.data cimport csr, dense, dia
 from qutip.core.data.add cimport iadd_dense, add_csr
 from qutip.core.data.mul cimport imul_dense
@@ -90,6 +89,8 @@ cdef int _check_shape(Data left, Data right, Data out=None) except -1 nogil:
             + " but needed "
             + str((left.shape[0], right.shape[1]))
         )
+    if out is not None and out.immutable:
+        raise RuntimeError("state is immutable")
     return 0
 
 cdef idxint _matmul_csr_estimate_nnz(CSR left, CSR right):
@@ -202,6 +203,8 @@ cpdef CSR matmul_csr(CSR left, CSR right, double complex scale=1, CSR out=None):
             out.row_index[row_l + 1] = nnz
     mem.PyMem_Free(sums)
     mem.PyMem_Free(nxt)
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -678,6 +681,8 @@ cpdef Dense matmul_dag_dense(
             + " but needed "
             + str((left.shape[0], right.shape[0]))
         )
+    if out.immutable:
+        out = out.copy(deep=True)
     cdef Dense a, b, out_add=None
     cdef double complex alpha = 1., out_scale = 0.
     cdef int m, n, k = left.shape[1], lda, ldb, ldc
@@ -730,6 +735,9 @@ cpdef Dense matmul_dag_dense(
 
     if out_add is not None:
         out = iadd_dense(out, out_add)
+
+    if right.immutable and left.immutable:
+        out.frozen(True)
 
     return out
 
@@ -798,6 +806,9 @@ cpdef CSR multiply_csr(CSR left, CSR right):
             left.shape[0], left.shape[1], nnz
         )
         out = add_csr(out, nans_csr)
+
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -861,7 +872,9 @@ cpdef Dia multiply_dia(Dia left, Dia right):
       out.num_diag = out_diag
 
     if settings.core['auto_tidyup']:
-        tidyup_dia(out, settings.core['auto_tidyup_atol'], True)
+        out._tidyup(settings.core['auto_tidyup_atol'])
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -874,7 +887,12 @@ cpdef Dense multiply_dense(Dense left, Dense right):
             + " and "
             + str(right.shape)
         )
-    return Dense(left.as_ndarray() * right.as_ndarray(), copy=False)
+    cdef Dense out =  Dense(
+        left.as_ndarray() * right.as_ndarray(), copy=False,
+    )
+    if right.immutable and left.immutable:
+        out.frozen(True)
+    return out
 
 
 from .dispatch import Dispatcher as _Dispatcher

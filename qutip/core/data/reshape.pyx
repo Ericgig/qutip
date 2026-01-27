@@ -49,6 +49,8 @@ cpdef CSR reshape_csr(CSR matrix, idxint n_rows_out, idxint n_cols_out):
             cur += n_cols_in
         for row_out in range(n_rows_out):
             out.row_index[row_out + 1] += out.row_index[row_out]
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -72,15 +74,20 @@ cpdef Dense reshape_dense(Dense matrix, idxint n_rows_out, idxint n_cols_out):
     for idx_in in range(size):
         out.data[idx_out] = matrix.data[idx_in]
         idx_out = _reshape_dense_reindex(idx_out + stride, size)
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
 cpdef Dia reshape_dia(Dia matrix, idxint n_rows_out, idxint n_cols_out):
     _reshape_check_input(matrix, n_rows_out, n_cols_out)
     # Once reshaped, diagonals are no longer ligned up.
-    return Dia(
+    out = Dia(
         matrix.as_scipy().reshape((n_rows_out, n_cols_out)).todia(), copy=False
     )
+    if matrix.immutable:
+        out.frozen(True)
+    return out
 
 
 cpdef CSR column_stack_csr(CSR matrix):
@@ -91,16 +98,26 @@ cpdef CSR column_stack_csr(CSR matrix):
 
 cpdef Dense column_stack_dense(Dense matrix, bint inplace=False):
     cdef Dense out
-    if inplace and matrix.fortran:
-        matrix.shape = (matrix.shape[0] * matrix.shape[1], 1)
-        return matrix
+    if inplace and matrix.fortran and not matrix.immutable:
+        out = Dense.__new__(Dense)
+        out.shape = (matrix.shape[0] * matrix.shape[1], 1)
+        out.immutable = False
+        out.alive = True
+        out.data = matrix.data
+        out.fortran = True
+        out._np = matrix._np
+        out._deallocate = matrix._deallocate
+        matrix.alive = False
+        matrix._deallocate = False
+        matrix.data = 0
+        return out
     if matrix.fortran:
-        out = matrix.copy()
+        out = matrix.copy(deep=True)
         out.shape = (matrix.shape[0]*matrix.shape[1], 1)
         return out
     if inplace:
         warnings.warn("cannot stack columns inplace for C-ordered matrix")
-    out = dense.zeros(matrix.shape[0] * matrix.shape[1], 1)
+    out = dense.empty(matrix.shape[0] * matrix.shape[1], 1)
     cdef idxint col
     cdef int ONE=1
     for col in range(matrix.shape[1]):
@@ -136,11 +153,19 @@ cpdef CSR column_unstack_csr(CSR matrix, idxint rows):
 cpdef Dense column_unstack_dense(Dense matrix, idxint rows, bint inplace=False):
     _column_unstack_check_shape(matrix, rows)
     cdef idxint cols = matrix.shape[0] // rows
-    if inplace and matrix.fortran:
-        matrix.shape = (rows, cols)
-        return matrix
-    elif inplace:
-        warnings.warn("cannot unstack columns inplace for C-ordered matrix")
+    if inplace and not matrix.immutable:
+        out = Dense.__new__(Dense)
+        out.shape = (rows, cols)
+        out.immutable = False
+        out.alive = True
+        out.data = matrix.data
+        out.fortran = True
+        out._np = matrix._np
+        out._deallocate = matrix._deallocate
+        matrix.alive = False
+        matrix._deallocate = False
+        matrix.data = 0
+        return out
     out = dense.empty(rows, cols, fortran=True)
     memcpy(out.data, matrix.data, rows*cols * sizeof(double complex))
     return out

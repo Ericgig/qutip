@@ -45,6 +45,8 @@ cpdef CSR transpose_csr(CSR matrix):
         for row in range(rows_out, 0, -1):
             out.row_index[row] = out.row_index[row - 1]
         out.row_index[0] = 0
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -72,6 +74,8 @@ cpdef CSR adjoint_csr(CSR matrix):
         for row in range(rows_out, 0, -1):
             out.row_index[row] = out.row_index[row - 1]
         out.row_index[0] = 0
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -82,6 +86,8 @@ cpdef CSR conj_csr(CSR matrix):
     with nogil:
         for ptr in range(csr.nnz(matrix)):
             out.data[ptr] = _conj(matrix.data[ptr])
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -91,6 +97,8 @@ cpdef Dense adjoint_dense(Dense matrix):
     with nogil:
         for ptr in range(matrix.shape[0] * matrix.shape[1]):
             out.data[ptr] = _conj(matrix.data[ptr])
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -98,6 +106,8 @@ cpdef Dense transpose_dense(Dense matrix):
     cdef Dense out = matrix.copy()
     out.shape = (out.shape[1], out.shape[0])
     out.fortran = not out.fortran
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -107,6 +117,8 @@ cpdef Dense conj_dense(Dense matrix):
     with nogil:
         for ptr in range(matrix.shape[0] * matrix.shape[1]):
             out.data[ptr] = _conj(matrix.data[ptr])
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -124,6 +136,8 @@ cpdef Dia adjoint_dia(Dia matrix):
                     out.data[new_i * out.shape[1] + j] = 0.
                 else:
                     out.data[new_i * out.shape[1] + j] = _conj(matrix.data[i * matrix.shape[1] + j - new_offset])
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -141,6 +155,8 @@ cpdef Dia transpose_dia(Dia matrix):
                     out.data[new_i * out.shape[1] + j] = 0.
                 else:
                     out.data[new_i * out.shape[1] + j] = matrix.data[i * matrix.shape[1] + j - new_offset]
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -153,6 +169,8 @@ cpdef Dia conj_dia(Dia matrix):
             out.offsets[i] = matrix.offsets[i]
             for j in range(matrix.shape[1]):
                 out.data[i * matrix.shape[1] + j] = _conj(matrix.data[i * matrix.shape[1] + j])
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 

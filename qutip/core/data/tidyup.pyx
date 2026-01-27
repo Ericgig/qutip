@@ -17,83 +17,34 @@ __all__ = [
 ]
 
 
-cpdef CSR tidyup_csr(CSR matrix, double tol, bint inplace=True):
-    cdef bint re, im
-    cdef size_t row, ptr, ptr_start, ptr_end=0, nnz
-    cdef double complex value
-    cdef CSR out = matrix if inplace else matrix.copy()
-    nnz = 0
-    out.row_index[0] = 0
-    for row in range(matrix.shape[0]):
-        ptr_start, ptr_end = ptr_end, matrix.row_index[row + 1]
-        for ptr in range(ptr_start, ptr_end):
-            re = im = False
-            value = matrix.data[ptr]
-            if fabs(value.real) < tol:
-                re = True
-                value.real = 0
-            if fabs(value.imag) < tol:
-                im = True
-                value.imag = 0
-            if not (re & im):
-                out.data[nnz] = value
-                out.col_index[nnz] = matrix.col_index[ptr]
-                nnz += 1
-        out.row_index[row + 1] = nnz
+cpdef CSR tidyup_csr(CSR matrix, double tol, bint inplace=False):
+    if inplace and matrix.immutable:
+        raise RuntimeError("Matrix is immutable.")
+    cdef CSR out = matrix if inplace else matrix.copy(deep=True)
+    out._tidyup(tol)
     return out
 
 
-cpdef Dense tidyup_dense(Dense matrix, double tol, bint inplace=True):
-    cdef Dense out = matrix if inplace else matrix.copy()
+cpdef Dense tidyup_dense(Dense matrix, double tol, bint inplace=False):
+    if inplace and matrix.immutable:
+        raise RuntimeError("Matrix is immutable.")
+    cdef Dense out = matrix if inplace else matrix.copy(deep=True)
     cdef double complex value
     cdef size_t ptr
-    for ptr in range(matrix.shape[0] * matrix.shape[1]):
-        value = matrix.data[ptr]
+    for ptr in range(out.shape[0] * out.shape[1]):
+        value = out.data[ptr]
         if fabs(value.real) < tol:
-            matrix.data[ptr].real = 0
+            out.data[ptr].real = 0
         if fabs(value.imag) < tol:
-            matrix.data[ptr].imag = 0
+            out.data[ptr].imag = 0
     return out
 
 
-cpdef Dia tidyup_dia(Dia matrix, double tol, bint inplace=True):
-    cdef Dia out = matrix if inplace else matrix.copy()
-    cdef base.idxint diag=0, new_diag=0, ONE=1, start, end, col
-    cdef bint re, im, has_data
-    cdef double complex value
-    cdef int length
-
-    while diag < out.num_diag:
-        start = max(0, out.offsets[diag])
-        end = min(out.shape[1], out.shape[0] + out.offsets[diag])
-        has_data = False
-        for col in range(start, end):
-            re = False
-            im = False
-            if fabs(out.data[diag * out.shape[1] + col].real) < tol:
-                re = True
-                out.data[diag * out.shape[1] + col].real = 0
-            if fabs(out.data[diag * out.shape[1] + col].imag) < tol:
-                im = True
-                out.data[diag * out.shape[1] + col].imag = 0
-            has_data |= not (re & im)
-
-        if has_data and new_diag < diag:
-            length = out.shape[1]
-            blas.zcopy(
-                &length,
-                &out.data[diag * out.shape[1]], &ONE,
-                &out.data[new_diag * out.shape[1]], &ONE
-            )
-            out.offsets[new_diag] = out.offsets[diag]
-
-        if has_data:
-            new_diag += 1
-        diag += 1
-    out.num_diag = new_diag
-    if out._scipy is not None:
-        out._scipy.data = out._scipy.data[:new_diag]
-        out._scipy.offsets = out._scipy.offsets[:new_diag]
+cpdef Dia tidyup_dia(Dia matrix, double tol, bint inplace=False):
+    if inplace and matrix.immutable:
+        raise RuntimeError("Matrix is immutable.")
+    cdef Dia out = matrix if inplace else matrix.copy(deep=True)
+    out._tidyup(tol)
     return out
 
 
