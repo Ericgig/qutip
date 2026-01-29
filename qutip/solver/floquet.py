@@ -13,9 +13,11 @@ from typing import Any, overload, TypeVar, Literal, Callable
 import warnings
 import numpy as np
 from numpy.typing import ArrayLike
+
 from qutip.core import data as _data
 from qutip.core.data import Data
 from qutip import Qobj, QobjEvo
+from ..core.dimensions import Dimensions
 from .propagator import Propagator
 from .mesolve import MESolver
 from .solver_base import Solver
@@ -839,7 +841,6 @@ class FMESolver(MESolver):
         nT: int = None,
         options: dict[str, Any] = None,
     ):
-        self.options = options
         if isinstance(floquet_basis, FloquetBasis):
             self.floquet_basis = floquet_basis
         else:
@@ -847,26 +848,34 @@ class FMESolver(MESolver):
 
         nT = nT or max(100, 20 * kmax)
         self._num_collapse = len(a_ops)
-        c_ops, spectra_cb = zip(*a_ops)
+        self.a_ops = a_ops
+        self._floquet_param = {"w_th": w_th, "kmax": kmax, "nT": nT}
+        self._dims = Dimensions(
+            [self.floquet_basis.U._dims, self.floquet_basis.U._dims]
+        )
         if not all(
             isinstance(c_op, Qobj) and callable(spectrum)
             for c_op, spectrum in a_ops
         ):
             raise TypeError("a_ops must be tuple of (Qobj, callable)")
-        self.rhs = QobjEvo(
-            floquet_tensor(
-                self.floquet_basis,
-                c_ops,
-                spectra_cb,
-                w_th=w_th,
-                kmax=kmax,
-                nT=nT,
-            )
-        )
 
-        self._integrator = self._get_integrator()
-        self._state_metadata = {}
-        self.stats = self._initialize_stats()
+        self._post_init(options)
+
+    @property
+    def rhs(self):
+        if self._rhs is None:
+            _time_start = time()
+            c_ops, spectra_cb = zip(*self.a_ops)
+            self._rhs = QobjEvo(
+                floquet_tensor(
+                    self.floquet_basis,
+                    c_ops,
+                    spectra_cb,
+                    **self._floquet_param
+                )
+            )
+            self.stats["rhs build time"] += time() - _time_start
+        return self._rhs
 
     def _initialize_stats(self):
         stats = Solver._initialize_stats(self)
@@ -874,6 +883,7 @@ class FMESolver(MESolver):
             {
                 "solver": "Floquet-Markov master equation",
                 "num_collapse": self._num_collapse,
+                "rhs build time": 0.
             }
         )
         return stats

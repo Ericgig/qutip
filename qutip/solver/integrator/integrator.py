@@ -63,6 +63,9 @@ class Integrator:
     support_time_dependant = None
     # Whether the integrator used the system QobjEvo as a blackbox
     supports_blackbox = None
+    # Whether the integrator take the Solver as input instead of the rhs 
+    # Integrator(solver_instance) vs Integrator(solver_instance.rhs, option)
+    _solver_specific = False
     # The name of the integrator
     name = None
     method = ""
