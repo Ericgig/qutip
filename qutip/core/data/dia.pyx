@@ -293,47 +293,6 @@ cdef class Dia(base.Data):
                 return False
         return True
 
-    cdef void _tidyup(self, double tol):
-        cdef base.idxint diag=0, new_diag=0, ONE=1, start, end, col
-        cdef bint re, im, has_data
-        cdef double complex value
-        cdef int length
-
-        if self.immutable:
-            raise ValueError("Can't tidyup a readonly matrix.")
-
-        while diag < self.num_diag:
-            start = max(0, self.offsets[diag])
-            end = min(self.shape[1], self.shape[0] + self.offsets[diag])
-            has_data = False
-            for col in range(start, end):
-                re = False
-                im = False
-                if fabs(self.data[diag * self.shape[1] + col].real) < tol:
-                    re = True
-                    self.data[diag * self.shape[1] + col].real = 0
-                if fabs(self.data[diag * self.shape[1] + col].imag) < tol:
-                    im = True
-                    self.data[diag * self.shape[1] + col].imag = 0
-                has_data |= not (re & im)
-
-            if has_data and new_diag < diag:
-                length = self.shape[1]
-                blas.zcopy(
-                    &length,
-                    &self.data[diag * self.shape[1]], &ONE,
-                    &self.data[new_diag * self.shape[1]], &ONE
-                )
-                self.offsets[new_diag] = self.offsets[diag]
-
-            if has_data:
-                new_diag += 1
-            diag += 1
-        self.num_diag = new_diag
-        if self._scipy is not None:
-            self._scipy.data = self._scipy.data[:new_diag]
-            self._scipy.offsets = self._scipy.offsets[:new_diag]
-
 
 cpdef Dia fast_from_scipy(object sci):
     """

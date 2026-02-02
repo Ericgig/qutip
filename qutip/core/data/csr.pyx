@@ -352,31 +352,6 @@ cdef class CSR(base.Data):
         if self.row_index != NULL:
             PyDataMem_FREE(self.row_index)
 
-    cdef void _tidyup(self, double tol):
-        cdef bint re, im
-        cdef size_t row, ptr, ptr_start, ptr_end=0, nnz
-        cdef double complex value
-        if self.immutable:
-            raise ValueError("Can't tidyup a readonly matrix.")
-        nnz = 0
-        self.row_index[0] = 0
-        for row in range(self.shape[0]):
-            ptr_start, ptr_end = ptr_end, self.row_index[row + 1]
-            for ptr in range(ptr_start, ptr_end):
-                re = im = False
-                value = self.data[ptr]
-                if fabs(value.real) < tol:
-                    re = True
-                    value.real = 0
-                if fabs(value.imag) < tol:
-                    im = True
-                    value.imag = 0
-                if not (re & im):
-                    self.data[nnz] = value
-                    self.col_index[nnz] = self.col_index[ptr]
-                    nnz += 1
-            self.row_index[row + 1] = nnz
-
 
 cpdef CSR fast_from_scipy(object sci):
     """
