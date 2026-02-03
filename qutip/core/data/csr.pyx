@@ -36,6 +36,7 @@ from scipy.linalg cimport cython_blas as blas
 from qutip.core.data cimport base, Dense, Dia
 from qutip.core.data.adjoint cimport adjoint_csr, transpose_csr, conj_csr
 from qutip.core.data.trace cimport trace_csr
+from qutip.core.data.tidyup import tidyup_csr
 from .base import idxint_dtype
 from qutip.settings import settings
 
@@ -177,8 +178,8 @@ cdef class CSR(base.Data):
         self._scipy = _csr_matrix(data, col_index, row_index, self.shape)
         if tidyup:
             if tidyup is True:
-               tidyup = settings.core['auto_tidyup_atol']
-            self._tidyup(tidyup)
+                tidyup = settings.core['auto_tidyup_atol']
+            tidyup_csr(self, tidyup, False)  #TODO: In place?
         self.sort_indices()
         if copy:
             self.immutable = True

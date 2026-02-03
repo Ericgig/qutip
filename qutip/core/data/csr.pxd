@@ -29,7 +29,6 @@ cdef class CSR(base.Data):
     cpdef CSR adjoint(CSR self)
     cpdef CSR conj(CSR self)
     cpdef CSR transpose(CSR self)
-    cdef void _tidyup(CSR self, double tol)
 
 
 cdef struct Accumulator:

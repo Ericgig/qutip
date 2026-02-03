@@ -37,14 +37,10 @@ cdef object _conversion_weight(
         )
     if out:
         n = n - 1
-        factor = 1.
-        if inplace:
-            factor = 100.
+        factor = 100. if inplace else 1.
         weight = weight + weight_map[froms[n], tos[n]] * factor
     for i in range(n):
-        factor = 1.
-        if i in inplace:
-            factor = 100.
+        factor = 100. if inplace else 1.
         weight = weight + weight_map[tos[i], froms[i]] * factor
     return weight
 
@@ -557,7 +553,7 @@ cdef class Dispatcher:
         immutable_input = all(args[i].immutable for i in range(self._n_inputs))
 
         if False and self._lazy:
-            raise NotImplementedError("Comming soon!")
+            raise NotImplementedError("Comming soon?")
             """
             if immutable_input:
                 shape = self._lazy_shape(*args, **kwargs)
@@ -569,14 +565,6 @@ cdef class Dispatcher:
                     shape
                 )
             """
-
-        if self.inplace:
-            # The dispatcher keep the philosophy that it should simply work.
-            args = list(args)
-            for idx in self.inplace:
-               if args[idx].immutable:
-                   args[idx] = args[idx].copy(deep=True)
-            args = tuple(args)
 
         for i in range(self._n_inputs):
             dispatch.append(type(args[i]))
@@ -595,11 +583,5 @@ cdef class Dispatcher:
             return out
         if immutable_input:
             out.frozen(True)
-
-        if self.inplace:
-            for idx in self.inplace:
-                if args[idx] is not out:
-                    print(self.__name__)
-                    (<Data> args[idx]).alive = False
 
         return out

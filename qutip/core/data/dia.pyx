@@ -34,6 +34,7 @@ from scipy.linalg cimport cython_blas as blas
 from qutip.core.data cimport base, Dense, CSR
 from qutip.core.data.adjoint import adjoint_dia, transpose_dia, conj_dia
 from qutip.core.data.trace import trace_dia
+from qutip.core.data.tidyup import tidyup_dia
 from .base import idxint_dtype
 from qutip.settings import settings
 
@@ -144,7 +145,7 @@ cdef class Dia(base.Data):
         if tidyup:
             if tidyup is True:
                tidyup = settings.core['auto_tidyup_atol']
-            self._tidyup(tidyup)
+            tidyup_dia(self, tidyup, False)  #TODO: In place?
         clean_dia(self, True)
         self.alive = True
         self.immutable = not np.shares_memory(self._scipy.data, arg[0])
@@ -399,7 +400,7 @@ cpdef Dia from_dense(Dense matrix):
             out.data[(col - row + matrix.shape[0] - 1) * out.shape[1] + col] = matrix.data[row * strideR + col * strideC]
 
     if settings.core["auto_tidyup"]:
-        out._tidyup(settings.core["auto_tidyup_atol"])
+        out = tidyup_dia(out, settings.core["auto_tidyup_atol"], True)
 
     out.frozen(True)
     return out
