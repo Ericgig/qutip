@@ -25,6 +25,7 @@ class _MultiTrajRHS:
     """
     def __init__(self, rhs):
         self.rhs = rhs
+        self._dims = rhs._dims
 
     def arguments(self, args):
         self.rhs.arguments(args)
@@ -81,14 +82,17 @@ class MultiTrajSolver(Solver):
 
     def __init__(self, rhs, *, options=None):
         if isinstance(rhs, QobjEvo):
-            self.rhs = _MultiTrajRHS(rhs)
+            self._rhs = _MultiTrajRHS(rhs)
         elif isinstance(rhs, _MultiTrajRHS):
-            self.rhs = rhs
+            self._rhs = rhs
         else:
             raise TypeError("The system should be a QobjEvo")
+        self._dims = self._rhs._dims
+        self._post_init(options)
+
+    def _post_init(self, options):
         self.options = options
         self.seed_sequence = SeedSequence()
-        self._integrator = self._get_integrator()
         self._state_metadata = {}
         self.stats = self._initialize_stats()
 
