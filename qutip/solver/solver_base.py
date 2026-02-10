@@ -79,6 +79,13 @@ class Solver:
         self._rhs._register_feedback({}, solver=self.name)
         return self._rhs
 
+    @property
+    def rhs_func(self):
+        """
+        Build the rhs QobjEvo.
+        """
+        return self.rhs.matmul_data
+
     def _initialize_stats(self):
         """ Return the initial values for the solver stats.
         """
@@ -298,10 +305,20 @@ class Solver:
                 integrator = method
             else:
                 raise ValueError("Integrator method not supported.")
-            if integrator._solver_specific:
+            if integrator._entry == "Solver":
                 self._integrator_instance = integrator(self)
+            elif integrator._entry == "system":
+                self._integrator_instance = integrator(
+                    self.system, self.options
+                )
+            elif integrator._entry == "QobjEvo":
+                self._integrator_instance = integrator(
+                    self.rhs, self.options
+                )
             else:
-                self._integrator_instance = integrator(self.rhs, self.options)
+                self._integrator_instance = integrator(
+                    self.rhs_func, self.options
+                )
             self._init_integrator_time = time() - _time_start
         return self._integrator_instance
 
@@ -444,7 +461,6 @@ class Solver:
             self._integrator_instance = None
             self._integrator.set_state(*state)
         elif "method" in keys:
-            self._integrator = self._get_integrator()
             self._integrator_instance = None
         elif keys & self._integrator.integrator_options.keys():
             # Some of the keys are used by the integrator.

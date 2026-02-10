@@ -28,7 +28,7 @@ class IntegratorKrylov(Integrator):
     }
     support_time_dependant = False
     supports_blackbox = False
-    _solver_specific = True
+    _entry = "Solver"
     method = 'krylov'
 
     def __init__(self, solver):

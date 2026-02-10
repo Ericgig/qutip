@@ -201,13 +201,28 @@ class _MCRHS(_MultiTrajRHS):
     Container for the operators of the solver.
     """
 
-    def __init__(self, H, c_ops, n_ops):
-        self.rhs = H
+    def __init__(self, H, c_ops):
+        if H.issuper:
+            rhs = H
+            for c_op in c_ops:
+                cdc = c_op.dag() @ c_op
+                rhs -= 0.5 * (spre(cdc) + spost(cdc))
+            c_ops = [
+                spre(c_op) * spost(c_op.dag()) if c_op.isoper else c_op
+                for c_op in c_ops
+            ]
+            n_ops = c_ops
+        else:
+            c_ops = c_ops
+            n_ops = [c_op.dag() * c_op for c_op in c_ops]
+            rhs = -1j * H
+            for n_op in n_ops:
+                rhs -= 0.5 * n_op
+
+        self.rhs = rhs
         self.c_ops = c_ops
         self.n_ops = n_ops
-
-    def __call__(self):
-        return self.rhs
+        self._dims = rhs._dims
 
     def arguments(self, args):
         self.rhs.arguments(args)
@@ -216,12 +231,12 @@ class _MCRHS(_MultiTrajRHS):
         for n_op in self.n_ops:
             n_op.arguments(args)
 
-    def _register_feedback(self, key, val):
-        self.rhs._register_feedback({key: val}, solver="McSolver")
+    def _register_feedback(self, key, val, solver="McSolver"):
+        self.rhs._register_feedback({key: val}, solver=solver)
         for c_op in self.c_ops:
-            c_op._register_feedback({key: val}, solver="McSolver")
+            c_op._register_feedback({key: val}, solver=solver)
         for n_op in self.n_ops:
-            n_op._register_feedback({key: val}, solver="McSolver")
+            n_op._register_feedback({key: val}, solver=solver)
 
 
 class MCIntegrator:
@@ -476,28 +491,12 @@ class MCSolver(MultiTrajSolver):
         if isinstance(c_ops, (Qobj, QobjEvo)):
             c_ops = [c_ops]
         c_ops = [QobjEvo(c_op) for c_op in c_ops]
+        H = QobjEvo(H, copy=True)
 
-        if H.issuper:
-            self._c_ops = [
-                spre(c_op) * spost(c_op.dag()) if c_op.isoper else c_op
-                for c_op in c_ops
-            ]
-            self._n_ops = self._c_ops
-            rhs = QobjEvo(H)
-            for c_op in c_ops:
-                cdc = c_op.dag() @ c_op
-                rhs -= 0.5 * (spre(cdc) + spost(cdc))
-        else:
-            self._c_ops = c_ops
-            self._n_ops = [c_op.dag() * c_op for c_op in c_ops]
-            rhs = -1j * QobjEvo(H)
-            for n_op in self._n_ops:
-                rhs -= 0.5 * n_op
-
-        self._num_collapse = len(self._c_ops)
+        self._num_collapse = len(c_ops)
         self.options = options
 
-        system = _MCRHS(rhs, self._c_ops, self._n_ops)
+        system = _MCRHS(H, c_ops)
         super().__init__(system, options=options)
 
     def _restore_state(self, data, *, copy=True):
@@ -776,21 +775,16 @@ class MCSolver(MultiTrajSolver):
         result.ntraj_per_initial_state = ics_info.ntraj
         return result
 
-    def _get_integrator(self):
-        _time_start = time()
-        method = self.options["method"]
-        if method in self.avail_integrators():
-            integrator = self.avail_integrators()[method]
-        elif issubclass(method, Integrator):
-            integrator = method
-        else:
-            raise ValueError("Integrator method not supported.")
-        integrator_instance = integrator(self.rhs(), self.options)
-        mc_integrator = self._mc_integrator_class(
-            integrator_instance, self.rhs, self.options
-        )
-        self._init_integrator_time = time() - _time_start
-        return mc_integrator
+    @property
+    def _integrator(self):
+        if not isinstance(self._integrator_instance, MCIntegrator):
+            ODE_integrator = super()._integrator
+            _time_start = time()
+            self._integrator_instance = self._mc_integrator_class(
+                ODE_integrator, self.system, self.options
+            )
+            self._init_integrator_time = time() - _time_start
+        return self._integrator_instance
 
     @property
     def options(self) -> dict:
