@@ -85,7 +85,7 @@ cdef class Dense(base.Data):
         self.data = <double complex *> cnp.PyArray_GETPTR2(self._np, 0, 0)
         self.fortran = cnp.PyArray_IS_F_CONTIGUOUS(self._np)
         self.shape = (shape[0], shape[1])
-        self.alive = True
+        # self.alive = True
         self.immutable = not np.shares_memory(self._np, base)
 
     @classmethod
@@ -131,9 +131,14 @@ cdef class Dense(base.Data):
                 idx_out += stride
         return out
 
-    cpdef Dense copy(self, deep=False):
+    cpdef Dense copy(self, deep=False, metaonly=False):
         """
-        Return a complete (deep) copy of this object.
+        Return a copy of this object.
+
+        If mutable, a deep copy is returned.
+        If immutable, the original object will be returned unless `deep=True`.
+        With `metaonly=True` and immutable object, a new instance will be
+        returned, but will use the same memory space for the data.
 
         If the type currently has a numpy backing, such as that produced by
         `as_ndarray`, this will not be copied.  The backing is a view onto our
@@ -142,10 +147,21 @@ cdef class Dense(base.Data):
         through a creation method, and creating it ahead of time would incur an
         unnecessary speed penalty for users who do not need it (including
         low-level C code).
+
+
         """
-        if self.immutable and not deep:
+        if self.immutable and not (deep or metaonly):
             return self
         cdef Dense out = Dense.__new__(Dense)
+        if self.immutable and metaonly:
+            out.data = self.data
+            out.immutable = True
+            out._deallocate = False
+            out.shape = self.shape
+            out._np = self.as_ndarray()
+            out.fortran = self.fortran
+            return out
+
         cdef size_t size = (
             _mul_mem_checked(self.shape[0], self.shape[1], sizeof(double complex))
         )
@@ -161,7 +177,7 @@ cdef class Dense(base.Data):
         out.fortran = self.fortran
         out._deallocate = True
         out.immutable = False
-        out.alive = True
+        # out.alive = True
         return out
 
     cdef void _fix_flags(self, object array, bint make_owner=False, bint iscopy=False):
@@ -272,7 +288,7 @@ cpdef Dense fast_from_numpy(object array):
     out.data = <double complex *> cnp.PyArray_GETPTR2(array, 0, 0)
     out.fortran = cnp.PyArray_IS_F_CONTIGUOUS(array)
     out.immutable = True
-    out.alive = True
+    # out.alive = True
     return out
 
 cdef Dense wrap(double complex *data, base.idxint rows, base.idxint cols, bint fortran=False):
@@ -282,7 +298,7 @@ cdef Dense wrap(double complex *data, base.idxint rows, base.idxint cols, bint f
     out.fortran = fortran or cols == 1 or rows == 1
     out.shape = (rows, cols)
     out.immutable = True  # When is this ever used?
-    out.alive = True
+    # out.alive = True
     return out
 
 
@@ -304,7 +320,7 @@ cdef Dense empty(base.idxint rows, base.idxint cols, bint fortran=True):
     out._deallocate = True
     out.fortran = fortran
     out.immutable = False
-    out.alive = True
+    # out.alive = True
     return out
 
 
@@ -333,7 +349,7 @@ cpdef Dense zeros(base.idxint rows, base.idxint cols, bint fortran=True):
     out.fortran = fortran
     out._deallocate = True
     out.immutable = True
-    out.alive = True
+    # out.alive = True
     return out
 
 
@@ -375,7 +391,7 @@ cpdef Dense from_csr(CSR matrix, bint fortran=False):
             out.data[ptr_out + matrix.col_index[ptr_in]*col_stride] = matrix.data[ptr_in]
         ptr_out += row_stride
     out.immutable = True
-    out.alive = True
+    # out.alive = True
     return out
 
 

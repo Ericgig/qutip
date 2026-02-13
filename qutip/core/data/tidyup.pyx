@@ -24,7 +24,7 @@ cpdef CSR tidyup_csr(CSR matrix, double tol, bint inplace=True):
     cdef CSR out
     if inplace and not matrix.immutable:
         out = matrix
-    else
+    else:
         out = matrix.copy(deep=True)
     nnz = 0
     out.row_index[0] = 0
@@ -54,7 +54,7 @@ cpdef Dense tidyup_dense(Dense matrix, double tol, bint inplace=True):
     cdef Dense out
     if inplace and not matrix.immutable:
         out = matrix
-    else
+    else:
         out = matrix.copy(deep=True)
     cdef double complex value
     cdef size_t ptr
@@ -73,7 +73,7 @@ cpdef Dia tidyup_dia(Dia matrix, double tol, bint inplace=True):
     cdef Dia out
     if inplace and not matrix.immutable:
         out = matrix
-    else
+    else:
         out = matrix.copy(deep=True)
     cdef base.idxint diag=0, new_diag=0, ONE=1, start, end, col
     cdef bint re, im, has_data

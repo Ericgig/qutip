@@ -147,7 +147,7 @@ cdef class Dia(base.Data):
                tidyup = settings.core['auto_tidyup_atol']
             tidyup_dia(self, tidyup, False)  #TODO: In place?
         clean_dia(self, True)
-        self.alive = True
+        # self.alive = True
         self.immutable = not np.shares_memory(self._scipy.data, arg[0])
         if self.immutable:
             PyArray_CLEARFLAGS(self._scipy.data, cnp.NPY_ARRAY_WRITEABLE)
@@ -310,7 +310,7 @@ cpdef Dia fast_from_scipy(object sci):
     out.num_diag  = sci.offsets.shape[0]
     out._max_diag  = sci.offsets.shape[0]
     out.immutable = True  # Could lead to user being able the modify object.
-    out.alive = True
+    # out.alive = True
     return out
 
 
@@ -345,7 +345,7 @@ cdef Dia empty(base.idxint rows, base.idxint cols, base.idxint num_diag):
             f"Dia array of {num_diag} diagonals."
         )
     out.immutable = False
-    out.alive = True
+    # out.alive = True
     return out
 
 

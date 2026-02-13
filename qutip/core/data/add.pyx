@@ -310,7 +310,7 @@ cpdef Dia add_dia(Dia left, Dia right, double complex scale=1):
     if not sorted:
         dia.clean_dia(out, True)
     if settings.core['auto_tidyup']:
-        tidyup_csr(out, settings.core['auto_tidyup_atol'], True)
+        tidyup_dia(out, settings.core['auto_tidyup_atol'], True)
     if right.immutable and left.immutable:
         out.frozen(True)
     return out

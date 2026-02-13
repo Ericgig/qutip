@@ -568,8 +568,8 @@ cdef class Dispatcher:
 
         for i in range(self._n_inputs):
             dispatch.append(type(args[i]))
-            if not (<Data> args[i]).alive:
-                raise RuntimeError("Matrix is out of scope.")
+            # if not (<Data> args[i]).alive:
+            #     raise RuntimeError("Matrix is out of scope.")
 
         if self.output and dtype is not None:
             dtype = _to.parse(dtype)

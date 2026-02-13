@@ -62,7 +62,7 @@ cpdef Dense reshape_dense(Dense matrix, idxint n_rows_out, idxint n_cols_out):
     _reshape_check_input(matrix, n_rows_out, n_cols_out)
     cdef Dense out
     if not matrix.fortran:
-        out = matrix.copy(metaonly=True)
+        out = matrix.copy(deep=False, metaonly=True)
         out.shape = (n_rows_out, n_cols_out)
         if matrix.immutable:
             out.frozen(True)
@@ -102,7 +102,7 @@ cpdef Dense column_stack_dense(Dense matrix, bint inplace=False):
     cdef Dense out
     if matrix.fortran:
         if matrix.immutable:
-            out = matrix.copy(metaonly=True)
+            out = matrix.copy(deep=False, metaonly=True)
         elif not inplace:
             out = matrix.copy(deep=True)
         else:
@@ -147,7 +147,7 @@ cpdef Dense column_unstack_dense(Dense matrix, idxint rows, bint inplace=False):
     _column_unstack_check_shape(matrix, rows)
     cdef idxint cols = matrix.shape[0] // rows
     if matrix.immutable:
-        out = matrix.copy(metaonly=True)
+        out = matrix.copy(deep=False, metaonly=True)
     elif not inplace:
         out = matrix.copy(deep=True)
     else:
