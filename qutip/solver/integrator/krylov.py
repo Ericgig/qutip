@@ -28,15 +28,15 @@ class IntegratorKrylov(Integrator):
     }
     support_time_dependant = False
     supports_blackbox = False
-    _entry = "Solver"
+    _entry = "system"
     method = 'krylov'
 
-    def __init__(self, solver):
-        self.H = solver.H
+    def __init__(self, system, options):
+        self.H = system.H
         self._is_set = False  # get_state can be used and return a valid state.
         self._back = (np.inf, None)
         self._options = self.integrator_options.copy()
-        self.options = solver.options
+        self.options = options
         self._prepare()
 
     def _prepare(self):

@@ -611,7 +611,7 @@ class StochasticSolver(MultiTrajSolver):
     def _resultclass(self, e_ops, options, solver, stats):
         return StochasticResult(
             e_ops,
-            options,
+            {**options},
             solver=solver,
             stats=stats,
             heterodyne=self.heterodyne,
@@ -620,7 +620,7 @@ class StochasticSolver(MultiTrajSolver):
     def _trajectory_resultclass(self, e_ops, options):
         return StochasticTrajResult(
             e_ops,
-            options,
+            {**options},
             m_ops=self.m_ops,
             dw_factor=self.dW_factors,
             heterodyne=self.heterodyne,
@@ -648,7 +648,9 @@ class StochasticSolver(MultiTrajSolver):
             raise ValueError("c_ops are not supported by ssesolve.")
 
         rhs = _StochasticRHS(self._open, H, sc_ops, c_ops, heterodyne)
-        super().__init__(rhs, options=options)
+        self._rhs = rhs
+        self._post_init(options)
+        self._dims = self._rhs._dims
 
         if heterodyne:
             self._m_ops = []
@@ -696,16 +698,16 @@ class StochasticSolver(MultiTrajSolver):
         if len(new_m_ops) != len(self.m_ops):
             if self.heterodyne:
                 raise ValueError(
-                    f"2 `m_ops` per `sc_ops`, {len(self.rhs.sc_ops)} operators"
+                    f"2 `m_ops` per `sc_ops`, {len(self._rhs.sc_ops)} operators"
                     " are expected for heterodyne measurement."
                 )
             else:
                 raise ValueError(
-                    f"{len(self.rhs.sc_ops)} measurements "
+                    f"{len(self._rhs.sc_ops)} measurements "
                     "operators are expected."
                 )
         if not all(
-            isinstance(op, Qobj) and op._dims == self.rhs.sc_ops[0]._dims
+            isinstance(op, Qobj) and op._dims == self._rhs.sc_ops[0]._dims
             for op in new_m_ops
         ):
             raise ValueError(
@@ -728,12 +730,12 @@ class StochasticSolver(MultiTrajSolver):
         if len(new_dW_factors) != len(self._dW_factors):
             if self.heterodyne:
                 raise ValueError(
-                    f"2 `dW_factors` per `sc_ops`, {len(self.rhs.sc_ops)} "
+                    f"2 `dW_factors` per `sc_ops`, {len(self._rhs.sc_ops)} "
                     "values are expected for heterodyne measurement."
                 )
             else:
                 raise ValueError(
-                    f"{len(self.rhs.sc_ops)} dW_factors are expected."
+                    f"{len(self._rhs.sc_ops)} dW_factors are expected."
                 )
         self._dW_factors = new_dW_factors
 
@@ -822,7 +824,7 @@ class StochasticSolver(MultiTrajSolver):
                 raise TypeError("noise must be real.")
             noise = np.real(noise)
         generator = PreSetWiener(
-            noise, tlist, len(self.rhs.sc_ops), self.heterodyne, measurement
+            noise, tlist, len(self._rhs.sc_ops), self.heterodyne, measurement
         )
         state0 = self._prepare_state(state)
         try:
@@ -902,6 +904,27 @@ class StochasticSolver(MultiTrajSolver):
             **StochasticSolver.avail_integrators(),
             **cls._avail_integrators,
         }
+
+    @property
+    def system(self):
+        """
+        Build the rhs QobjEvo.
+        """
+        return self._rhs
+
+    @property
+    def rhs(self):
+        """
+        Build the rhs as a QobjEvo.
+        """
+        raise NotImplementedError()
+
+    @property
+    def rhs_func(self):
+        """
+        Get the rhs as a callable.
+        """
+        raise NotImplementedError()
 
     @property
     def options(self) -> dict[str, Any]:

@@ -72,6 +72,13 @@ class Solver:
         self.stats = self._initialize_stats()
 
     @property
+    def system(self):
+        """
+        Get the rhs as a system.
+        """
+        raise NotImplementedError
+
+    @property
     def rhs(self):
         """
         Build the rhs QobjEvo.
@@ -82,7 +89,7 @@ class Solver:
     @property
     def rhs_func(self):
         """
-        Build the rhs QobjEvo.
+        Get the rhs as a callable.
         """
         return self.rhs.matmul_data
 
@@ -105,7 +112,7 @@ class Solver:
 
         Should return the state's data such that it can be used by Integrators.
         """
-        if self.rhs.issuper and state.isket:
+        if self._dims.issuper and state.isket:
             state = ket2dm(state)
 
         if not state.dtype.sparcity() == "dense":
@@ -118,7 +125,7 @@ class Solver:
             self._dims[1] != state._dims[0]
             and self._dims[1] != state._dims
         ):
-            raise TypeError(f"incompatible dimensions {self.rhs.dims}"
+            raise TypeError(f"incompatible dimensions {self._dims}"
                             f" and {state.dims}")
 
         self._state_metadata = {
@@ -217,7 +224,7 @@ class Solver:
         self._integrator.set_state(tlist[0], _data0)
         self._argument(args)
         results = self._resultclass(
-            e_ops, self.options,
+            e_ops, {**self.options},
             solver=self.name, stats=self.stats,
         )
         self.stats['preparation time'] += time() - _time_start
@@ -305,9 +312,7 @@ class Solver:
                 integrator = method
             else:
                 raise ValueError("Integrator method not supported.")
-            if integrator._entry == "Solver":
-                self._integrator_instance = integrator(self)
-            elif integrator._entry == "system":
+            if integrator._entry == "system":
                 self._integrator_instance = integrator(
                     self.system, self.options
                 )

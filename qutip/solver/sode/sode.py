@@ -47,6 +47,9 @@ class SIntegrator(Integrator):
     """
     _is_set = False
     _stepper_options = []
+    # How the rhs is passed to the integrator.
+    # "Solver", "system", "QobjEvo", or "callable".
+    _entry = "system"
 
     def set_state(self, t, state0, generator):
         """

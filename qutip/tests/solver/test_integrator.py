@@ -4,6 +4,7 @@ from qutip.solver.mcsolve import MCSolver
 from qutip.solver.solver_base import Solver
 from qutip.solver.integrator import *
 import qutip
+from collections import namedtuple
 import numpy as np
 from numpy.testing import assert_allclose
 import pytest
@@ -35,7 +36,14 @@ class TestIntegratorCte():
         return request.param
 
     def test_se_integration(self, se_method):
-        evol = SESolver.avail_integrators()[se_method](self.se_system, self.kopt)
+        integrator = SESolver.avail_integrators()[se_method]
+        if integrator._entry == "QobjEvo":
+            evol = integrator(self.se_system, {})
+        elif integrator._entry == "callable":
+            evol = integrator(self.se_system.matmul_data, {})
+        elif integrator._entry == "system":
+            System = namedtuple("system", ["H"])
+            evol = integrator(System(1j * self.se_system), self.kopt)  # Krylov specifict options should be passed only to krylov integrators
         state0 = qutip.basis(2, 0).data
         evol.set_state(0, state0)
         for t, state in evol.run(np.linspace(0, 2, 21)):
@@ -44,7 +52,7 @@ class TestIntegratorCte():
             assert state.shape == (2, 1)
 
     def test_me_integration(self, me_method):
-        evol = MESolver.avail_integrators()[me_method](self.me_system, self.kopt)
+        evol = MESolver.avail_integrators()[me_method](self.me_system, self.kopt) # Krylov specifict options should be passed only to krylov integrators
         state0 = qutip.operator_to_vector(qutip.fock_dm(2,1)).data
         evol.set_state(0, state0)
         for t in np.linspace(0, 2, 21):
@@ -135,9 +143,10 @@ def test_krylov(sizes):
     H = qutip.qeye(N)
     if M:
         H = H & (qutip.num(M) + qutip.create(M) + qutip.destroy(M))
-    H = qutip.QobjEvo(-1j * H)
-    integrator = IntegratorKrylov(H, {"krylov_dim": 30})
-    ref_integrator = IntegratorDiag(H, {})
+    H = qutip.QobjEvo(H)
+    System = namedtuple("system", ["H"])
+    integrator = IntegratorKrylov(System(H), {"krylov_dim": 30})
+    ref_integrator = IntegratorDiag(-1j * H, {})
     psi = qutip.basis(100, 95).data
     integrator.set_state(0, psi)
     ref_integrator.set_state(0, psi)
