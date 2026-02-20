@@ -7,6 +7,7 @@ from __future__ import annotations
 
 __all__ = ['sesolve', 'SESolver']
 
+from collections import namedtuple
 from numpy.typing import ArrayLike
 from time import time
 from typing import Any, Callable
@@ -162,6 +163,11 @@ class SESolver(Solver):
         if not self.H.isoper:
             raise ValueError("The hamiltonian must be an operator")
         self._post_init(options)
+
+    @property
+    def system(self):
+        System = namedtuple("system", ["H"])
+        return System(self.H)
 
     @property
     def rhs(self):

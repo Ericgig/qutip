@@ -7,6 +7,7 @@ from __future__ import annotations
 
 __all__ = ['brmesolve', 'BRSolver']
 
+from collections import namedtuple
 from typing import Any
 import warnings
 import numpy as np
@@ -302,7 +303,8 @@ class BRSolver(Solver):
                 raise TypeError("All `a_ops` spectra "
                                 "must be a Coefficient or Environment.")
 
-        self._system = H, a_ops, c_ops
+        System = namedtuple("System", ["H", "a_ops", "c_ops"])
+        self._system = System(H, a_ops, c_ops)
         self._dims = Dimensions([H._dims, H._dims])
         self._num_collapse = len(c_ops)
         self._num_a_ops = len(a_ops)
@@ -318,6 +320,10 @@ class BRSolver(Solver):
             "num_a_ops": self._num_a_ops,
         })
         return stats
+
+    @property
+    def system(self):
+        return self._system
 
     @property
     def rhs(self):

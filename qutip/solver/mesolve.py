@@ -8,6 +8,7 @@ from __future__ import annotations
 
 __all__ = ['mesolve', 'MESolver']
 
+from collections import namedtuple
 from numpy.typing import ArrayLike
 from typing import Any
 from time import time
@@ -256,6 +257,11 @@ class MESolver(SESolver):
             self._dims = self.L0[0]._dims
 
         self._post_init(options)
+
+    @property
+    def system(self):
+        System = namedtuple("system", ["H", "L", "c_ops"])
+        return System(self.H, self.L0, self.c_ops)
 
     @property
     def rhs(self):

@@ -9,6 +9,7 @@ __all__ = [
     "FMESolver",
 ]
 
+from collections import namedtuple
 from typing import Any, overload, TypeVar, Literal, Callable
 import warnings
 import numpy as np
@@ -860,6 +861,11 @@ class FMESolver(MESolver):
             raise TypeError("a_ops must be tuple of (Qobj, callable)")
 
         self._post_init(options)
+
+    @property
+    def system(self):
+        System = namedtuple("System", ["floquet_basis", "a_ops"])
+        return System(self.floquet_basis, self.a_ops)
 
     @property
     def rhs(self):
