@@ -442,6 +442,11 @@ class Solver:
             **cls._avail_integrators,
         }
 
+    def __setstate__(self, state):
+        options = state.pop("_options")
+        self.__dict__.update(state)
+        self.options = options
+
     @classmethod
     def integrator(cls, key):
         return cls.avail_integrators()[key]

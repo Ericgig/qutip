@@ -1,6 +1,7 @@
 __all__ = ["Options", "SolverOptions"]
 
 import warnings
+import weakref
 
 
 def SolverOptions(*args, **kwargs):
@@ -41,7 +42,10 @@ class _SolverOptions(dict):
     ):
         self._default = default
         self.__doc__ = doc
-        self._feedback = feedback
+        if feedback is None:
+            self._feedback = lambda : None
+        else:
+            self._feedback = weakref.WeakMethod(feedback)
         self._name = name
         extra_keys = kwargs.keys() - default.keys()
         if extra_keys:
@@ -56,8 +60,8 @@ class _SolverOptions(dict):
         if val == self[key]:
             return
         super().__setitem__(key, val)
-        if self._feedback:
-            self._feedback(key)
+        if call := self._feedback() is not None:
+            call(key)
 
     def __delitem__(self, key):
         if key not in self._default:
@@ -67,6 +71,7 @@ class _SolverOptions(dict):
             self._feedback(key)
 
     def copy(self):
+        raise NotImplementedError
         return self.__class__(
             self._default,
             self._feedback,
@@ -86,21 +91,5 @@ class _SolverOptions(dict):
                          f"{default}")
         return "\n".join(lines)
 
-    @classmethod
-    def _from_reduced(cls, default, feedback, name, doc, keys, args):
-        return cls(default, feedback, name, doc, **{
-            key: arg for key, arg in zip(keys, args)
-        })
-
     def __reduce__(self):
-        return (
-            self._from_reduced,
-            (
-                self._default,
-                self._feedback,
-                self._name,
-                self.__doc__,
-                tuple(self.keys()),
-                tuple(self.values())
-                )
-            )
+        return (dict, (dict(**self),))

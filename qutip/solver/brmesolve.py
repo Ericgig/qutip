@@ -18,7 +18,6 @@ from ..core.blochredfield import bloch_redfield_tensor, SpectraCoefficient
 from ..core.cy.coefficient import InterCoefficient
 from ..core import data as _data
 from .solver_base import Solver, _solver_deprecation
-from .options import _SolverOptions
 from ._feedback import _QobjFeedback, _DataFeedback
 from ..typing import EopsLike, QobjEvoLike, CoefficientLike
 from ..core.environment import Environment
@@ -65,7 +64,7 @@ def brmesolve(
 
         spectra : :obj:`.Coefficient`, str, func, Environment
             The corresponding bath spectra.
-            Bath can be provided as :class:`.BosonicEnvironment`, 
+            Bath can be provided as :class:`.BosonicEnvironment`,
             :class:`.FermionicEnvironment` or power spectra function.  These
             can be a :obj:`.Coefficient`, function or string. For coefficient,
             the frequency is passed as the 'w' args. The
