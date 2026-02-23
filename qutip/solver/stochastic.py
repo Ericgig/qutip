@@ -616,7 +616,7 @@ class StochasticSolver(MultiTrajSolver):
     def _resultclass(self, e_ops, options, solver, stats):
         return StochasticResult(
             e_ops,
-            options,
+            options.copy(),
             solver=solver,
             stats=stats,
             heterodyne=self.heterodyne,
@@ -625,7 +625,7 @@ class StochasticSolver(MultiTrajSolver):
     def _trajectory_resultclass(self, e_ops, options):
         return StochasticTrajResult(
             e_ops,
-            options,
+            options.copy(),
             m_ops=self.m_ops,
             dw_factor=self.dW_factors,
             heterodyne=self.heterodyne,

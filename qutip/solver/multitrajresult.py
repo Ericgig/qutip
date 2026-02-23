@@ -1224,7 +1224,7 @@ class NmmcResult(_McBaseResult):
     runs_e_data : dict
         A dictionary containing the values of each ``e_op`` for each
         trajectories. If the ``e_ops`` were supplied as a dictionary, the keys
-        are the same as in that dictionary. Otherwise the keys are the index of
+MultiTrajResult        are the same as in that dictionary. Otherwise the keys are the index of
         the ``e_op`` in the ``.expect`` list. Only available if the storing
         of trajectories was requested.
 

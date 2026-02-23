@@ -74,7 +74,7 @@ class _SolverOptions(dict):
         raise NotImplementedError
         return self.__class__(
             self._default,
-            self._feedback,
+            None,
             self._name,
             self.__doc__,
             **self
