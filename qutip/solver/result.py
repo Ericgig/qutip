@@ -279,18 +279,19 @@ class Result(_BaseResult):
         store_states = store_states or (
             len(self.e_ops) == 0 and store_states is None
         )
-        cls = self.__class__
         if store_states:
-            self.add_processor(cls._store_state, requires_copy=True)
+            self.add_processor(self._store_state, requires_copy=True)
 
         store_final_state = self.options["store_final_state"]
         if store_final_state and not store_states:
-            self.add_processor(cls._store_final_state, requires_copy=True)
+            self.add_processor(self._store_final_state, requires_copy=True)
 
+    @staticmethod
     def _store_state(self, t, state):
         """Processor that stores a state in ``.states``."""
         self.states.append(state)
 
+    @staticmethod
     def _store_final_state(self, t, state):
         """Processor that writes the state to ``._final_state``."""
         self._final_state = state
