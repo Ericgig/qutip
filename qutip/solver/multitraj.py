@@ -150,7 +150,7 @@ class MultiTrajSolver(Solver):
         seeds = self._read_seed(seeds, ntraj)
 
         result = self._resultclass(
-            e_ops, self.options.copy(), solver=self.name, stats=stats
+            e_ops, self.options, solver=self.name, stats=stats
         )
         result.add_end_condition(ntraj, target_tol)
 
@@ -259,7 +259,7 @@ class MultiTrajSolver(Solver):
 
     def _initialize_run_one_traj(self, seed, state, tlist, e_ops,
                                  **integrator_kwargs):
-        result = self._trajectory_resultclass(e_ops, self.options.copy())
+        result = self._trajectory_resultclass(e_ops, self.options)
         if "generator" in integrator_kwargs:
             generator = integrator_kwargs.pop("generator")
         else:

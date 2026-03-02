@@ -52,19 +52,22 @@ def test_del():
 
 
 def test_SolverOptions_Feedback():
-    called = []
+    class Catcher:
+        called = []
 
-    def _catch(keys):
-        assert isinstance(keys, (set, str))
-        called.append(keys)
+        def _catch(self, keys):
+            assert isinstance(keys, (set, str))
+            self.called.append(keys)
 
-    opt = _SolverOptions(default, _catch)
+    catcher = Catcher()
+
+    opt = _SolverOptions(default, catcher._catch)
     opt["opt1"] = 2
     opt["opt2"] = 1e-5
 
-    assert "opt1" in called
-    assert "opt2" in called
-    assert len(called) == 2
+    assert "opt1" in catcher.called
+    assert "opt2" in catcher.called
+    assert len(catcher.called) == 2
 
 
 def test_error():

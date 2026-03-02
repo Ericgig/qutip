@@ -33,10 +33,10 @@ class StochasticTrajResult(Result):
             self.m_ops = []
             self.m_expect = []
             self.dW_factor = dw_factor
-            for op in m_ops:
+            for k, op in enumerate(m_ops):
                 f = self._e_op_func(op)
                 self.m_expect.append([])
-                self.m_ops.append(ExpectOp(op, f, self.m_expect[-1].append))
+                self.m_ops.append(ExpectOp(op, f, k, "m_expect"))
                 self.add_processor(self.m_ops[-1]._store)
 
     def add(self, t, state, noise=None):
@@ -142,6 +142,7 @@ class StochasticResult(MultiTrajResult):
             self.add_processor(partial(self._reduce_attr, attr="measurement"))
             self._measurement = []
 
+    @staticmethod
     def _reduce_attr(self, trajectory, attr, *, rel=None, abs=None):
         """
         Add a result attribute to a list when the trajectories are not stored.
@@ -616,7 +617,7 @@ class StochasticSolver(MultiTrajSolver):
     def _resultclass(self, e_ops, options, solver, stats):
         return StochasticResult(
             e_ops,
-            options.copy(),
+            options,
             solver=solver,
             stats=stats,
             heterodyne=self.heterodyne,
@@ -625,7 +626,7 @@ class StochasticSolver(MultiTrajSolver):
     def _trajectory_resultclass(self, e_ops, options):
         return StochasticTrajResult(
             e_ops,
-            options.copy(),
+            options,
             m_ops=self.m_ops,
             dw_factor=self.dW_factors,
             heterodyne=self.heterodyne,

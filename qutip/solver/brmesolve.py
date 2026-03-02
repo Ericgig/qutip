@@ -64,7 +64,7 @@ def brmesolve(
 
         spectra : :obj:`.Coefficient`, str, func, Environment
             The corresponding bath spectra.
-            Bath can be provided as :class:`.BosonicEnvironment`,
+            Bath can be provided as :class:`.BosonicEnvironment`, 
             :class:`.FermionicEnvironment` or power spectra function.  These
             can be a :obj:`.Coefficient`, function or string. For coefficient,
             the frequency is passed as the 'w' args. The

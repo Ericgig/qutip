@@ -192,7 +192,7 @@ class Solver:
         self._argument(args)
         stats = self._initialize_stats()
         results = self._resultclass(
-            e_ops, self.options.copy(),
+            e_ops, self.options,
             solver=self.name, stats=stats,
         )
         results.add(

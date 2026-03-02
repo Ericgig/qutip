@@ -228,22 +228,26 @@ class MultiTrajResult(_BaseResult):
         self.times = trajectory.times
         self.e_ops = trajectory.e_ops
 
+    @staticmethod
     def _store_trajectory(self, trajectory, *, abs=None, rel=None):
         if abs is None:
             self.trajectories.append(trajectory)
 
+    @staticmethod
     def _reduce_states(self, trajectory, *, abs=None, rel=None):
         if abs is not None:
             self._sum_det.reduce_states(trajectory, abs)
         else:
             self._sum_rel.reduce_states(trajectory, rel)
 
+    @staticmethod
     def _reduce_final_state(self, trajectory, *, abs=None, rel=None):
         if abs is not None:
             self._sum_det.reduce_final_state(trajectory, abs)
         else:
             self._sum_rel.reduce_final_state(trajectory, rel)
 
+    @staticmethod
     def _reduce_expect(self, trajectory, *, abs=None, rel=None):
         """
         Compute the average of the expectation values and store it in it's
@@ -278,6 +282,7 @@ class MultiTrajResult(_BaseResult):
             # negative (-1e-15) which raise an error for float sqrt.
             self._std_e_data[k] = list(np.sqrt(np.abs(avg2 - np.abs(avg**2))))
 
+    @staticmethod
     def _increment_traj(self, trajectory, *, abs=None, rel=None):
         if self.num_trajectories == 0 and not self._deterministic_weight_info:
             self._add_first_traj(trajectory)
@@ -394,7 +399,7 @@ class MultiTrajResult(_BaseResult):
             Number (usually between 0 and 1), exact weight of this trajectory
         """
         for op in self._state_processors:
-            op(trajectory, abs=weight)
+            op(self, trajectory, abs=weight)
 
         self._deterministic_weight_info.append(weight)
         self.deterministic_trajectories.append(trajectory)
@@ -429,7 +434,7 @@ class MultiTrajResult(_BaseResult):
         self._trajectories_weight_info.append(weight)
 
         for op in self._state_processors:
-            op(trajectory, rel=weight)
+            op(self, trajectory, rel=weight)
 
         return self._early_finish_check()
 
@@ -521,12 +526,12 @@ class MultiTrajResult(_BaseResult):
                 self.deterministic_trajectories,
                 self._deterministic_weight_info
             ):
-                self._reduce_states(trajectory, abs=weight)
+                self._reduce_states(self, trajectory, abs=weight)
             for trajectory, weight in zip(
                 self.trajectories,
                 self._trajectories_weight_info
             ):
-                self._reduce_states(trajectory, rel=weight)
+                self._reduce_states(self, trajectory, rel=weight)
 
         if self._sum_det and self._sum_rel:
             return [a + r / self.num_trajectories for a, r in zip(
@@ -584,12 +589,12 @@ class MultiTrajResult(_BaseResult):
                 self.deterministic_trajectories,
                 self._deterministic_weight_info
             ):
-                self._reduce_final_state(trajectory, abs=weight)
+                self._reduce_final_state(self, trajectory, abs=weight)
             for trajectory, weight in zip(
                 self.trajectories,
                 self._trajectories_weight_info
             ):
-                self._reduce_final_state(trajectory, rel=weight)
+                self._reduce_final_state(self, trajectory, rel=weight)
 
         if self._sum_det and self._sum_rel:
             return (self._sum_det.sum_final_state +
@@ -938,6 +943,7 @@ class _TrajectorySum:
 
 class _McBaseResult(MultiTrajResult):
     # Collapse are only produced by mcsolve.
+    @staticmethod
     def _add_collapse(self, trajectory, *, rel=None, abs=None):
         if rel is not None:
             self.collapse.append(trajectory.collapse)
@@ -1224,7 +1230,7 @@ class NmmcResult(_McBaseResult):
     runs_e_data : dict
         A dictionary containing the values of each ``e_op`` for each
         trajectories. If the ``e_ops`` were supplied as a dictionary, the keys
-MultiTrajResult        are the same as in that dictionary. Otherwise the keys are the index of
+        are the same as in that dictionary. Otherwise the keys are the index of
         the ``e_op`` in the ``.expect`` list. Only available if the storing
         of trajectories was requested.
 
@@ -1298,12 +1304,14 @@ MultiTrajResult        are the same as in that dictionary. Otherwise the keys ar
 
         self.add_processor(self._add_trace)
 
+    @staticmethod
     def _reduce_states(self, trajectory, *, abs=None, rel=None):
         if abs is not None:
             self._sum_det.reduce_states(trajectory, abs, trajectory.trace)
         else:
             self._sum_rel.reduce_states(trajectory, rel, trajectory.trace)
 
+    @staticmethod
     def _reduce_final_state(self, trajectory, *, abs=None, rel=None):
         if abs is not None:
             self._sum_det.reduce_final_state(
@@ -1312,6 +1320,7 @@ MultiTrajResult        are the same as in that dictionary. Otherwise the keys ar
             self._sum_rel.reduce_final_state(
                 trajectory, rel * trajectory.trace[-1])
 
+    @staticmethod
     def _reduce_expect(self, trajectory, *, abs=None, rel=None):
         """
         Compute the average of the expectation values and store it in it's
@@ -1335,6 +1344,7 @@ MultiTrajResult        are the same as in that dictionary. Otherwise the keys ar
         self._sum2_trace_det = np.zeros_like(trajectory.trace)
         self._sum2_trace_rel = np.zeros_like(trajectory.trace)
 
+    @staticmethod
     def _add_trace(self, trajectory, *, abs=None, rel=None):
         if abs is not None:
             self._sum_trace_det += np.array(trajectory.trace) * abs

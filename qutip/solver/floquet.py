@@ -1041,7 +1041,7 @@ class FMESolver(MESolver):
         stats = self._initialize_stats()
         results = self._resultclass(
             e_ops,
-            self.options.copy(),
+            self.options,
             solver=self.name,
             stats=stats,
             floquet_basis=self.floquet_basis,

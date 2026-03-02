@@ -114,10 +114,10 @@ class TestResult:
         b = []
         states = [{"t": 0}, {"t": 1}]
 
-        res.add_processor(lambda t, state: a.append((t, state)))
+        res.add_processor(lambda res, t, state: a.append((t, state)))
         res.add(0, states[0])
         res.add_processor(
-            lambda t, state: b.append((t, state)),
+            lambda res, t, state: b.append((t, state)),
             requires_copy=True,
         )
         res.add(1, states[1])

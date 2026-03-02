@@ -43,7 +43,7 @@ class _SolverOptions(dict):
         self._default = default
         self.__doc__ = doc
         if feedback is None:
-            self._feedback = lambda : None
+            self._feedback = lambda : False
         else:
             self._feedback = weakref.WeakMethod(feedback)
         self._name = name
@@ -60,18 +60,17 @@ class _SolverOptions(dict):
         if val == self[key]:
             return
         super().__setitem__(key, val)
-        if call := self._feedback() is not None:
+        if (call := self._feedback()) is not False:
             call(key)
 
     def __delitem__(self, key):
         if key not in self._default:
             raise KeyError(f"Options {key} is not supported.")
         super().__setitem__(key, self._default[key])
-        if self._feedback:
-            self._feedback(key)
+        if (call := self._feedback()) is not False:
+            call(key)
 
     def copy(self):
-        raise NotImplementedError
         return self.__class__(
             self._default,
             None,

@@ -53,10 +53,11 @@ class ExpectOp:
         The original object used to define the e_op operation.
     """
 
-    def __init__(self, op, f, append):
+    def __init__(self, op, f, idx, attr):
         self.op = op
         self._f = f
-        self._append = append
+        self._idx = idx
+        self._attr = attr
 
     def __call__(self, t, state):
         """
@@ -65,12 +66,12 @@ class ExpectOp:
         """
         return self._f(t, state)
 
-    def _store(self, t, state):
+    def _store(self, result, t, state):
         """
         Store the result of the e_op function. Should only be called by
         :class:`~Result`.
         """
-        self._append(self._f(t, state))
+        getattr(result, self._attr)[self._idx].append(self._f(t, state))
 
 
 class _BaseResult:
@@ -88,10 +89,7 @@ class _BaseResult:
         self._state_processors_require_copy = False
 
         # make sure not to store a reference to the solver
-        options_copy = options.copy()
-        if hasattr(options_copy, "_feedback"):
-            options_copy._feedback = None
-        self.options = options_copy
+        self.options = options.copy()
         # Almost all integrators already return a copy that is safe to use.
         self._integrator_return_copy = options.get("method", None) in [
             "adams", "lsoda", "bdf", "dop853", "diag",
@@ -240,7 +238,7 @@ class Result(_BaseResult):
         self.e_ops = {}
         for k, op in raw_ops.items():
             f = self._e_op_func(op)
-            self.e_ops[k] = ExpectOp(op, f, self.e_data[k].append)
+            self.e_ops[k] = ExpectOp(op, f, k, "e_data")
             self.add_processor(self.e_ops[k]._store)
 
         self.times = []
@@ -281,12 +279,13 @@ class Result(_BaseResult):
         store_states = store_states or (
             len(self.e_ops) == 0 and store_states is None
         )
+        cls = self.__class__
         if store_states:
-            self.add_processor(self._store_state, requires_copy=True)
+            self.add_processor(cls._store_state, requires_copy=True)
 
         store_final_state = self.options["store_final_state"]
         if store_final_state and not store_states:
-            self.add_processor(self._store_final_state, requires_copy=True)
+            self.add_processor(cls._store_final_state, requires_copy=True)
 
     def _store_state(self, t, state):
         """Processor that stores a state in ``.states``."""
@@ -339,7 +338,7 @@ class Result(_BaseResult):
             state = self._pre_copy(state)
 
         for op in self._state_processors:
-            op(t, state)
+            op(self, t, state)
 
     def __repr__(self):
         lines = [

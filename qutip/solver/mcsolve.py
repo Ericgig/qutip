@@ -559,7 +559,7 @@ class MCSolver(MultiTrajSolver):
             # zeroes. This also ensures that the final multi-trajectory
             # result will contain the requested number of trajectories.
             zero = qzero_like(self._restore_state(state, copy=False))
-            result = self._trajectory_resultclass(e_ops, self.options.copy())
+            result = self._trajectory_resultclass(e_ops, self.options)
             result.collapse = []
             for t in tlist:
                 result.add(t, zero)
