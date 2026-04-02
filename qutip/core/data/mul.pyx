@@ -15,6 +15,8 @@ cpdef CSR imul_csr(CSR matrix, double complex value):
     """Multiply this CSR `matrix` by a complex scalar `value`."""
     cdef idxint l = csr.nnz(matrix)
     cdef int ONE=1
+    if matrix.immutable:
+        raise RuntimeError("The matrix is immutable.")
     zscal(&l, &value, matrix.data, &ONE)
     return matrix
 
@@ -27,6 +29,7 @@ cpdef CSR mul_csr(CSR matrix, double complex value):
     with nogil:
         for ptr in range(csr.nnz(matrix)):
             out.data[ptr] = value * matrix.data[ptr]
+    out.frozen(True)
     return out
 
 cpdef CSR neg_csr(CSR matrix):
@@ -36,6 +39,7 @@ cpdef CSR neg_csr(CSR matrix):
     with nogil:
         for ptr in range(csr.nnz(matrix)):
             out.data[ptr] = -matrix.data[ptr]
+    out.frozen(True)
     return out
 
 
@@ -43,6 +47,8 @@ cpdef Dia imul_dia(Dia matrix, double complex value):
     """Multiply this Dia `matrix` by a complex scalar `value`."""
     cdef idxint l = matrix.num_diag * matrix.shape[1]
     cdef int ONE=1
+    if matrix.immutable:
+        raise RuntimeError("The matrix is immutable.")
     zscal(&l, &value, matrix.data, &ONE)
     return matrix
 
@@ -58,15 +64,17 @@ cpdef Dia mul_dia(Dia matrix, double complex value):
         for ptr in range(matrix.num_diag):
             out.offsets[ptr] = matrix.offsets[ptr]
         out.num_diag = matrix.num_diag
+    out.frozen(True)
     return out
 
 cpdef Dia neg_dia(Dia matrix):
     """Unary negation of this Dia `matrix`.  Return a new object."""
-    cdef Dia out = matrix.copy()
+    cdef Dia out = matrix.copy(deep=True)
     cdef idxint ptr, l = matrix.num_diag * matrix.shape[1]
     with nogil:
         for ptr in range(l):
             out.data[ptr] = -matrix.data[ptr]
+    out.frozen(True)
     return out
 
 
@@ -75,6 +83,8 @@ cpdef Dense imul_dense(Dense matrix, double complex value):
     cdef size_t ptr
     cdef int ONE=1
     cdef idxint l = matrix.shape[0]*matrix.shape[1]
+    if matrix.immutable:
+        raise RuntimeError("The matrix is immutable.")
     zscal(&l, &value, matrix.data, &ONE)
     return matrix
 
@@ -130,6 +140,7 @@ imul = _Dispatcher(
     module=__name__,
     inputs=('matrix',),
     out=True,
+    inplace=(0,),
 )
 imul.__doc__ =\
     """Multiply inplace a matrix element-wise by a scalar."""

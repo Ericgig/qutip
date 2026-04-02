@@ -10,12 +10,12 @@ from qutip.settings import settings
 from qutip.core.data.base cimport idxint, Data
 from qutip.core.data.dense cimport Dense
 from qutip.core.data.dia cimport Dia
-from qutip.core.data.tidyup cimport tidyup_dia
 from qutip.core.data.csr cimport (
     CSR, Accumulator, acc_alloc, acc_free, acc_scatter, acc_gather, acc_reset,
 )
 from qutip.core.data cimport csr, dense, dia
 from qutip.core.data.convert import to as _to
+from qutip.core.data.tidyup import tidyup_csr, tidyup_dia
 
 cnp.import_array()
 
@@ -168,6 +168,8 @@ cpdef CSR add_csr(CSR left, CSR right, double complex scale=1):
     else:
         _add_csr_scale(&acc, left, right, out, scale, tol)
     acc_free(&acc)
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -202,6 +204,8 @@ cpdef Dense add_dense(Dense left, Dense right, double complex scale=1):
 
 cpdef Dense iadd_dense(Dense left, Dense right, double complex scale=1):
     _check_shape(left, right)
+    if left.immutable:
+        raise RuntimeError("The matrix is immutable.")
     if scale == 0:
         return left
     cdef int size = left.shape[0] * left.shape[1]
@@ -220,6 +224,8 @@ cpdef Dense iadd_dense(Dense left, Dense right, double complex scale=1):
 
 cpdef Data iadd_data(Data left, Data right, double complex scale=1):
     _check_shape(left, right)
+    if left.immutable:
+        raise RuntimeError("The matrix is immutable.")
     if scale == 0:
         return left
     return add(left, right, scale)
@@ -228,6 +234,8 @@ cpdef Data iadd_data(Data left, Data right, double complex scale=1):
 cpdef Dense iadd_dense_data_dense(Dense left, Data right, double complex scale=1):
     """ Helper function to manually set the priority of the dispatcher. """
     _check_shape(left, right)
+    if left.immutable:
+        raise RuntimeError("The matrix is immutable.")
     if scale == 0:
         return left
     return iadd_dense(left, _to(Dense, right), scale)
@@ -303,6 +311,8 @@ cpdef Dia add_dia(Dia left, Dia right, double complex scale=1):
         dia.clean_dia(out, True)
     if settings.core['auto_tidyup']:
         tidyup_dia(out, settings.core['auto_tidyup_atol'], True)
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -357,6 +367,7 @@ iadd = _Dispatcher(
     module=__name__,
     inputs=('left', 'right'),
     out=True,
+    inplace=(0,),
 )
 iadd.__doc__ =\
     """

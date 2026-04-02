@@ -65,9 +65,9 @@ class IntegratorScipyAdams(Integrator):
         Interface between scipy which use numpy and the driver, which use data.
         """
         state = _data.dense.fast_from_numpy(vec)
-        column_unstack_dense(state, self._size, inplace=True)
+        state = column_unstack_dense(state, self._size, inplace=True)
         out = self.system.matmul_data(t, state)
-        column_stack_dense(out, inplace=True)
+        out = column_stack_dense(out, inplace=True)
         return out.as_ndarray().ravel()
 
     def set_state(self, t, state0):
@@ -252,9 +252,9 @@ class IntegratorScipyDop853(Integrator):
         Interface between scipy which use numpy and the driver, which use data.
         """
         state = _data.dense.fast_from_numpy(vec.view(np.complex128))
-        column_unstack_dense(state, self._size, inplace=True)
+        state = column_unstack_dense(state, self._size, inplace=True)
         out = self.system.matmul_data(t, state)
-        column_stack_dense(out, inplace=True)
+        out = column_stack_dense(out, inplace=True)
         return out.as_ndarray().ravel().view(np.float64)
 
     def integrate(self, t, copy=True):

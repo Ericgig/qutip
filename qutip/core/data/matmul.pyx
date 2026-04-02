@@ -22,11 +22,11 @@ from qutip.core.data.base cimport idxint, Data
 from qutip.core.data.dense cimport Dense
 from qutip.core.data.csr cimport CSR
 from qutip.core.data.dia cimport Dia
-from qutip.core.data.tidyup cimport tidyup_dia
 from qutip.core.data cimport csr, dense, dia
 from qutip.core.data.add cimport iadd_dense, add_csr
 from qutip.core.data.mul cimport imul_dense
 from qutip.core.data.dense import OrderEfficiencyWarning
+from qutip.core.data.tidyup import tidyup_csr, tidyup_dia
 
 cnp.import_array()
 
@@ -219,7 +219,11 @@ cpdef CSR matmul_csr(CSR left, CSR right, double complex scale=1, CSR out=None):
                 sums[tmp] = 0
             out.row_index[row_l + 1] = nnz
     mem.PyMem_Free(sums)
+    if settings.core['auto_tidyup']:
+        tidyup_csr(out, settings.core['auto_tidyup_atol'], True)
     mem.PyMem_Free(nxt)
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -235,8 +239,20 @@ cpdef Dense matmul_csr_dense_dense(CSR left, Dense right,
     """
     _check_shape(left, right, out)
     cdef Dense out_add = None
+    cdef bint immutable_out
+
+    if out:
+        immutable_out = False
+    else:
+        immutable_out = left.immutable and right.immutable
+
     if out is None:
         out = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+        out.immutable = False
+
+    if out.immutable:
+        out = out.copy(deep=True)
+
     if bool(right.fortran) != bool(out.fortran):
         msg = (
             "out matrix is {}-ordered".format('Fortran' if out.fortran else 'C')
@@ -269,6 +285,8 @@ cpdef Dense matmul_csr_dense_dense(CSR left, Dense right,
                                   nrows, ncols)
     if out_add is not None:
         out = iadd_dense(out_add, out)
+    if immutable_out:
+        out.frozen(True)
     return out
 
 
@@ -283,6 +301,12 @@ cpdef Dense matmul_dense(Dense left, Dense right, double complex scale=1, Dense 
     """
     _check_shape(left, right, out)
     cdef double complex out_scale
+    cdef bint immutable_out
+
+    if out:
+        immutable_out = False
+    else:
+        immutable_out = left.immutable and right.immutable
     # If not supplied, it's more efficient from a memory allocation perspective
     # to do the calculation as `a*A.B + 0*C` with arbitrary C.
     if out is None:
@@ -290,6 +314,8 @@ cpdef Dense matmul_dense(Dense left, Dense right, double complex scale=1, Dense 
         out_scale = 0
     else:
         out_scale = 1
+    if out.immutable:
+        out = out.copy(deep=True)
     cdef double complex *a
     cdef double complex *b
     cdef char transa, transb
@@ -344,6 +370,9 @@ cpdef Dense matmul_dense(Dense left, Dense right, double complex scale=1, Dense 
         transb = b't' if left.fortran else b'n'
     blas.zgemm(&transa, &transb, &m, &n, &k, &scale, a, &lda, b, &ldb,
                &out_scale, out.data, &m)
+
+    if immutable_out:
+        out.frozen(True)
     return out
 
 
@@ -433,11 +462,22 @@ cpdef Dense matmul_dia_dense_dense(Dia left, Dense right, double complex scale=1
     # scale-free inner loop vectorizes better. The extra allocation required is
     # worth it, accoinding to benchmarks.
     cdef Dense tmp
+    cdef bint immutable_out
+
+    if out:
+        immutable_out = False
+    else:
+        immutable_out = left.immutable and right.immutable
+
     if out is not None and scale == 1.:
         tmp = out
         out = None
     else:
         tmp = dense.zeros(left.shape[0], right.shape[1], right.fortran)
+        tmp.immutable = False
+
+    if tmp.immutable:
+        tmp = tmp.copy(deep=True)
 
     cdef idxint start_left, end_left, start_out, end_out, length, i, start_right
     cdef idxint col, strideR_in, strideC_in, strideR_out, strideC_out
@@ -504,6 +544,9 @@ cpdef Dense matmul_dia_dense_dense(Dia left, Dense right, double complex scale=1
     else:
         iadd_dense(out, tmp, scale)
 
+    if immutable_out:
+        out.frozen(True)
+
     return out
 
 
@@ -514,11 +557,22 @@ cpdef Dense matmul_dense_dia_dense(Dense left, Dia right, double complex scale=1
     # scale-free inner loop vectorizes better. The extra allocation required is
     # worth it, accoinding to benchmarks.
     cdef Dense tmp
+    cdef bint immutable_out
+
+    if out:
+        immutable_out = False
+    else:
+        immutable_out = left.immutable and right.immutable
+
     if out is not None and scale == 1.:
         tmp = out
         out = None
     else:
         tmp = dense.zeros(left.shape[0], right.shape[1], left.fortran)
+        tmp.immutable = False
+
+    if tmp.immutable:
+        tmp = tmp.copy(deep=True)
 
     cdef idxint start_left, end_right, start_out, end_out, length, i, start_right
     cdef idxint row, strideR_in, strideC_in, strideR_out, strideC_out
@@ -583,6 +637,9 @@ cpdef Dense matmul_dense_dia_dense(Dense left, Dia right, double complex scale=1
     else:
         iadd_dense(out, tmp, scale)
 
+    if immutable_out:
+        out.frozen(True)
+
     return out
 
 
@@ -618,8 +675,17 @@ cpdef Dense matmul_dag_dense_csr_dense(
             + str((left.shape[0], right.shape[0]))
         )
     cdef Dense out_add = None
+    cdef bint immutable_out
+
+    if out:
+        immutable_out = False
+    else:
+        immutable_out = left.immutable and right.immutable
+
     if out is None:
         out = dense.zeros(left.shape[0], right.shape[0], left.fortran)
+        out.immutable = False
+
     if bool(left.fortran) != bool(out.fortran):
         msg = (
             "out matrix is {}-ordered".format('Fortran' if out.fortran else 'C')
@@ -634,6 +700,11 @@ cpdef Dense matmul_dag_dense_csr_dense(
         else:
             out_add = out
             out = dense.zeros(left.shape[0], right.shape[0], False)
+            out.immutable = False
+
+    if out.immutable:
+        out = out.copy(deep=True)
+
     cdef idxint idx_c, idx_out
     cdef idxint nrows=left.shape[0]
 
@@ -659,6 +730,9 @@ cpdef Dense matmul_dag_dense_csr_dense(
 
     if out_add is not None:
         out = iadd_dense(out_add, out)
+
+    if immutable_out:
+        out.frozen(True)
     return out
 
 
@@ -687,10 +761,19 @@ cpdef Dense matmul_dag_dense(
             + " but needed "
             + str((left.shape[0], right.shape[0]))
         )
+    if out is not None and out.immutable:
+        out = out.copy(deep=True)
+
     cdef Dense a, b, out_add=None
     cdef double complex alpha = 1., out_scale = 0.
     cdef int m, n, k = left.shape[1], lda, ldb, ldc
     cdef char left_code, right_code
+    cdef bint immutable_out
+
+    if out:
+        immutable_out = False
+    else:
+        immutable_out = left.immutable and right.immutable
 
     if not right.fortran:
         # Need a conjugate, we compute the transpose of the desired results.
@@ -740,6 +823,140 @@ cpdef Dense matmul_dag_dense(
     if out_add is not None:
         # Add computed result (out) into user's buffer (out_add) and return it
         out = iadd_dense(out_add, out)
+
+    if immutable_out:
+        out.frozen(True)
+
+    return out
+
+
+cpdef Dense matmul_dag_dense_dia_dense(
+    Dense left, Dia right,
+    double complex scale=1, Dense out=None
+):
+    """
+    Compute out = scale * (left @ dag(right)) where right is DIA.
+
+    dag(right) is the conjugate transpose (adjoint) of right.
+    For DIA matrices, the adjoint operation conjugates the data and negates the offsets.
+
+    Parameters
+    ----------
+    left : Dense
+        Dense matrix (m × k)
+    right : Dia
+        Diagonal matrix (n × k), so dag(right) is (k × n)
+    scale : complex, optional
+        Scalar multiplier
+    out : Dense, optional
+        Output matrix (m × n)
+
+    Returns
+    -------
+    out : Dense
+        Result matrix with out += scale * (left @ dag(right))
+    """
+    cdef idxint m = left.shape[0]
+    cdef idxint k_dim = left.shape[1]
+    cdef idxint n = right.shape[0]  # rows of right, cols of dag(right)
+    cdef bint immutable_out
+
+    if out:
+        immutable_out = False
+    else:
+        immutable_out = left.immutable and right.immutable
+
+    if right.shape[1] != k_dim:
+        raise ValueError(
+            f"incompatible matrix shapes ({m}, {k_dim}) and "
+            f"({right.shape[0]}, {right.shape[1]})"
+        )
+
+    if out is None:
+        out = dense.zeros(m, n, left.fortran)
+        out.immutable = False
+
+    if out.immutable:
+        out = out.copy(deep=True)
+
+    elif out.shape[0] != m or out.shape[1] != n:
+        raise ValueError(f"Output shape {out.shape} incompatible with ({m}, {n})")
+
+    cdef idxint start_left, start_right, start_out, end_out, length, i, j, k
+    cdef idxint row, strideR_in, strideC_in, strideR_out, strideC_out
+    cdef size_t diag
+    cdef idxint offset, start_i, end_i, start_j
+
+    with nogil:
+      strideR_in = left.shape[1] if not left.fortran else 1
+      strideC_in = left.shape[0] if left.fortran else 1
+      strideR_out = out.shape[1] if not out.fortran else 1
+      strideC_out = out.shape[0] if out.fortran else 1
+
+      if (
+        (right.shape[0] == right.shape[1])
+        and (strideR_in == 1)
+        and (strideR_out == 1)
+      ):
+          # Fast track for square matrices with row-major strides
+          for diag in range(right.num_diag):
+              offset = right.offsets[diag]
+              # _matmul_dag_diag_block conjugates the first argument (data)
+              # We want to conjugate the diagonal (right), so pass it first
+              _matmul_dag_diag_block(
+                  right.data + diag * right.shape[1] + max(0, offset),
+                  left.data + max(0, offset) * strideC_in,
+                  out.data + max(0, -offset) * strideC_out,
+                  right.shape[1] - abs(offset),
+                  left.shape[0],
+                  scale
+              )
+
+      elif (strideC_in == 1) and (strideC_out == 1):
+        # Column-major optimized case
+        for row in range(left.shape[0]):
+          for diag in range(right.num_diag):
+            offset = right.offsets[diag]
+            start_i = max(0, offset)
+            end_i = min(right.shape[1], right.shape[0] + offset)
+            start_j = max(0, -offset)
+            length = end_i - start_i
+
+            start_left = start_i + row * strideR_in
+            start_right = diag * right.shape[1] + start_i
+            start_out = start_j + row * strideR_out
+
+            # _matmul_dag_diag_vector conjugates the first argument (data)
+            # We want to conjugate the diagonal (right), so pass it first
+            _matmul_dag_diag_vector(
+                right.data + start_right,
+                left.data + start_left,
+                out.data + start_out,
+                length,
+                scale
+            )
+
+      else:
+        # General case: handle all memory layouts
+        for row in range(left.shape[0]):
+          for diag in range(right.num_diag):
+            offset = right.offsets[diag]
+            start_i = max(0, offset)
+            end_i = min(right.shape[1], right.shape[0] + offset)
+            start_j = max(0, -offset)
+            length = end_i - start_i
+
+            for k in range(length):
+              i = start_i + k
+              j = start_j + k
+              out.data[j * strideC_out + row * strideR_out] += (
+                scale
+                * conj(right.data[diag * right.shape[1] + i])
+                * left.data[i * strideC_in + row * strideR_in]
+              )
+
+    if immutable_out:
+        out.frozen(True)
 
     return out
 
@@ -808,6 +1025,9 @@ cpdef CSR multiply_csr(CSR left, CSR right):
             left.shape[0], left.shape[1], nnz
         )
         out = add_csr(out, nans_csr)
+
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -871,123 +1091,9 @@ cpdef Dia multiply_dia(Dia left, Dia right):
       out.num_diag = out_diag
 
     if settings.core['auto_tidyup']:
-        tidyup_dia(out, settings.core['auto_tidyup_atol'], True)
-    return out
-
-
-cpdef Dense matmul_dag_dense_dia_dense(
-    Dense left, Dia right,
-    double complex scale=1, Dense out=None
-):
-    """
-    Compute out = scale * (left @ dag(right)) where right is DIA.
-    
-    dag(right) is the conjugate transpose (adjoint) of right.
-    For DIA matrices, the adjoint operation conjugates the data and negates the offsets.
-    
-    Parameters
-    ----------
-    left : Dense
-        Dense matrix (m × k)
-    right : Dia
-        Diagonal matrix (n × k), so dag(right) is (k × n)
-    scale : complex, optional
-        Scalar multiplier
-    out : Dense, optional
-        Output matrix (m × n)
-        
-    Returns
-    -------
-    out : Dense
-        Result matrix with out += scale * (left @ dag(right))
-    """
-    cdef idxint m = left.shape[0]
-    cdef idxint k_dim = left.shape[1]
-    cdef idxint n = right.shape[0]  # rows of right, cols of dag(right)
-    
-    if right.shape[1] != k_dim:
-        raise ValueError(
-            f"incompatible matrix shapes ({m}, {k_dim}) and ({right.shape[0]}, {right.shape[1]})"
-        )
-    
-    if out is None:
-        out = dense.zeros(m, n, left.fortran)
-    elif out.shape[0] != m or out.shape[1] != n:
-        raise ValueError(f"Output shape {out.shape} incompatible with ({m}, {n})")
-
-    cdef idxint start_left, start_right, start_out, end_out, length, i, j, k
-    cdef idxint row, strideR_in, strideC_in, strideR_out, strideC_out
-    cdef size_t diag
-    cdef idxint offset, start_i, end_i, start_j
-
-    with nogil:
-      strideR_in = left.shape[1] if not left.fortran else 1
-      strideC_in = left.shape[0] if left.fortran else 1
-      strideR_out = out.shape[1] if not out.fortran else 1
-      strideC_out = out.shape[0] if out.fortran else 1
-
-      if (
-        (right.shape[0] == right.shape[1])
-        and (strideR_in == 1)
-        and (strideR_out == 1)
-      ):
-          # Fast track for square matrices with row-major strides
-          for diag in range(right.num_diag):
-              offset = right.offsets[diag]
-              # _matmul_dag_diag_block conjugates the first argument (data)
-              # We want to conjugate the diagonal (right), so pass it first
-              _matmul_dag_diag_block(
-                  right.data + diag * right.shape[1] + max(0, offset),
-                  left.data + max(0, offset) * strideC_in,
-                  out.data + max(0, -offset) * strideC_out,
-                  right.shape[1] - abs(offset),
-                  left.shape[0],
-                  scale
-              )
-
-      elif (strideC_in == 1) and (strideC_out == 1):
-        # Column-major optimized case
-        for row in range(left.shape[0]):
-          for diag in range(right.num_diag):
-            offset = right.offsets[diag]
-            start_i = max(0, offset)
-            end_i = min(right.shape[1], right.shape[0] + offset)
-            start_j = max(0, -offset)
-            length = end_i - start_i
-            
-            start_left = start_i + row * strideR_in
-            start_right = diag * right.shape[1] + start_i
-            start_out = start_j + row * strideR_out
-            
-            # _matmul_dag_diag_vector conjugates the first argument (data)
-            # We want to conjugate the diagonal (right), so pass it first
-            _matmul_dag_diag_vector(
-                right.data + start_right,
-                left.data + start_left,
-                out.data + start_out,
-                length,
-                scale
-            )
-
-      else:
-        # General case: handle all memory layouts
-        for row in range(left.shape[0]):
-          for diag in range(right.num_diag):
-            offset = right.offsets[diag]
-            start_i = max(0, offset)
-            end_i = min(right.shape[1], right.shape[0] + offset)
-            start_j = max(0, -offset)
-            length = end_i - start_i
-            
-            for k in range(length):
-              i = start_i + k
-              j = start_j + k
-              out.data[j * strideC_out + row * strideR_out] += (
-                scale
-                * conj(right.data[diag * right.shape[1] + i])
-                * left.data[i * strideC_in + row * strideR_in]
-              )
-
+        out = tidyup_dia(out, settings.core['auto_tidyup_atol'], True)
+    if right.immutable and left.immutable:
+        out.frozen(True)
     return out
 
 
@@ -1000,7 +1106,12 @@ cpdef Dense multiply_dense(Dense left, Dense right):
             + " and "
             + str(right.shape)
         )
-    return Dense(left.as_ndarray() * right.as_ndarray(), copy=False)
+    cdef Dense out =  Dense(
+        left.as_ndarray() * right.as_ndarray(), copy=False,
+    )
+    if right.immutable and left.immutable:
+        out.frozen(True)
+    return out
 
 
 from .dispatch import Dispatcher as _Dispatcher
@@ -1140,7 +1251,6 @@ cpdef Data matmul_outer_dense_Data(Dense left, Dense right, double complex scale
         return matmul(left, right, dtype=Dense)
 
 
-
 cpdef Data matmul_outer_Data(Data left, Data right, double complex scale=1):
     return matmul(left, right)
 
@@ -1218,14 +1328,14 @@ cdef void imatmul_data_dense(Data left, Dense right, double complex scale, Dense
 cdef void imatmul_dag_dense_data(Dense state, Data data, double complex scale, Dense out):
     """
     In-place Dense @ dag(Data) multiplication with data-type-specific optimizations.
-    
+
     Computes out += scale * (state @ dag(data)) efficiently by using specialized
     implementations for different data types:
     - CSR: Uses matmul_dag_dense_csr_dense for on-the-fly adjoint computation
     - DIA: Uses matmul_dag_dense_dia_dense for efficient diagonal adjoint operations
     - Dense: Uses matmul_dag_dense for efficient BLAS-based adjoint multiplication
     - Other: Falls back to iadd_dense(out, matmul(state, data.adjoint(), dtype=Dense), scale)
-    
+
     Parameters
     ----------
     state : Dense

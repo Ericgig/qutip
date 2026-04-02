@@ -1583,7 +1583,7 @@ class Qobj:
         return out
 
     @overload
-    def eigenstates(self, 
+    def eigenstates(self,
         sparse: bool  = False,
         sort: Literal["low", "high"] = 'low',
         eigvals: int = 0,
@@ -1595,7 +1595,7 @@ class Qobj:
         ...
 
     @overload
-    def eigenstates(self, 
+    def eigenstates(self,
         sparse: bool  = False,
         sort: Literal["low", "high"] = 'low',
         eigvals: int = 0,

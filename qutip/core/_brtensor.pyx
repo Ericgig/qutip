@@ -76,7 +76,7 @@ cpdef Dense _br_term_dense(Data A, double[:, ::1] spectrum,
     cdef double complex elem
     cdef double complex[:,:] A_mat, ac_term, bd_term
     cdef object np2term
-    cdef Dense out
+    cdef object out
     cdef double complex[::1, :] out_array
 
     if type(A) is Dense:
@@ -84,8 +84,8 @@ cpdef Dense _br_term_dense(Data A, double[:, ::1] spectrum,
     else:
         A_mat = A.to_array()
 
-    out = _data.dense.zeros(nrows*nrows, nrows*nrows)
-    out_array = out.as_ndarray()
+    out = np.zeros((nrows*nrows, nrows*nrows), dtype=np.complex128)
+    out_array = out
 
     np2term = np.zeros((nrows, nrows, 2), dtype=np.complex128)
     ac_term = np2term[:, :, 0]
@@ -112,7 +112,8 @@ cpdef Dense _br_term_dense(Data A, double[:, ::1] spectrum,
                         if b == d:
                             elem = elem - 0.5 * bd_term[a, c]
                         out_array[a * nrows + b, c * nrows + d] = elem
-    return out
+
+    return _data.Dense(out, copy=False).frozen(True)
 
 
 @cython.boundscheck(False)
@@ -392,7 +393,7 @@ cpdef Dense _br_cterm_dense(Data A, Data B, double[:, ::1] spectrum,
     cdef double complex elem
     cdef double complex[:,:] A_mat, B_mat, ac_term, bd_term
     cdef object np2term
-    cdef Dense out
+    cdef object out
     cdef double complex[::1, :] out_array
 
     if type(A) is Dense:
@@ -405,8 +406,8 @@ cpdef Dense _br_cterm_dense(Data A, Data B, double[:, ::1] spectrum,
     else:
         B_mat = B.to_array()
 
-    out = _data.dense.zeros(nrows*nrows, nrows*nrows)
-    out_array = out.as_ndarray()
+    out = np.zeros(nrows*nrows, nrows*nrows, dtype=np.complex128)
+    out_array = out
 
     np2term = np.zeros((nrows, nrows, 2), dtype=np.complex128)
     ac_term = np2term[:, :, 0]
@@ -432,7 +433,7 @@ cpdef Dense _br_cterm_dense(Data A, Data B, double[:, ::1] spectrum,
                         if b == d:
                             elem = elem - bd_term[a, c]
                         out_array[a * nrows + b, c * nrows + d] = elem * 0.5
-    return out
+    return _data.Dense(out, copy=False).frozen(True)
 
 
 @cython.boundscheck(False)

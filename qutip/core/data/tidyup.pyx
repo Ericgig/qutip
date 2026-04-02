@@ -21,7 +21,11 @@ cpdef CSR tidyup_csr(CSR matrix, double tol, bint inplace=True):
     cdef bint re, im
     cdef size_t row, ptr, ptr_start, ptr_end=0, nnz
     cdef double complex value
-    cdef CSR out = matrix if inplace else matrix.copy()
+    cdef CSR out
+    if inplace and not matrix.immutable:
+        out = matrix
+    else:
+        out = matrix.copy(deep=True)
     nnz = 0
     out.row_index[0] = 0
     for row in range(matrix.shape[0]):
@@ -40,11 +44,18 @@ cpdef CSR tidyup_csr(CSR matrix, double tol, bint inplace=True):
                 out.col_index[nnz] = matrix.col_index[ptr]
                 nnz += 1
         out.row_index[row + 1] = nnz
+
+    if matrix.immutable:
+        out = out.frozen(True)
     return out
 
 
 cpdef Dense tidyup_dense(Dense matrix, double tol, bint inplace=True):
-    cdef Dense out = matrix if inplace else matrix.copy()
+    cdef Dense out
+    if inplace and not matrix.immutable:
+        out = matrix
+    else:
+        out = matrix.copy(deep=True)
     cdef double complex value
     cdef size_t ptr
     for ptr in range(matrix.shape[0] * matrix.shape[1]):
@@ -53,11 +64,17 @@ cpdef Dense tidyup_dense(Dense matrix, double tol, bint inplace=True):
             matrix.data[ptr].real = 0
         if fabs(value.imag) < tol:
             matrix.data[ptr].imag = 0
+    if matrix.immutable:
+        out = out.frozen(True)
     return out
 
 
 cpdef Dia tidyup_dia(Dia matrix, double tol, bint inplace=True):
-    cdef Dia out = matrix if inplace else matrix.copy()
+    cdef Dia out
+    if inplace and not matrix.immutable:
+        out = matrix
+    else:
+        out = matrix.copy(deep=True)
     cdef base.idxint diag=0, new_diag=0, ONE=1, start, end, col
     cdef bint re, im, has_data
     cdef double complex value
@@ -94,6 +111,8 @@ cpdef Dia tidyup_dia(Dia matrix, double tol, bint inplace=True):
     if out._scipy is not None:
         out._scipy.data = out._scipy.data[:new_diag]
         out._scipy.offsets = out._scipy.offsets[:new_diag]
+    if matrix.immutable:
+        out = out.frozen(True)
     return out
 
 
@@ -108,12 +127,13 @@ tidyup = _Dispatcher(
         _inspect.Parameter('matrix', _inspect.Parameter.POSITIONAL_ONLY),
         _inspect.Parameter('tol', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
         _inspect.Parameter('inplace', _inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                           default=True),
+                           default=False),
     ]),
     name='tidyup',
     module=__name__,
     inputs=('matrix',),
     out=False,
+    inplace=(0,),
 )
 tidyup.__doc__ =\
     """

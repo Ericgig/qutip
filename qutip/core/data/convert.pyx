@@ -21,6 +21,8 @@ import numpy as np
 from scipy.sparse import dok_matrix, csgraph
 cimport cython
 from qutip.core.data.base cimport Data
+from qutip.core.data.lazy_operator cimport LazyOperator
+
 
 __all__ = ['to', 'create', '_parse_default_dtype']
 
@@ -47,6 +49,16 @@ class _Epsilon:
         if isinstance(other, _Epsilon) or other == 0:
             return self
         return other
+
+    def __mul__(self, other):
+        if other == 0:
+            return 0
+        return self
+
+    def __rmul__(self, other):
+        if other == 0:
+            return 0
+        return self
 
     def __lt__(self, other):
         """ positive number > _Epsilon > 0 """
@@ -440,6 +452,8 @@ cdef class _to:
                     ) from None
         elif type(dtype) is _DataGroup:
             return dtype
+        elif type(dtype) is LazyOperator:
+            return dtype.dtype
 
         raise TypeError(
             "Invalid dtype is neither a type nor a type name: " + repr(dtype))
