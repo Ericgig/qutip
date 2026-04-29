@@ -49,7 +49,7 @@ class IntegratorKrylov(Integrator):
 
         self._max_step = -np.inf
         self._krylov_dim = self.options["krylov_dim"]
-        self._hermitian = (1j*self.system(0)).isherm
+        self._hermitian = (1j * self.system(0)).isherm
 
         if self.options['algorithm'] == 'auto':
             if self._hermitian:
