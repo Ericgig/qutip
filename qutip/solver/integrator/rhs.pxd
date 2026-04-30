@@ -7,4 +7,4 @@ cdef class RHS:
     cdef object derivative
     cdef QobjEvo RHS
     cdef bint inplace, qevo_derr
-    cpdef Data apply(self, double t, Data state, Data out=None)
+    cdef Data apply(self, double t, Data state, Data out=*)

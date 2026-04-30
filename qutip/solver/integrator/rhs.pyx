@@ -3,6 +3,7 @@
 from qutip.core.data cimport Data
 from qutip.core.cy.qobjevo cimport QobjEvo
 from qutip.core.data.constant import zeros_like
+from qutip.core.data.add import iadd
 
 # Migrating integrator from supporting QobjEvo (matmul) only, to functions
 # with signature:
@@ -36,7 +37,7 @@ cdef class RHS:
     def __init__(
         self,
         derivative:Callable[[float, _data.Data], _data.Data] | QobjEvo,
-        inplace; bool=False
+        inplace: bool=False
     ):
         self.derivative = derivative
         self.inplace = inplace
@@ -55,15 +56,15 @@ cdef class RHS:
         """
         Cython interface for the derivative function.
         """
-        if qevo_derr:
+        if self.qevo_derr:
             return self.qevo.matmul_data(t, state, out=out)
 
         if self.inplace:
             if out is None:
-                out = zero_like(state)
+                out = zeros_like(state)
             self.derivative(t, state, out)
         elif out is None:
-            out = _data.iadd(self.derivative(t, state), out)
+            out = iadd(self.derivative(t, state), out)
         else:
             out = self.derivative(t, state)
         return out
