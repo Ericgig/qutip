@@ -50,7 +50,7 @@ class IntegratorScipyAdams(Integrator):
         """
         Initialize the solver
         """
-        self._ode_solver = ode(self.derivative.mul_np_vec)
+        self._ode_solver = ode(self._mul_np_vec)
         self._ode_solver.set_integrator('zvode')
         self._ode_solver._integrator = self._zvode(
             method=self.method,
@@ -64,7 +64,7 @@ class IntegratorScipyAdams(Integrator):
         """
         state = _data.dense.fast_from_numpy(vec)
         column_unstack_dense(state, self._size, inplace=True)
-        out = self.system.matmul_data(t, state)
+        out = self.derivative(t, state)
         column_stack_dense(out, inplace=True)
         return out.as_ndarray().ravel()
 
@@ -239,7 +239,7 @@ class IntegratorScipyDop853(Integrator):
         """
         Initialize the solver
         """
-        self._ode_solver = ode(self.derivative._mul_np_real_vec)
+        self._ode_solver = ode(self._mul_np_vec)
         # scipy 1.17 does not convert automatically anymore
         self.options["nsteps"] = int(self.options["nsteps"])
         self._ode_solver.set_integrator('dop853', **self.options)
@@ -251,7 +251,7 @@ class IntegratorScipyDop853(Integrator):
         """
         state = _data.dense.fast_from_numpy(vec.view(np.complex128))
         column_unstack_dense(state, self._size, inplace=True)
-        out = self.system.matmul_data(t, state)
+        out = self.derivative(t, state)
         column_stack_dense(out, inplace=True)
         return out.as_ndarray().ravel().view(np.float64)
 
@@ -383,7 +383,7 @@ class IntegratorScipylsoda(IntegratorScipyDop853):
         """
         Initialize the solver
         """
-        self._ode_solver = ode(self.derivative._mul_np_real_vec)
+        self._ode_solver = ode(self._mul_np_vec)
         self._ode_solver.set_integrator('lsoda', **self.options)
         self.name = "scipy lsoda"
 

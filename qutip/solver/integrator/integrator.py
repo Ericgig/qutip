@@ -1,6 +1,8 @@
 """ `Integrator`: ODE solver wrapper to use in qutip's Solver """
 import numpy as np
 from collections.abc import Iterator
+from .rhs import RHS
+from qutip.core import QobjEvo
 
 __all__ = ['Integrator', 'IntegratorException']
 
@@ -26,7 +28,7 @@ class Integrator:
 
     Parameters
     ----------
-    derivative: callable | RHS
+    derivative: callable | RHS | QobjEvo
         Function to integrate.
         Note that specific integrator may require other input as controlled by
         the ``RHS_format`` attribute.
@@ -70,7 +72,7 @@ class Integrator:
 
     def __init__(
         self,
-        derivative: Callable[[float, _data.Data], _data.Data] | RHS,
+        derivative: Callable[[float, _data.Data], _data.Data] | QobjEvo | RHS,
         options: dict
     ):
         if not isinstance(derivative, RHS):
