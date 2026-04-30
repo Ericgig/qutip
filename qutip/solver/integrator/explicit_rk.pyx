@@ -10,6 +10,7 @@ from qutip.core.data.mul cimport imul_data
 from qutip.core.data.tidyup import tidyup_csr
 from qutip.core.data.norm import frobenius_data
 from qutip.core.data.ode cimport cy_wrmn_error
+from qutip.solver.integrator.rhs cimport RHS
 from cpython.exc cimport PyErr_CheckSignals
 cimport cython
 import numpy as np
