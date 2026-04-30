@@ -3,6 +3,7 @@ from qutip.core import data as _data
 from ..integrator import IntegratorException, Integrator
 from ..sesolve import SESolver
 from ..mesolve import MESolver
+from qutip.core.data import Data
 
 
 __all__ = ["IntegratorKrylov"]

@@ -114,21 +114,21 @@ class TestIntegrator(TestIntegratorCte):
 
     @pytest.fixture(
         params=[key for key, integrator in SESolver.avail_integrators().items()
-                if integrator.support_time_dependant]
+                if integrator.RHS_format == "callable"]
     )
     def se_method(self, request):
         return request.param
 
     @pytest.fixture(
         params=[key for key, integrator in MESolver.avail_integrators().items()
-                if integrator.support_time_dependant]
+                if integrator.RHS_format == "callable"]
     )
     def me_method(self, request):
         return request.param
 
     @pytest.fixture(
         params=[key for key, integrator in MCSolver.avail_integrators().items()
-                if integrator.support_time_dependant]
+                if integrator.RHS_format == "callable"]
     )
     def mc_method(self, request):
         return request.param

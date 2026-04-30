@@ -1,8 +1,9 @@
 """ `Integrator`: ODE solver wrapper to use in qutip's Solver """
 import numpy as np
-from collections.abc import Iterator
+from collections.abc import Iterator, Callable
 from .rhs import RHS
 from qutip.core import QobjEvo
+from qutip.core.data import Data
 
 __all__ = ['Integrator', 'IntegratorException']
 
@@ -72,7 +73,7 @@ class Integrator:
 
     def __init__(
         self,
-        derivative: Callable[[float, _data.Data], _data.Data] | QobjEvo | RHS,
+        derivative: Callable[[float, Data], Data] | QobjEvo | RHS,
         options: dict
     ):
         if not isinstance(derivative, RHS):
@@ -91,7 +92,7 @@ class Integrator:
         """
         raise NotImplementedError
 
-    def set_state(self, t: float, state: _data.Data):
+    def set_state(self, t: float, state: Data):
         """
         Set the state of the ODE solver.
 
@@ -110,7 +111,7 @@ class Integrator:
 
     def integrate(
         self, t: float, copy: bool = True
-    ) -> tuple[float, _data.Data]:
+    ) -> tuple[float, Data]:
         """
         Evolve to t.
 
@@ -132,7 +133,7 @@ class Integrator:
         """
         raise NotImplementedError
 
-    def mcstep(self, t: float, copy: bool = True) -> tuple[float, _data.Data]:
+    def mcstep(self, t: float, copy: bool = True) -> tuple[float, Data]:
         """
         Evolve toward the time ``t``.
 
@@ -178,7 +179,7 @@ class Integrator:
             )
         return self.integrate(t, copy)
 
-    def get_state(self, copy: bool = True) -> tuple[float, _data.Data]:
+    def get_state(self, copy: bool = True) -> tuple[float, Data]:
         """
         Obtain the state of the solver as a pair (t, state).
 
@@ -194,7 +195,7 @@ class Integrator:
         """
         raise NotImplementedError
 
-    def run(self, tlist: list[float]) -> Iterator[tuple[float, _data.Data]]:
+    def run(self, tlist: list[float]) -> Iterator[tuple[float, Data]]:
         """
         Integrate the system yielding the state for each times in tlist.
 
