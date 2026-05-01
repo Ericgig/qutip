@@ -66,26 +66,53 @@ class DysolvePropagator:
     ):
         # System
         self._eigenenergies, self._basis = H_0.eigenstates()
+        self.H_0 = H_0
         self._H_0 = H_0.transform(self._basis)
-        self._X = X.transform(self._basis)
-        self._elems = self._X.full().flatten()
-        self._omega = omega
+        self.td = False
+        self.perturbation = []
+        for perturbation in X:
+            oper = perturbation[0]
+            omega = perturbation[1]
+            if len(perturbation) >= 3:
+                form = perturbation[2]
+            else:
+                form = "cos"
+            if len(perturbation) >= 4:
+                coeff = perturbation[3]
+            else:
+                coeff = 1.
+            if isinstance(coeff, Coefficient):
+                self.td = True
+            else:
+                oper = oper * coeff
+                coeff = coefficient(1.)
 
-        # Options
-        if options is None:
-            self.max_order = 4
-            self.a_tol = 1e-10
-            self.max_dt = 0.1
-        else:
-            self.max_order = options.get('max_order', 4)
-            self.max_dt = options.get('max_dt', 0.1)
-            self.a_tol = options.get('a_tol', 1e-10)
+            oper = oper.transform(self._basis)
+            if form == "cos":
+                self.perturbation.append((oper * 0.5, omega, coeff))
+                self.perturbation.append((oper * 0.5, -omega, coeff))
+            elif form == "sin":
+                self.perturbation.append((oper * -0.5j, omega, coeff))
+                self.perturbation.append((oper * 0.5j, -omega, coeff))
+            elif form == "exp":
+                self.perturbation.append((oper, omega, coeff))
+
+        self.options = {
+            "max_order" : 4,
+            "a_tol" : 1e-10,
+            "max_dt" : 0.1,
+            "r_tol" : 10,
+            "envelope_order" : 0,
+        }
+        if options:
+            self.options.update(options)
 
         # Memoization
         self._dt_Sns = {}
 
         # Time propagator
-        self.U = None
+        self.U = qeye_like(self.H_0).full()
+        self.t = 0
 
     def __call__(self, t_f: float, t_i: float = 0.0) -> Qobj:
         """
@@ -110,70 +137,76 @@ class DysolvePropagator:
         If t_f - t_i > max_dt, splits the evolution into smaller ones
         to then reconstruct U(t_f, t_i).
 
-        Memoization is used. First call may be slow but the next calls
-        should be faster.
+        Memoization is used. When ``t_f`` is a multiple of max_dt,
+        first call may be slow but the next calls should be faster.
 
         """
+        dt = self.options["max_dt"]
+        if t_i == 0 and abs(t_f - self.t) <  abs(t_f - t_i):
+            t_i = self.t
+            U = self.U
+        else:
+            U = qeye_like(self.H_0).full()
         time_diff = t_f - t_i
-        dt = self.max_dt * np.sign(time_diff)
-        n_steps = abs(int(time_diff / self.max_dt))
+        n_steps = abs(int(time_diff / dt))
 
-        U = self._compute_subprop(t_i, dt)
+        if n_steps == 0:
+            pass
+        elif time_diff > 0:
+            for j in range(0, n_steps):
+                U = self._get_subprop(t_i + j * dt) @ U
+        else:
+            for j in range(n_steps):
+                U = self._get_subprop(t_i - (j + 1) * dt).dag() @ U
 
-        for j in range(1, n_steps):
-            U = self._compute_subprop(t_i + j*dt, dt) @ U
+        # We only save propagator at time multiple of max_dt
+        self.U = U
+        self.t = t_i + n_steps * dt * np.sign(time_diff)
 
-        remaining = time_diff - n_steps*dt
-        if abs(remaining) > self.a_tol:
-            dt = remaining
-            U = self._compute_subprop(t_f - dt, dt) @ U
+        remaining = time_diff - n_steps * dt * np.sign(time_diff)
+        if abs(remaining) > self.options["a_tol"]:
+            U = self._get_subprop(t_f - remaining, remaining) @ U
 
-        self.U = Qobj(U, self._H_0._dims, copy=False).transform(
+        return Qobj(U, self._H_0._dims, copy=False).transform(
             self._basis, True
         )
 
-        return self.U
-
-    def _update_matrix_elements(self, current: ArrayLike) -> ArrayLike:
+    def _get_subprop(self, current_time: float, dt: float = None) -> ArrayLike:
         """
-        Reuses the current matrix elements (order n-1) to compute the
-        matrix elements for the order n.
+        Computes a subpropagator U(current_time + dt, current_time).
 
         Parameters
         ----------
-        current : ArrayLike
-            The current matrix elements (for the order n-1)..
+        current_time : float
+            The starting time of the evolution. Can be positive or negative.
+
+        dt : float
+            The time increment.
 
         Returns
         -------
-        matrix_elements : ArrayLike
-            The new matrix elements for the order n.
+        subpropagator : ArrayLike
+            U(current_time + dt, current_time).
+
         """
-        if current is None:
-            return self._elems
-        else:
-            shape = self._X.shape[0]
-            a = np.tile(current, shape)
-            b = np.repeat(self._elems, len(current)//shape)
-            return a * b
+        if dt is None:
+            dt = self.options["max_dt"]
+        Sns = self._compute_Sns(dt)
 
-        # WIP:
-        # The following is an attempt to use scipy.sparse to store "current".
-        # There can be a lot of zeros, so scipy.sparse could be useful here.
-        # This involves more operations than the implementation above because
-        # "current" is a vector and scipy.sparse only accepts matrices.
-        # A better approach is necessary to use the full potential of
-        # scipy.sparse.
+        N = len(self._eigenenergies)
+        num_omega = len(self.perturbation)
 
-        # if current is None:
-        #     return elems
-        # else:
-        #     x_shape = self._X.shape[0]
-        #     a = sp.sparse.hstack([current]*x_shape)
-        #     b = sp.sparse.vstack(
-        #             [elems]*(current.shape[1]//x_shape)
-        #     ).transpose().reshape(a.shape)
-        #     return a.multiply(b)
+        subpropagator = np.zeros((N, N), dtype=np.complex128)
+        subpropagator += Sns[0]
+
+        ws_vec = np.array([p[1] for p in self.perturbation])
+        ws = np.add.outer(self._eigenenergies, -self._eigenenergies)
+
+        for n in range(1, self.options["max_order"] + 1):
+            ws = np.add.outer(ws_vec, ws)
+            subpropagator += (Sns[n] * np.exp(1j * ws * current_time)).reshape((-1, N, N)).sum(axis=0)
+
+        return subpropagator
 
     def _compute_Sns(self, dt: float) -> dict:
         """
@@ -195,96 +228,101 @@ class DysolvePropagator:
         """
         if dt in self._dt_Sns:
             return self._dt_Sns[dt]
-
         else:
-            Sns = {}
-            length = len(self._eigenenergies)
-            exp_H_0 = (-1j*dt*self._H_0).expm().full()
-            current_matrix_elements = None
+            self._dt_Sns[dt] = self._make_SNS_sparse(dt)
+            return self._dt_Sns[dt]
 
-            Sns[0] = exp_H_0
+    def _make_SNS_sparse(self, dt: float) -> dict:
 
-            for n in range(1, self.max_order + 1):
-                omega_vectors = np.fromiter(
-                    itertools.product([self._omega, -self._omega], repeat=n),
-                    np.dtype((float, (n,)))
+        def _to_COO_format(matrix):
+            """
+            Convert to COO, (location, data) pair.
+            """
+            coo = scipy.sparse.coo_array(matrix)
+            idx = np.c_[coo.row, coo.col]
+            return idx, coo.data
+
+        def _outer_matmul(left_coo, right_coo):
+            """
+            Outer matmul of COO arrays: einsum("abc,cde->abcde")
+            """
+            idx_l, data_l = left_coo
+            idx_r, data_r = right_coo
+            new_idx = []
+            new_data = []
+
+            for j in range(idx_r.shape[0]):
+                idx = np.where(idx_l[:, -1] == idx_r[j, 0])[0]
+                for i in idx:
+                    new_idx.append(np.r_[idx_l[i, :], idx_r[j, 1:]])
+                    new_data.append(data_l[i] * data_r[j])
+            return np.array(new_idx), np.array(new_data)
+
+        Sns = {}
+        energies = self._eigenenergies
+        num_ls = len(energies)
+        omegas = [p[1] for p in self.perturbation]
+        num_ws = len(omegas)
+
+        dE = energies[:, np.newaxis] - energies[np.newaxis, :]
+        exp_H_0_diag = np.exp(-1j * energies * dt)
+        exp_H_0 = np.diag(exp_H_0_diag)
+        Sns[0] = exp_H_0
+
+        # Since usually the operators comes in pairs, we only
+        # store unique operators and keeps and index from the
+        # pertubation index to it's location.
+        path_cache = []
+        opers_loc = []
+        for i, oper in enumerate([p[0] for p in self.perturbation]):
+            if oper not in path_cache:
+                opers_loc.append(len(path_cache))
+                path_cache.append(oper)
+            else:
+                opers_loc.append(path_cache.index(oper))
+
+        path_cache = {
+            (idx,): _to_COO_format(oper.to("csr").data_as())
+            for idx, oper in enumerate(path_cache)
+        }
+
+        for n in range(1, self.options["max_order"] + 1):
+            shape = [num_ws] * n + [num_ls, num_ls]
+            Sn = np.zeros(shape, dtype=np.complex128)
+
+            for pert_idx in itertools.product(range(num_ws), repeat=n):
+                current_omegas = [omegas[i] for i in pert_idx]
+                unique_idx = tuple(opers_loc[idx] for idx in pert_idx)
+                if unique_idx not in path_cache:
+                    path_cache[unique_idx] = _outer_matmul(
+                        path_cache[unique_idx[:1]], path_cache[unique_idx[1:]]
+                    )
+
+                paths, amplitudes = path_cache[unique_idx]
+                ws_matrix = np.zeros((len(amplitudes), n))
+                for i in range(n):
+                    ws_matrix[:, i] = (
+                        current_omegas[i] + dE[paths[:, i], paths[:, i+1]]
+                    )
+
+                integrals = np.array([
+                    cy_compute_integrals(row, dt) for row in ws_matrix
+                ])
+                start_indices = paths[:, 0]
+                end_indices = paths[:, -1]
+                np.add.at(
+                    Sn[*pert_idx],
+                    (start_indices, end_indices),
+                    amplitudes * integrals
                 )
 
-                lambdas = np.fromiter(
-                    itertools.product(self._eigenenergies, repeat=n + 1),
-                    np.dtype((float, (n+1,)))
-                )
-                diff_lambdas = -np.diff(lambdas)[:, ::-1]
+                Sn[*pert_idx] = exp_H_0 @ Sn[*pert_idx]
 
-                ket_bra_idx = np.vstack(
-                    (np.repeat(np.arange(0, length), length**n),
-                     np.tile(np.arange(0, length), length**n))
-                ).T
+            Sn *= (-1j) ** n
+            Sns[n] = Sn
 
-                Sn = np.zeros((len(omega_vectors), length, length),
-                              dtype=np.complex128
-                              )
+        return Sns
 
-                # Compute matrix elements
-                current_matrix_elements = self._update_matrix_elements(
-                    current_matrix_elements
-                )
-
-                for i, omega_vector in enumerate(omega_vectors):
-                    # Compute integrals
-                    ls_ws = omega_vector + diff_lambdas
-
-                    for j, ws in enumerate(ls_ws):
-                        if current_matrix_elements[j] != 0:
-                            x = cy_compute_integrals(
-                                ws, dt) * current_matrix_elements[j]
-                            Sn[i, ket_bra_idx[j, 0], ket_bra_idx[j, 1]] += x
-
-                    Sn[i] *= (-1j / 2) ** n
-                    Sn[i] = exp_H_0 @ Sn[i]
-
-                Sns[n] = Sn
-
-            self._dt_Sns[dt] = Sns
-            return Sns
-
-    def _compute_subprop(self, current_time: float, dt: float) -> ArrayLike:
-        """
-        Computes a subpropagator U(current_time + dt, current_time).
-
-        Parameters
-        ----------
-        current_time : float
-            The starting time of the evolution. Can be positive or negative.
-
-        dt : float
-            The time increment.
-
-        Returns
-        -------
-        subpropagator : ArrayLike
-            U(current_time + dt, current_time).
-
-        """
-        Sns = self._compute_Sns(dt)
-
-        subpropagator = np.zeros(
-            (len(self._eigenenergies), len(self._eigenenergies)),
-            dtype=np.complex128
-        )
-        subpropagator += Sns[0]
-
-        for n in range(1, self.max_order + 1):
-            omega_vectors = np.fromiter(
-                itertools.product([self._omega, -self._omega], repeat=n),
-                np.dtype((float, (n,)))
-            )
-            subpropagator += sum(
-                Sns[n] * np.exp(1j*np.sum(omega_vectors, axis=1)*current_time)
-                [:, np.newaxis, np.newaxis]
-            )
-
-        return subpropagator
 
 
 def dysolve_propagator(
