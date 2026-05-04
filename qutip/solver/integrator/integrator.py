@@ -65,7 +65,7 @@ class Integrator:
     integrator_options = {}
     _options = None
     # How the rhs is passed to the integrator.
-    # "Solver", "system", "QobjEvo", or "callable".
+    # "Solver", "matrix", or "callable".
     RHS_format = "callable"
     # The name of the integrator
     name = None

@@ -63,7 +63,7 @@ cdef class RHS:
             if out is None:
                 out = zeros_like(state)
             self.derivative(t, state, out)
-        elif out is None:
+        elif out is not None:
             out = iadd(self.derivative(t, state), out)
         else:
             out = self.derivative(t, state)

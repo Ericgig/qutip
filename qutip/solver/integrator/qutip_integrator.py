@@ -201,14 +201,14 @@ class IntegratorDiag(Integrator):
         self._is_set = False  # get_state can be used and return a valid state.
         self._options = self.integrator_options.copy()
         self.options = options
-        if not system.isconstant:
-            raise ValueError("Hamiltonian system must be constant to use "
-                             "diagonalized method")
+        #if not system.isconstant:
+        #    raise ValueError("Hamiltonian system must be constant to use "
+        #                     "diagonalized method")
 
         self._dt = 0.
         self._expH = None
-        H0 = _data.to(self.rhs, self.options["eigensolver_dtype"])
-        self.diag, self.U = _data.eigs(H0.data, False)
+        H0 = _data.to(self.options["eigensolver_dtype"], self.rhs)
+        self.diag, self.U = _data.eigs(self.rhs, False)
         self.diag = self.diag.reshape((-1, 1))
         self.Uinv = _data.inv(self.U)
         self.name = "qutip diagonalized"

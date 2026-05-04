@@ -63,12 +63,12 @@ class IntegratorScipyAdams(Integrator):
         Interface between scipy which use numpy and the driver, which use data.
         """
         state = _data.dense.fast_from_numpy(vec)
-        column_unstack_dense(state, self._size, inplace=True)
-        out = self.derivative(t, state)
-        column_stack_dense(out, inplace=True)
+        state = column_unstack_dense(state, self._size, inplace=True)
+        out = _data.to(_data.Dense, self.derivative(t, state))
+        out = column_stack_dense(out, inplace=out.fortran)
         return out.as_ndarray().ravel()
 
-    def set_state(self, t: float, state: _data.Data):
+    def set_state(self, t: float, state0: _data.Data):
         self._is_set = True
         self._back = t
         self._front = t
@@ -251,8 +251,8 @@ class IntegratorScipyDop853(Integrator):
         """
         state = _data.dense.fast_from_numpy(vec.view(np.complex128))
         column_unstack_dense(state, self._size, inplace=True)
-        out = self.derivative(t, state)
-        column_stack_dense(out, inplace=True)
+        out = _data.to(_data.Dense, self.derivative(t, state))
+        out = column_stack_dense(out, inplace=out.fortran)
         return out.as_ndarray().ravel().view(np.float64)
 
     def integrate(
@@ -296,7 +296,7 @@ class IntegratorScipyDop853(Integrator):
             )
         return t, state
 
-    def set_state(self, t: float, state: _data.Data):
+    def set_state(self, t: float, state0: _data.Data):
         self._is_set = True
         self._mat_state = state0.shape[1] > 1
         self._size = state0.shape[0]
@@ -401,9 +401,11 @@ class IntegratorScipylsoda(IntegratorScipyDop853):
         self, t: float, copy: bool = True
     ) -> tuple[float, _data.Data]:
         self._check_handle()
-        return super().integrate(t, copy)
+        out = super().integrate(t, copy)
+        self._front = self._ode_solver._integrator.rwork[12]
+        return out
 
-    def set_state(self, t: float, state: _data.Data):
+    def set_state(self, t: float, state0: _data.Data):
         self._front = t
         super().set_state(t, state0)
         self._back = self.get_state()
