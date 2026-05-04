@@ -1,67 +1,93 @@
 from qutip import Qobj, qeye_like
 from .cy.dysolve import cy_compute_integrals
 from numpy.typing import ArrayLike
+from typing import Literal
 import numpy as np
 import scipy as sp
 from numbers import Number
 import itertools
 
 
-__all__ = ['DysolvePropagator', 'dysolve_propagator']
+__all__ = ['Dysolve', 'dysolve_propagator']
 
 
-class DysolvePropagator:
+Drive = (
+    tuple[Qobj, float] |
+    tuple[Qobj, float, Literal["cos", "sin", "exp"]] |
+    tuple[Qobj, float, Literal["cos", "sin", "exp"], Coefficient]
+)
+
+
+# TODO: Envelope's args updatable.
+
+
+class Dysolve:
     """
-    A generator of propagator using Dysolve.
-    https://arxiv.org/abs/2012.09282
+    A solver of closed system using Dyson series.
+
+    Compute the evolution for an Hamiltonian of the form:
+
+        H = H0 + sum_i X_i exp(1j * w_i * t) * E_i(t)
+
+    This method computes analytically the propagator over a time interval.
+    This allows very fast computation of driven system. It converge faster the
+    higher the frequency is, which is the oposite of sesolve.
+
+    Original paper: https://arxiv.org/abs/2012.09282
 
     Parameters
     ----------
     H_0 : Qobj
-        The base hamiltonian of the system.
+        The base Hamiltonian of the system.
 
-    X : Qobj
-        A cosine perturbation applied on the system.
+    drive : list[tuple[Qobj, float, /, str, Coefficient]]
+        The drive of the Hamiltonian
+        List of perturbations applied on the system.
+        Each perturbation is a tuple of 2 to 4 values:
 
-    omega : float
-        The frequency of the cosine perturbation.
+            (operator, frequency, form, envelope)
+
+        operator : Qobj
+            Operator of the pertubation.
+
+        frequency : float
+            Frequency of the pertubation.
+
+        form : Literal["cos", "sin", "exp"], default : "cos"
+            Which of ``cos(w*t)``, ``sin(w*t)``, ``exp(1j*w*t)`` is the form of
+            the drive for the perturbation.
+
+        envelope : Coefficient, optional
+            If provided, a slow moving envelope to the drive.
 
     options : dict, optional
         Extra parameters.
 
-        - "max_order"
-
-            A given integer to indicate the highest order of
+        - | "max_order"
+          | A given integer to indicate the highest order of
             approximation used to compute the propagators (default is 4).
             This corresponds to n in eq. (4) of Ref.
-
-        - "a_tol"
-
-            The absolute tolerance used when computing the propagators
+        - | "a_tol"
+          | The absolute tolerance used when computing the propagators
             (default is 1e-10).
-
-        - "max_dt"
-
-            The maximum time increment used when computing propagators
+        - | "step_size"
+          | The maximum time increment used when computing propagators
             (default is 0.1).
-
-    Notes
-    -----
-    The system's hamiltonian must be of the form
-    H = H_0 + cos(omega*t)X for Dysolve to work.
-
-    For the moment, only a cosine perturbation is allowed. Dysolve can
-    manage more exotic perturbations, but this is not implemented yet.
-
-    .. note:: Experimental.
-
+        - | store_final_state : bool, False
+          | Whether or not to store the final state of the evolution in the
+            result class.
+        - | store_states : bool, None
+          | Whether or not to store the state vectors or density matrices.
+            On `None` the states will be saved if no expectation operators are
+            given.
+        - | normalize_output : bool, False
+          | Normalize output state to hide ODE numerical errors.
     """
 
     def __init__(
         self,
         H_0: Qobj,
-        X: Qobj,
-        omega: float,
+        drive: list[Drive],
         options: dict[str] = None,
     ):
         # System
@@ -69,18 +95,13 @@ class DysolvePropagator:
         self.H_0 = H_0
         self._H_0 = H_0.transform(self._basis)
         self.td = False
-        self.perturbation = []
-        for perturbation in X:
+        self.perturbations = []
+        for perturbation in drive:
             oper = perturbation[0]
             omega = perturbation[1]
-            if len(perturbation) >= 3:
-                form = perturbation[2]
-            else:
-                form = "cos"
-            if len(perturbation) >= 4:
-                coeff = perturbation[3]
-            else:
-                coeff = 1.
+            form = perturbation[2] if len(perturbation) >= 2 else "cos"
+            coeff = perturbation[3] if len(perturbation) >= 3 else 1.
+
             if isinstance(coeff, Coefficient):
                 self.td = True
             else:
@@ -89,20 +110,25 @@ class DysolvePropagator:
 
             oper = oper.transform(self._basis)
             if form == "cos":
-                self.perturbation.append((oper * 0.5, omega, coeff))
-                self.perturbation.append((oper * 0.5, -omega, coeff))
+                oper = oper * 0.5
+                self.perturbations.append((oper, omega, coeff))
+                self.perturbations.append((oper, -omega, coeff))
             elif form == "sin":
-                self.perturbation.append((oper * -0.5j, omega, coeff))
-                self.perturbation.append((oper * 0.5j, -omega, coeff))
+                # TODO: add factor for same oper
+                self.perturbations.append((oper * -0.5j, omega, coeff))
+                self.perturbations.append((oper * 0.5j, -omega, coeff))
             elif form == "exp":
-                self.perturbation.append((oper, omega, coeff))
+                self.perturbations.append((oper, omega, coeff))
 
         self.options = {
             "max_order" : 4,
             "a_tol" : 1e-10,
-            "max_dt" : 0.1,
-            "r_tol" : 10,
-            "envelope_order" : 0,
+            "step_size" : 0.1,
+            "store_final_state" : False,
+            "store_states" : None,
+            "normalize_output" : False,
+            # "r_tol" : 10,
+            # "envelope_order" : 0,
         }
         if options:
             self.options.update(options)
@@ -114,7 +140,7 @@ class DysolvePropagator:
         self.U = qeye_like(self.H_0).full()
         self.t = 0
 
-    def __call__(self, t_f: float, t_i: float = 0.0) -> Qobj:
+    def propagator(self, t_f: float, t_i: float = 0.0) -> Qobj:
         """
         Computes the propagator from t_i to t_f. If t_i is not provided,
         computes the propagator from 0 to t_f.
@@ -134,14 +160,14 @@ class DysolvePropagator:
 
         Notes
         -----
-        If t_f - t_i > max_dt, splits the evolution into smaller ones
+        If t_f - t_i > step_size, splits the evolution into smaller ones
         to then reconstruct U(t_f, t_i).
 
-        Memoization is used. When ``t_f`` is a multiple of max_dt,
+        Memoization is used. When ``t_f`` is a multiple of step_size,
         first call may be slow but the next calls should be faster.
 
         """
-        dt = self.options["max_dt"]
+        dt = self.options["step_size"]
         if t_i == 0 and abs(t_f - self.t) <  abs(t_f - t_i):
             t_i = self.t
             U = self.U
@@ -159,7 +185,7 @@ class DysolvePropagator:
             for j in range(n_steps):
                 U = self._get_subprop(t_i - (j + 1) * dt).dag() @ U
 
-        # We only save propagator at time multiple of max_dt
+        # We only save propagator at time multiple of step_size
         self.U = U
         self.t = t_i + n_steps * dt * np.sign(time_diff)
 
@@ -170,6 +196,81 @@ class DysolvePropagator:
         return Qobj(U, self._H_0._dims, copy=False).transform(
             self._basis, True
         )
+
+    def run(
+        self,
+        state0: Qobj,
+        tlist: ArrayLike,
+        *,
+        e_ops: EopsLike | list[EopsLike] | dict[Any, EopsLike] = None,
+        args: dict[str, Any] = None,
+    ) -> Result:
+        """
+        Do the evolution of the Quantum system.
+
+        For a ``state0`` at time ``tlist[0]`` do the evolution as directed by
+        given hamiltonian and drive and for each time in ``tlist`` store the
+        state and/or expectation values in a :class:`.Result`.
+
+        Parameters
+        ----------
+        state0 : :obj:`.Qobj`
+            Initial state of the evolution.
+
+        tlist : list of double
+            Time for which to save the results (state and/or expect) of the
+            evolution. The first element of the list is the initial time of the
+            evolution. Each times of the list must be increasing, but does not
+            need to be uniformy distributed.
+
+        args : dict, optional
+            Change the ``args`` of the rhs for the evolution.
+
+        e_ops : Qobj, QobjEvo, callable, list, or dict optional
+            Single, list or dict of Qobj, QobjEvo or callable to compute the
+            expectation values. Function[s] must have the signature
+            f(t : float, state : Qobj) -> expect.
+
+        Returns
+        -------
+        results : :obj:`.Result`
+            Results of the evolution. States and/or expect will be saved. You
+            can control the saved data in the options.
+        """
+        dt = self.options["step_size"]
+        if state0._dims[0] != self.H_0,_dims[1]:
+            raise TypeError(...)  # TODO
+
+        results = Result(
+            e_ops,
+            self.options,
+            solver="Dyson Series",
+            stats={},
+        )
+        results.add(tlist[0], state0)
+
+        t_state = tlist[0]
+        state = state0.data
+        for t in tlist[1:]:
+            time_diff = t - t_prev
+            n_steps = int(time_diff / dt)
+            if n_steps == 0:
+                pass
+            elif time_diff > 0:
+                for _ in range(0, n_steps):
+                    state = _data.Dense(self._get_subprop(t_state)) @ state
+                    t_state += dt
+            remaining = t - t_state
+            if abs(remaining) > self.options["a_tol"]:
+                state_t = (
+                    _data.Dense(self._get_subprop(t - remaining, remaining))
+                    @ state
+                )
+            else:
+                state_t = state
+            results.add(t, qt.Qobj(state_t, dims=state0._dims))
+
+        return results
 
     def _get_subprop(self, current_time: float, dt: float = None) -> ArrayLike:
         """
@@ -190,21 +291,34 @@ class DysolvePropagator:
 
         """
         if dt is None:
-            dt = self.options["max_dt"]
+            dt = self.options["step_size"]
         Sns = self._compute_Sns(dt)
 
         N = len(self._eigenenergies)
-        num_omega = len(self.perturbation)
+        num_omega = len(self.perturbations)
 
         subpropagator = np.zeros((N, N), dtype=np.complex128)
         subpropagator += Sns[0]
 
-        ws_vec = np.array([p[1] for p in self.perturbation])
+        ws_vec = np.array([p[1] for p in self.perturbations])
         ws = np.add.outer(self._eigenenergies, -self._eigenenergies)
+        if self.td:
+            envelopes = np.array([
+                p[2](current_time + dt / 2) for p in self.perturbations
+            ])
 
         for n in range(1, self.options["max_order"] + 1):
             ws = np.add.outer(ws_vec, ws)
-            subpropagator += (Sns[n] * np.exp(1j * ws * current_time)).reshape((-1, N, N)).sum(axis=0)
+            Sns_n = Sns[n]
+            if self.td:
+                Sns_n =  np.einsum(
+                    Sns_n, np.arange(n + 2),
+                    *[envelopes, [0]]*n,
+                    np.arange(n + 2)
+                )
+            subpropagator += (
+                Sns_n * np.exp(1j * ws * current_time)
+            ).reshape((-1, N, N)).sum(axis=0)
 
         return subpropagator
 
@@ -261,7 +375,7 @@ class DysolvePropagator:
         Sns = {}
         energies = self._eigenenergies
         num_ls = len(energies)
-        omegas = [p[1] for p in self.perturbation]
+        omegas = [p[1] for p in self.perturbations]
         num_ws = len(omegas)
 
         dE = energies[:, np.newaxis] - energies[np.newaxis, :]
@@ -274,7 +388,7 @@ class DysolvePropagator:
         # pertubation index to it's location.
         path_cache = []
         opers_loc = []
-        for i, oper in enumerate([p[0] for p in self.perturbation]):
+        for i, oper in enumerate([p[0] for p in self.perturbations]):
             if oper not in path_cache:
                 opers_loc.append(len(path_cache))
                 path_cache.append(oper)
@@ -324,28 +438,49 @@ class DysolvePropagator:
         return Sns
 
 
-
 def dysolve_propagator(
-        H_0: Qobj,
-        X: Qobj,
-        omega: float,
-        t: float | list[float],
-        options: dict[str] = None
+    H_0: Qobj,
+    drive: list[Drive]
+    t: float | list[float],
+    options: dict[str] = None
 ) -> Qobj | list[Qobj]:
     """
-    A generator of propagator(s) using Dysolve.
-    https://arxiv.org/abs/2012.09282.
+    A generator of propagator(s) using Dyson series.
+
+    Compute the propagator for an Hamiltonian of the form:
+
+        H = H0 + sum_i X_i exp(1j * w_i * t) * E_i(t)
+
+    This method computes analytically the propagator over a time interval.
+    This allows very fast computation of driven system. It converge faster the
+    higher the frequency is, which is the oposite of sesolve.
+
+    Original paper: https://arxiv.org/abs/2012.09282
 
     Parameters
     ----------
     H_0 : Qobj
         The hamiltonian of the system.
 
-    X : Qobj
-        A cosine perturbation applied on the system.
+    drive : list[tuple[Qobj, float, /, str, Coefficient]]
+        The drive of the Hamiltonian
+        List of perturbations applied on the system.
+        Each perturbation is a tuple of 2 to 4 values:
 
-    omega : float
-        The frequency of the cosine perturbation.
+            (operator, frequency, form, envelope)
+
+        operator : Qobj
+            Operator of the pertubation.
+
+        frequency : float
+            Frequency of the pertubation.
+
+        form : Literal["cos", "sin", "exp"], default : "cos"
+            Which of ``cos(w*t)``, ``sin(w*t)``, ``exp(1j*w*t)`` is the form of
+            the drive for the perturbation.
+
+        envelope : Coefficient, optional
+            If provided, a slow moving envelope to the drive.
 
     t : float | list[float]
         Time or list of times for which to evaluate the propagator(s). If t
@@ -358,20 +493,15 @@ def dysolve_propagator(
     options : dict, optional
         Extra parameters.
 
-        - "max_order"
-
-            A given integer to indicate the highest order of
+        - | "max_order"
+          | A given integer to indicate the highest order of
             approximation used to compute the propagators (default is 4).
             This corresponds to n in eq. (4) of Ref.
-
-        - "a_tol"
-
-            The absolute tolerance used when computing the propagators
+        - | "a_tol"
+          | The absolute tolerance used when computing the propagators
             (default is 1e-10).
-
-        - "max_dt"
-
-            The maximum time increment used when computing propagators
+        - | "step_size"
+          | The maximum time increment used when computing propagators
             (default is 0.1).
 
     Returns
@@ -379,32 +509,106 @@ def dysolve_propagator(
     Us : Qobj | list[Qobj]
         The time evolution propagator U(t,0) if t is a single number or else
         a list of propagators [U(t[i], t[0])] for all elements t[i] in t.
-
-    Notes
-    -----
-    The system's hamiltonian must be of the form
-    H = H_0 + cos(omega*t)X for Dysolve to work.
-
-    For the moment, only a cosine perturbation is allowed. Dysolve can
-    manage more exotic perturbations, but this is not implemented yet.
-
-    .. note:: Experimental.
-
     """
+    dysolve = Dysolve(H_0, drive, options)
     if isinstance(t, Number):
-        dysolve = DysolvePropagator(H_0, X, omega, options)
-        return dysolve(t)
-
+        Us = dysolve.propagator(t)
     else:
         Us = []
-        Us.append(qeye_like(H_0))  # U(t_0, t_0) = identity
-
-        dysolve = DysolvePropagator(H_0, X, omega, options)
-        for i in range(len(t[:-1])):  # Compute individual U(t[i+1], t[i])
-            U = dysolve(t[i+1], t[i])
-            Us.append(U)
-
-        for i in range(1, len(Us)):  # [U(t[i], t[0])]
-            Us[i] = Us[i] @ Us[i - 1]
+        Us.append(qeye_like(H_0))
+        for i in range(len(t[:-1])):
+            Us.append(dysolve.propagator(t[i+1], t[0]))
 
     return Us
+
+
+def dysolve(
+    H_0: Qobj,
+    drive: list[Drive],
+    psi0: Qobj,
+    tlist: ArrayLike,
+    *,
+    e_ops: EopsLike | list[EopsLike] | dict[Any, EopsLike] = None,
+    options: dict[str] = None
+) -> Qobj | list[Qobj]:
+    """
+    Solve the Schrodinger equation for a driven system using a Dyson series
+    expansion.
+
+    Compute the evolution for an Hamiltonian of the form:
+
+        H = H0 + sum_i X_i exp(1j * w_i * t) * E_i(t)
+
+    It's optimized for high-frequency perturbations where standard ODE solvers
+    (like sesolve) become computationally expensive.
+
+    Original paper: https://arxiv.org/abs/2012.09282
+
+    Parameters
+    ----------
+    H_0 : Qobj
+        The hamiltonian of the system.
+
+    drive : list[tuple[Qobj, float, /, str, Coefficient]]
+        The drive of the Hamiltonian
+        List of perturbations applied on the system.
+        Each perturbation is a tuple of 2 to 4 values:
+
+            (operator, frequency, form, envelope)
+
+        operator : Qobj
+            Operator of the pertubation.
+
+        frequency : float
+            Frequency of the pertubation.
+
+        form : Literal["cos", "sin", "exp"], default : "cos"
+            Which of ``cos(w*t)``, ``sin(w*t)``, ``exp(1j*w*t)`` is the form of
+            the drive for the perturbation.
+
+        envelope : Coefficient, optional
+            If provided, a slow moving envelope to the drive.
+
+    psi0 : :obj:`.Qobj`
+        initial state vector (ket)
+        or initial unitary operator `psi0 = U`
+
+    tlist : *list* / *array*
+        list of times for :math:`t`
+
+    e_ops : :obj:`.Qobj`, callable, list or dict, optional
+        Single operator, or list or dict of operators, for which to evaluate
+        expectation values. Operator can be Qobj, QobjEvo or callables with the
+        signature `f(t: float, state: Qobj) -> Any`.
+
+    options : dict, optional
+        Extra parameters.
+
+        - | "max_order"
+          | A given integer to indicate the highest order of
+            approximation used to compute the propagators (default is 4).
+            This corresponds to n in eq. (4) of Ref.
+        - | "a_tol"
+          | The absolute tolerance used when computing the propagators
+            (default is 1e-10).
+        - | "step_size"
+          | The maximum time increment used when computing propagators
+            (default is 0.1).
+        - | store_final_state : bool, False
+          | Whether or not to store the final state of the evolution in the
+            result class.
+        - | store_states : bool, None
+          | Whether or not to store the state vectors or density matrices.
+            On `None` the states will be saved if no expectation operators are
+            given.
+        - | normalize_output : bool, False
+          | Normalize output state to hide ODE numerical errors.
+
+    Returns
+    -------
+    Us : Qobj | list[Qobj]
+        The time evolution propagator U(t,0) if t is a single number or else
+        a list of propagators [U(t[i], t[0])] for all elements t[i] in t.
+    """
+    dysolve = Dysolve(H_0, drive, options)
+    return dysolve.run(psi0, tlist, e_ops=e_ops)
