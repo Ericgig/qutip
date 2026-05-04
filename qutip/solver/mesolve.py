@@ -8,10 +8,12 @@ from __future__ import annotations
 
 __all__ = ['mesolve', 'MESolver']
 
+from collections import namedtuple
 from numpy.typing import ArrayLike
 from typing import Any
 from time import time
-from .. import Qobj, QobjEvo, liouvillian, lindblad_dissipator
+from .. import (Qobj, QobjEvo, liouvillian, lindblad_dissipator)
+from ..core.dimensions import Dimensions
 from ..typing import EopsLike, QobjEvoLike
 from ..core import data as _data
 from ..core.cy.lindblad_matrix_form import LindbladMatrixForm
@@ -249,7 +251,41 @@ class MESolver(SESolver):
             rhs += sum(c_op if c_op.issuper else lindblad_dissipator(c_op)
                        for c_op in c_ops)
 
-        Solver.__init__(self, rhs, options=options)
+        if self.H:
+            self._dims = Dimensions([self.H._dims, self.H._dims])
+        else:
+            self._dims = self.L0[0]._dims
+
+        self._post_init(options)
+
+    @property
+    def system(self):
+        System = namedtuple("system", ["H", "L", "c_ops"])
+        return System(self.H, self.L0, self.c_ops)
+
+    @property
+    def rhs(self):
+        """
+        Build the rhs QobjEvo.
+        """
+        if not self._rhs:
+            self._rhs = sum(self.L0)
+            if self.H != 0.:
+                self._rhs += liouvillian(self.H)
+            self._rhs += sum(lindblad_dissipator(c_op) for c_op in self.c_ops)
+            self._rhs._register_feedback({}, solver=self.name)
+        return self._rhs
+
+    def _argument(self, args):
+        """Update the args, for the `rhs` and other operators."""
+        if args:
+            if self.H != 0.:
+                self.H.arguments(args)
+            for L in self.L0:
+                L.arguments(args)
+            for c_op in self.c_ops:
+                c_op.arguments(args)
+        super()._argument(args)
 
     def _prepare_state(self, state):
         # Kets skip this check: ket2dm (in super) always produces a

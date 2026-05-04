@@ -32,24 +32,24 @@ class RouchonSODE(SIntegrator):
         "dt": 0.0001,
         "tol": 1e-7,
     }
+    _entry = "system"
 
-    def __init__(self, rhs, options):
+    def __init__(self, system, options):
         self._options = self.integrator_options.copy()
         self.options = options
-        self.rhs = rhs
-        self._make_operators()
+        self.system = system
+        self._make_operators(self.system)
 
-    def _make_operators(self):
-        rhs = self.rhs
-        self.H = rhs.H
+    def _make_operators(self, solver):
+        self.H = solver.H
         if self.H.issuper:
             raise TypeError("The rouchon stochastic integration method can't"
                             " use a premade Liouvillian.")
-        self._issuper = rhs.issuper
+        self._issuper = solver._dims.issuper
 
         dtype = type(self.H(0).data)
-        self.c_ops = rhs.c_ops
-        self.sc_ops = rhs.sc_ops
+        self.c_ops = solver.c_ops
+        self.sc_ops = solver.sc_ops
         self.cpcds = [op + op.dag() for op in self.sc_ops]
         for op in self.cpcds:
             op.compress()
@@ -92,8 +92,8 @@ class RouchonSODE(SIntegrator):
                 t, self.options["dt"], generator,
                 (1, self.num_collapses,)
             )
-        self.rhs._register_feedback(self.wiener)
-        self._make_operators()
+        self.system._register_feedback(self.wiener)
+        self._make_operators(self.system)
         self._is_set = True
 
     def integrate(self, t, copy=True):

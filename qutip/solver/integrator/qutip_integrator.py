@@ -57,32 +57,32 @@ class IntegratorVern7(Integrator):
         'min_step': 0,
         'interpolate': True,
     }
-    support_time_dependant = True
-    supports_blackbox = True
     method = 'vern7'
     tableau = vern7_coeff
 
     def _prepare(self):
         self._ode_solver = Explicit_RungeKutta(
-            self.system, self.tableau,
+            self.derivative, self.tableau,
             **self.options
         )
         self.name = self.method
 
-    def get_state(self, copy=True):
+    def get_state(self, copy: bool = True) -> tuple[float, _data.Data]:
         state = self._ode_solver.y
         return self._ode_solver.t, state.copy() if copy else state
 
-    def set_state(self, t, state):
+    def set_state(self, t: float, state: _data.Data):
         self._ode_solver.set_initial_value(state.copy(), t)
         self._is_set = True
 
-    def integrate(self, t, copy=True):
+    def integrate(
+        self, t: float, copy: bool = True
+    ) -> tuple[float, _data.Data]:
         self._ode_solver.integrate(t, step=False)
         self._check_failed_integration()
         return self.get_state(copy)
 
-    def mcstep(self, t, copy=True):
+    def mcstep(self, t: float, copy: bool = True) -> tuple[float, _data.Data]:
         self._ode_solver.integrate(t, step=True)
         self._check_failed_integration()
         return self.get_state(copy)
@@ -93,7 +93,7 @@ class IntegratorVern7(Integrator):
         raise IntegratorException(self._ode_solver.status_message())
 
     @property
-    def options(self):
+    def options(self) -> dict:
         """
         Supported options by verner method:
 
@@ -123,7 +123,7 @@ class IntegratorVern7(Integrator):
         return self._options
 
     @options.setter
-    def options(self, new_options):
+    def options(self, new_options: dict):
         Integrator.options.fset(self, new_options)
 
 
@@ -193,26 +193,29 @@ class IntegratorDiag(Integrator):
     Usable with ``method="diag"``
     """
     integrator_options = {"eigensolver_dtype": "dense"}
-    support_time_dependant = False
-    supports_blackbox = False
+    RHS_format = "matrix"
     method = 'diag'
 
-    def __init__(self, system, options):
-        if not system.isconstant:
-            raise ValueError("Hamiltonian system must be constant to use "
-                             "diagonalized method")
-        super().__init__(system, options)
+    def __init__(self, rhs: _data.Data, options: dict):
+        self.rhs = rhs
+        self._is_set = False  # get_state can be used and return a valid state.
+        self._options = self.integrator_options.copy()
+        self.options = options
+        #if not system.isconstant:
+        #    raise ValueError("Hamiltonian system must be constant to use "
+        #                     "diagonalized method")
 
-    def _prepare(self):
         self._dt = 0.
         self._expH = None
-        H0 = self.system(0).to(self.options["eigensolver_dtype"])
-        self.diag, self.U = _data.eigs(H0.data, False)
+        H0 = _data.to(self.options["eigensolver_dtype"], self.rhs)
+        self.diag, self.U = _data.eigs(self.rhs, False)
         self.diag = self.diag.reshape((-1, 1))
         self.Uinv = _data.inv(self.U)
         self.name = "qutip diagonalized"
 
-    def integrate(self, t, copy=True):
+    def integrate(
+        self, t: float, copy: bool = True
+    ) -> tuple[float, _data.Data]:
         dt = t - self._t
         if dt == 0:
             return self.get_state()
@@ -223,21 +226,21 @@ class IntegratorDiag(Integrator):
         self._t = t
         return self.get_state(copy)
 
-    def mcstep(self, t, copy=True):
+    def mcstep(self, t: float, copy: bool = True) -> tuple[float, _data.Data]:
         return self.integrate(t, copy=copy)
 
-    def get_state(self, copy=True):
+    def get_state(self, copy: bool = True) -> tuple[float, _data.Data]:
         return self._t, _data.matmul(
             self.U, _data.dense.fast_from_numpy(self._y)
         )
 
-    def set_state(self, t, state0):
+    def set_state(self, t: float, state0: _data.Data):
         self._t = t
         self._y = _data.matmul(self.Uinv, state0).to_array()
         self._is_set = True
 
     @property
-    def options(self):
+    def options(self) -> dict:
         """
         Supported options by "diag" method:
 
@@ -249,7 +252,7 @@ class IntegratorDiag(Integrator):
         return self._options
 
     @options.setter
-    def options(self, new_options):
+    def options(self, new_options: dict):
         Integrator.options.fset(self, new_options)
 
 
