@@ -1,5 +1,5 @@
-from qutip.solver.dysolve_propagator import DysolvePropagator, dysolve_propagator
-from qutip.solver import propagator
+from qutip.solver.dysolve import Dysolve, dysolve_propagator, dysolve
+from qutip.solver import propagator, sesolve
 from qutip.solver.cy.dysolve import cy_compute_integrals
 from qutip import (
     sigmax, sigmay, sigmaz, qeye, qeye_like, tensor, enr_destroy, CoreOptions
@@ -7,6 +7,23 @@ from qutip import (
 from scipy.special import factorial
 import numpy as np
 import pytest
+
+
+def _drive2QobjEvo(drive):
+    if not isinstance(drive, dysolve.Drive):
+        drive = dysolve.Drive(*drive)
+    oper, w, form, coeff = drive
+    funcs = {
+        "cos": lambda t: np.cos(w * t),
+        "sin": lambda t: np.sin(w * t),
+        "exp": lambda t: np.exp(1j * w * t),
+    }
+    drive_func = coefficient(funcs[form])
+    if isinstance(coeff, Coefficient):
+        drive_func = drive_func * coeff
+    elif coeff is not None:
+        oper = oper * coeff
+    return QobjEvo([oper, drive_func])
 
 
 @pytest.fixture(scope='module')
