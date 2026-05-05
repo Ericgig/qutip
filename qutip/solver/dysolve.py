@@ -12,8 +12,7 @@ from typing import Literal, NamedTuple, Any
 from collections import namedtuple
 import itertools
 
-
-__all__ = ['Dysolve', 'dysolve_propagator', 'dysolve']
+__all__ = ["Dysolve", "dysolve_propagator", "dysolve"]
 
 
 class Drive(NamedTuple):
@@ -24,10 +23,10 @@ class Drive(NamedTuple):
 
 
 DriveType = (
-    Drive |
-    tuple[Qobj, float] |
-    tuple[Qobj, float, Literal["cos", "sin", "exp"]] |
-    tuple[Qobj, float, Literal["cos", "sin", "exp"], Coefficient]
+    Drive
+    | tuple[Qobj, float]
+    | tuple[Qobj, float, Literal["cos", "sin", "exp"]]
+    | tuple[Qobj, float, Literal["cos", "sin", "exp"], Coefficient]
 )
 
 
@@ -105,6 +104,7 @@ class Dysolve:
     needed when computing the propagator with negative times differences:
     ``Dysolve.propagator(-1)`` or ``Dysolve.propagator(0, 1)``.
     """
+
     def __init__(
         self,
         H_0: Qobj,
@@ -121,8 +121,8 @@ class Dysolve:
             if not isinstance(perturbation, Drive):
                 perturbation = Drive(*perturbation)
             oper, omega, form, given_coeff = perturbation
-            factor = 1.
-            coeff = coefficient(1.)
+            factor = 1.0
+            coeff = coefficient(1.0)
 
             if isinstance(given_coeff, Coefficient):
                 self.td = True
@@ -146,12 +146,12 @@ class Dysolve:
         self.perturbations[3] = np.array(self.perturbations[3])
 
         self.options = {
-            "order" : 4,
-            "a_tol" : 1e-10,
-            "step_size" : 0.1,
-            "store_final_state" : False,
-            "store_states" : None,
-            "normalize_output" : False,
+            "order": 4,
+            "a_tol": 1e-10,
+            "step_size": 0.1,
+            "store_final_state": False,
+            "store_states": None,
+            "normalize_output": False,
             # "envelope_order" : 0,
         }
         if options:
@@ -205,7 +205,7 @@ class Dysolve:
             self.U = np.eye(self.H_0.shape[0])
 
         dt = self.options["step_size"]
-        if t_i == 0 and abs(t_f - self.t) <  abs(t_f - t_i):
+        if t_i == 0 and abs(t_f - self.t) < abs(t_f - t_i):
             t_i = self.t
             U = self.U
         else:
@@ -285,8 +285,10 @@ class Dysolve:
 
         dt = self.options["step_size"]
         if state0._dims[0] != self.H_0._dims[1]:
-            raise TypeError(f"incompatible dimensions {self.H_0.dims}"
-                            f" and {state0.dims}")
+            raise TypeError(
+                f"incompatible dimensions {self.H_0.dims}"
+                f" and {state0.dims}"
+            )
 
         results = Result(
             e_ops,
@@ -298,7 +300,7 @@ class Dysolve:
 
         t_state = tlist[0]
 
-        state = state0.transform(self._basis, inverse=True)).data
+        state = state0.transform(self._basis, inverse=True).data
         for t in tlist[1:]:
             time_diff = t - t_state
             n_steps = int(time_diff / dt)
@@ -320,7 +322,7 @@ class Dysolve:
                 t,
                 Qobj(state_t, dims=[self._H_0._dims[0], [1]]).transform(
                     self._basis, inverse=False
-                )
+                ),
             )
 
         return results
@@ -357,21 +359,25 @@ class Dysolve:
         ws = np.add.outer(self._eigenenergies, -self._eigenenergies)
         if self.td:
             envelopes = np.array([
-                coeff(current_time + dt / 2) for coeff in self.perturbations[2]
+                coeff(current_time + dt / 2)
+                for coeff in self.perturbations[2]
             ])
 
         for n in range(1, self.options["order"] + 1):
             ws = np.add.outer(ws_vec, ws)
             Sns_n = Sns[n]
             if self.td:
-                Sns_n =  np.einsum(
-                    Sns_n, np.arange(n + 2),
-                    *[envelopes, [0]]*n,
-                    np.arange(n + 2)
+                Sns_n = np.einsum(
+                    Sns_n,
+                    np.arange(n + 2),
+                    *[envelopes, [0]] * n,
+                    np.arange(n + 2),
                 )
             subpropagator += (
-                Sns_n * np.exp(1j * ws * current_time)
-            ).reshape((-1, N, N)).sum(axis=0)
+                (Sns_n * np.exp(1j * ws * current_time))
+                .reshape((-1, N, N))
+                .sum(axis=0)
+            )
 
         return subpropagator
 
@@ -473,18 +479,18 @@ class Dysolve:
                 ws_matrix = np.zeros((len(amplitudes), n))
                 for i in range(n):
                     ws_matrix[:, i] = (
-                        current_omegas[i] + dE[paths[:, i], paths[:, i+1]]
+                        current_omegas[i] + dE[paths[:, i], paths[:, i + 1]]
                     )
 
-                integrals = np.array([
-                    cy_compute_integrals(row, dt) for row in ws_matrix
-                ])
+                integrals = np.array(
+                    [cy_compute_integrals(row, dt) for row in ws_matrix]
+                )
                 start_indices = paths[:, 0]
                 end_indices = paths[:, -1]
                 np.add.at(
                     Sn[*pert_idx],
                     (start_indices, end_indices),
-                    amplitudes * integrals * factor
+                    amplitudes * integrals * factor,
                 )
 
                 Sn[*pert_idx] = exp_H_0 @ Sn[*pert_idx]
@@ -500,7 +506,7 @@ def dysolve_propagator(
     drives: list[DriveType],
     t: float | list[float],
     args: dict[str, Any] = None,
-    options: dict[str] = None
+    options: dict[str] = None,
 ) -> Qobj | list[Qobj]:
     """
     A generator of propagator(s) using Dyson series.
@@ -590,12 +596,15 @@ def dysolve_propagator(
     else:
         Us = []
         Us.append(qeye_like(H_0))
-        if t[0] != 0.:
+        if t[0] != 0.0:
             pre = dysolve.propagator(t[0]).inv()
         else:
-            pre = qeye_like(H_0)
+            pre = None
         for i in range(len(t[:-1])):
-            Us.append(dysolve.propagator(t[i+1]) @ pre)
+            U = dysolve.propagator(t[i + 1])
+            if pre is not None:
+                U = U @ pre
+            Us.append(U)
 
     return Us
 
@@ -608,7 +617,7 @@ def dysolve(
     *,
     e_ops: EopsLike | list[EopsLike] | dict[Any, EopsLike] = None,
     args: dict["str", Any] = None,
-    options: dict[str] = None
+    options: dict[str] = None,
 ) -> Qobj | list[Qobj]:
     """
     Solve the Schrodinger equation for a driven system using a Dyson series
