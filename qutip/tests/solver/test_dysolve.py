@@ -16,43 +16,6 @@ import numpy as np
 import pytest
 
 
-def _drive2QobjEvo(drive):
-    if not isinstance(drive, dysolve.Drive):
-        drive = dysolve.Drive(*drive)
-    oper, w, form, coeff = drive
-    funcs = {
-        "cos": lambda t: np.cos(w * t),
-        "sin": lambda t: np.sin(w * t),
-        "exp": lambda t: np.exp(1j * w * t),
-    }
-    drive_func = coefficient(funcs[form])
-    if isinstance(coeff, Coefficient):
-        drive_func = drive_func * coeff
-    elif coeff is not None:
-        oper = oper * coeff
-    return QobjEvo([oper, drive_func])
-
-
-@pytest.fixture(scope="module")
-def empty_instance():
-    return DysolvePropagator.__new__(DysolvePropagator)
-
-
-def _enr_xx():
-    a, b = enr_destroy([2, 2], 1)
-    return (a + a.dag()) @ (b + b.dag())
-
-
-def _enr_xz():
-    a, b = enr_destroy([2, 2], 1)
-    return (a + a.dag()) @ (b.dag() @ b)
-
-
-def _enr_zz():
-    a, b = enr_destroy([2, 2], 1)
-    return (a.dag() @ a) @ (b.dag() @ b)
-
-
 @pytest.mark.parametrize("eff_omega", [-10.0, -1.0, -0.1, 0.1, 1.0, 10.0])
 @pytest.mark.parametrize("dt", [-10.0, -1.0, -0.1, 0.1, 1.0, 10.0])
 @pytest.mark.parametrize(
@@ -142,11 +105,31 @@ def test_zeroth_order(H_0, t_i, t_f):
         assert U == exp
 
 
+def _drive2QobjEvo(drive):
+    if not isinstance(drive, dysolve.Drive):
+        drive = dysolve.Drive(*drive)
+    oper, w, form, coeff = drive
+    funcs = {
+        "cos": lambda t: np.cos(w * t),
+        "sin": lambda t: np.sin(w * t),
+        "exp": lambda t: np.exp(1j * w * t),
+    }
+    drive_func = coefficient(funcs[form])
+    if isinstance(coeff, Coefficient):
+        drive_func = drive_func * coeff
+    elif coeff is not None:
+        oper = oper * coeff
+    return QobjEvo([oper, drive_func])
+
+
 @pytest.mark.parametrize("H_0", [sigmax(), sigmaz()])
 @pytest.mark.parametrize("X", [sigmay(), sigmaz()])
-@pytest.mark.parametrize("t", [-0.15, -0.1, 0, 0.1, 0.15])
-@pytest.mark.parametrize("omega", [0, 1, 10])
-def test_2x2_propagators_single_time(H_0, X, t, omega):
+@pytest.mark.parametrize("t", [
+    -0.1, -0.75, -0.25, 0, 0.075, 0.15,
+    [0, 0.25, 0.5], [0, -0.25, -0.5], [-0.1, 0, 0.1]
+])
+@pytest.mark.parametrize("omega", [0, 1, 2, 10])
+def test_2x2_propagators(H_0, X, t, omega):
     # Dysolve
     options = {"max_order": 3, "max_dt": 0.05}
     drive = (X, omega)
@@ -158,44 +141,21 @@ def test_2x2_propagators_single_time(H_0, X, t, omega):
     with CoreOptions(atol=1e-10, rtol=1e-6):
         assert U == prop
 
-    assert H_0._dims == U._dims
+    if isinstance(U, Qobj):
+        assert H_0._dims == U._dims
 
 
-@pytest.mark.parametrize("H_0", [sigmay(), sigmaz()])
-@pytest.mark.parametrize("X", [sigmax(), sigmaz()])
-@pytest.mark.parametrize(
-    "ts", [[0, 0.25, 0.5], [0, -0.25, -0.5], [-0.1, 0, 0.1]]
-)
-@pytest.mark.parametrize("omega", [0, 10])
-def test_2x2_propagators_list_times(H_0, X, ts, omega):
-    options = {"max_order": 3, "max_dt": 0.01}
-    drive = (X, omega)
-    Us = dysolve_propagator(H_0, drive, ts, options=options)
-
-    H = H_0 + _drive2QobjEvo(drive)
-    props = propagator(H, ts, args=args, options={"atol": 1e-10, "rtol": 1e-8})
-
-    with CoreOptions(atol=1e-10, rtol=1e-6):
-        assert Us == props
-
-
-@pytest.mark.parametrize(
-    "H_0",
-    [
-        tensor(sigmax(), sigmaz()) + tensor(qeye(2), sigmay()),
-        tensor(sigmaz(), qeye(2)),
-    ],
-)
-@pytest.mark.parametrize(
-    "X",
-    [
-        tensor(qeye(2), sigmaz()),
-        tensor(sigmaz(), sigmax()) + tensor(sigmay(), qeye(2)),
-    ],
-)
-@pytest.mark.parametrize("omega", [5, 10])
+@pytest.mark.parametrize("H_0", [
+    tensor(sigmaz(), qeye(2)),
+    tensor(sigmax(), sigmaz()) + tensor(qeye(2), sigmay()),
+])
+@pytest.mark.parametrize("X", [
+    tensor(sigmaz(), qeye(2)),
+    tensor(sigmaz(), sigmax()) + tensor(sigmay(), qeye(2)),
+])
+@pytest.mark.parametrize("omega", [1, 2, 10])
 @pytest.mark.parametrize("t_f", [1, -1])
-def test_4x4_propagators_single_time(H_0, X, omega, t_f):
+def test_4x4_propagators(H_0, X, omega, t_f):
     options = {"max_order": 3, "max_dt": 0.01}
     drive = (X, omega)
     Us = dysolve_propagator(H_0, drive, ts, options=options)
@@ -209,38 +169,34 @@ def test_4x4_propagators_single_time(H_0, X, omega, t_f):
     assert H_0._dims == U._dims
 
 
-@pytest.mark.parametrize("omega", [0, 0.5, 1, 2, 10])
+@pytest.mark.parametrize("omega", [0, 0.5, 1, 2, 100])
 @pytest.mark.parametrize("t_f", [1, -1])
-def test_enr_propagators_single_time(omega, t_f):
-    # reuses other test with both H_0 and X set to enr space operators
-    H_0 = _enr_zz()
-    X = _enr_xz()
+def test_enr_propagators(omega, t_f):
+    a, b = enr_destroy([2, 2], 1)
+    X = (a + a.dag()) @ (b + b.dag())
+    H_0 = (a.dag() @ a) + (b.dag() @ b)
     test_4x4_propagators_single_time(H_0, X, omega, t_f)
 
 
-@pytest.mark.parametrize(
-    "H_0, X",
-    [
-        (
-            sigmaz(),
-            sigmax(),
-        ),
-        (
-            tensor(sigmaz(), sigmaz()),
-            tensor(sigmax(), sigmax()),
-        ),
-        (
-            tensor(sigmaz(), sigmaz(), sigmaz()),
-            tensor(sigmax(), sigmax(), sigmax()),
-        ),
-        (
-            tensor(sigmaz(), sigmaz(), sigmaz(), sigmaz()),
-            tensor(sigmax(), sigmax(), sigmax(), sigmax()),
-        ),
-        (_enr_zz(), _enr_xx()),
-    ],
-)
-def test_dims(H_0, X):
-    dysolve = DysolvePropagator(H_0, X, 1, {"max_order": 0})
-    U = dysolve(0.001)
-    assert dysolve._H_0.dims == dysolve._X.dims == U.dims
+@pytest.fixture(params=[
+    pytest.param(lambda: num(10), id='diag'),
+    pytest.param(lambda: rand_herm(10, density=0.7), id='non-diag'),
+])
+def H0(request):
+    return request.param
+
+
+def make_drives(dims, w, format=None, coeff=None):
+    X = qt.rand_herm(dims) * 0.5
+    if format is not None and coeff is not None:
+        drive = (X, w, format, coeff)
+    elif format is not None:
+        drive = (X, w, format)
+    elif coeff is not None:
+        dysolve.Drive(X, w, envelope=coeff)
+    else
+        drive = (X, w)
+    return drive
+
+
+def
