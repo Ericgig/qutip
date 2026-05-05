@@ -1,7 +1,9 @@
-from qutip import Qobj, qeye_like
+from qutip import Qobj, qeye_like, Coefficient
+from . import Result
+from qutip.typing import EopsLike
 from .cy.dysolve import cy_compute_integrals
 from numpy.typing import ArrayLike
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, Any
 import numpy as np
 import scipy as sp
 from numbers import Number
@@ -9,7 +11,7 @@ import itertools
 from collections import namedtuple
 
 
-__all__ = ['Dysolve', 'dysolve_propagator']
+__all__ = ['Dysolve', 'dysolve_propagator', 'dysolve']
 
 
 class Drive(NamedTuple):
@@ -276,7 +278,7 @@ class Dysolve:
             self.U = np.eye(self.H_0.shape[0])
 
         dt = self.options["step_size"]
-        if state0._dims[0] != self.H_0,_dims[1]:
+        if state0._dims[0] != self.H_0._dims[1]:
             raise TypeError(f"incompatible dimensions {self.H_0.dims}"
                             f" and {state0.dims}")
 
