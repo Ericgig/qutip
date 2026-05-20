@@ -1,6 +1,6 @@
 #cython: language_level=3
 from qutip.core.data cimport Data
-from qutip.solver.integrator.rhs cimport RHS
+from qutip.solver.integrator._rhs cimport RHS
 
 cpdef enum Status:
     AT_FRONT = 2

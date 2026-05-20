@@ -36,12 +36,14 @@ cdef class RHS:
     """
     def __init__(
         self,
-        derivative:Callable[[float, _data.Data], _data.Data] | QobjEvo,
+        derivative: Callable[[float, _data.Data], _data.Data] | QobjEvo,
         inplace: bool=False
     ):
         self.derivative = derivative
         self.inplace = inplace
         self.qevo_derr = False
+        if isinstance(getattr(derivative, "__self__", None), QobjEvo):
+            derivative = derivative.__self__
         if isinstance(derivative, QobjEvo):
             self.qevo = derivative
             self.qevo_derr = True

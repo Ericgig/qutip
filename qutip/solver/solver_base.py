@@ -154,13 +154,16 @@ class Solver:
                  or (not self._vectorize_state and state.isoper))
         )
         if self._vectorize_state and self._dims[1] == state._dims:
+            print("processed input state shape1", stack_columns(state.data).shape)
             return stack_columns(state.data)
+        print("processed input state shape2", state.shape)
         return state.data
 
     def _restore_state(self, data, *, copy=True):
         """
         Retore the Qobj state from its data.
         """
+        print("output data shape", data.shape)
         if (
             self._vectorize_state
             and self._state_metadata['dims'] == self._dims[1]
@@ -312,18 +315,25 @@ class Solver:
                 integrator = method
             else:
                 raise ValueError("Integrator method not supported.")
-            if integrator._entry == "system":
+            if integrator.RHS_format == "Solver":
                 self._integrator_instance = integrator(
-                    self.system, self.options
+                    self, self.options
                 )
-            elif integrator._entry == "QobjEvo":
+            elif integrator.RHS_format == "matrix":
+                if not self.rhs.isconstant:
+                    raise TypeError(
+                        f"The integration method {method} "
+                        "only support constant systems."
+                    )
                 self._integrator_instance = integrator(
-                    self.rhs, self.options
+                    self.rhs(0).data, self.options
                 )
-            else:
+            elif integrator.RHS_format == "callable":
                 self._integrator_instance = integrator(
                     self.rhs_func, self.options
                 )
+            else:
+                raise ValueError("Integrator entry point not supported.")
             self._init_integrator_time = time() - _time_start
         return self._integrator_instance
 
@@ -477,8 +487,8 @@ class Solver:
         if args:
             if self._rhs:
                 self._rhs.arguments(args)
-            if self._integrator_instance:
-                self._integrator.arguments(args)
+            # if self._integrator_instance:
+            #     self._integrator.arguments(args)
 
     @classmethod
     def avail_integrators(cls):

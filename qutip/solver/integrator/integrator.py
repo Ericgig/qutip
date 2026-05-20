@@ -1,7 +1,7 @@
 """ `Integrator`: ODE solver wrapper to use in qutip's Solver """
 import numpy as np
 from collections.abc import Iterator, Callable
-from .rhs import RHS
+from ._rhs import RHS
 from qutip.core import QobjEvo
 from qutip.core.data import Data
 
