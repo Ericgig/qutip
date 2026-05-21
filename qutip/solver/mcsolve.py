@@ -421,7 +421,7 @@ class MCIntegrator:
 
     def arguments(self, args):
         if args:
-            self._integrator.arguments(args)
+            self._integrator.reset()
             for c_op in self._c_ops:
                 c_op.arguments(args)
             for n_op in self._n_ops:

@@ -214,6 +214,7 @@ class MESolver(SESolver):
         "method": "adams",
         "matrix_form": False,
     }
+    _rhs_reset_option = set("matrix_form")
 
     def __init__(
         self,

@@ -54,6 +54,7 @@ class Solver:
         "normalize_output": True,
         "method": "adams",
     }
+    _rhs_reset_option = set()
     _resultclass = Result
     _integrator_instance = None
     _rhs = None
@@ -449,18 +450,18 @@ class Solver:
         ``solver.options[key] = value`` or ``solver.options = options``.
         Allow to update the solver with the new options
         """
-        from_setter = isinstance(keys, (set))
+        from_setter = isinstance(keys, set)
         if not from_setter:
             keys = set([keys])
+
+        method = self.options["method"]
+        integrator = self.avail_integrators()[method]
 
         if not from_setter and "method" in keys:
             # Drop the ode's options.
             old_solver_options, _ = self._parse_options(
                 self.options, self.solver_options, {}
             )
-            method = self.options["method"]
-            integrator = self.avail_integrators()[method]
-
             self._options = _SolverOptions(
                 {**self.solver_options, **integrator.integrator_options},
                 self._apply_options,
@@ -469,26 +470,32 @@ class Solver:
                 **old_solver_options
             )
 
-        if self._integrator_instance is None or not keys:
-            pass
-        elif 'method' in keys and self._integrator._is_set:
+        state = None
+        if self._integrator_instance is not None and self._integrator._is_set:
             state = self._integrator.get_state()
+
+        if self._rhs_reset_option & keys:
+            self._rhs = None
             self._integrator_instance = None
+        elif (
+            "method" in keys
+            or keys & integrator.integrator_options.keys()
+        ):
+            # With most ODE, changing the options need a full reset, which is
+            # almost the same cost as creating a new one. The simplest is just
+            # to restart from scratch if integrator options were touched.
+            self._integrator_instance = None
+
+        if state is not None:
             self._integrator.set_state(*state)
-        elif "method" in keys:
-            self._integrator_instance = None
-        elif keys & self._integrator.integrator_options.keys():
-            # Some of the keys are used by the integrator.
-            self._integrator.options = self._options
-            self._integrator.reset(hard=True)
 
     def _argument(self, args):
         """Update the args, for the `rhs` and other operators."""
         if args:
             if self._rhs:
                 self._rhs.arguments(args)
-            # if self._integrator_instance:
-            #     self._integrator.arguments(args)
+            if self._integrator_instance:
+                self._integrator.reset()
 
     @classmethod
     def avail_integrators(cls):

@@ -31,16 +31,8 @@ class _MultiTrajRHS:
         self.rhs.arguments(args)
 
     def _register_feedback(self, type, val):
-        pass
+        self.rhs._register_feedback({key: val}, solver="Generic")
 
-    """
-    def __getattr__(self, attr):
-        if attr == "rhs":
-            raise AttributeError
-        if hasattr(self.rhs, attr):
-            return getattr(self.rhs, attr)
-        raise AttributeError
-    """
 
 class MultiTrajSolver(Solver):
     """
@@ -83,12 +75,12 @@ class MultiTrajSolver(Solver):
 
     def __init__(self, rhs, *, options=None):
         if isinstance(rhs, QobjEvo):
-            self._rhs = _MultiTrajRHS(rhs)
+            self._system = _MultiTrajRHS(rhs)
         elif isinstance(rhs, _MultiTrajRHS):
-            self._rhs = rhs
+            self._system = rhs
         else:
             raise TypeError("The system should be a QobjEvo")
-        self._dims = self._rhs._dims
+        self._dims = self._system._dims
         self._post_init(options)
 
     def _post_init(self, options):
@@ -99,15 +91,15 @@ class MultiTrajSolver(Solver):
 
     @property
     def system(self) -> _MultiTrajRHS:
-        return self._rhs
+        return self._system
 
     @property
     def rhs(self) -> QobjEvo:
-        return self._rhs.rhs
+        return self._system.rhs
 
     @property
     def rhs_func(self) -> Callable:
-        return self._rhs.rhs.matmul_data
+        return self._system.rhs.matmul_data
 
     def start(self, state0: Qobj, t0: float, seed: int | SeedSequence = None):
         """
@@ -390,41 +382,11 @@ class MultiTrajSolver(Solver):
             raise ValueError("A seed list must be longer than ntraj")
         return seeds
 
-    """
-    @property
-    def _integrator(self):
-        if not self._integrator_instance:
-            _time_start = time()
-            method = self.options["method"]
-            if method in self.avail_integrators():
-                integrator = self.avail_integrators()[method]
-            elif issubclass(method, Integrator):
-                integrator = method
-            else:
-                raise ValueError("Integrator method not supported.")
-            if integrator._entry == "Solver":
-                self._integrator_instance = integrator(self)
-            elif integrator._entry == "system":
-                self._integrator_instance = integrator(
-                    self.system, self.options
-                )
-            elif integrator._entry == "QobjEvo":
-                self._integrator_instance = integrator(
-                    self.rhs, self.options
-                )
-            else:
-                self._integrator_instance = integrator(
-                    self.rhs_func, self.options
-                )
-            self._init_integrator_time = time() - _time_start
-        return self._integrator_instance
-    """
-
     def _argument(self, args):
         """Update the args, for the `rhs` and `c_ops` and other operators."""
         if args:
             self.system.arguments(args)
-            self._integrator.arguments(args)
+            self._integrator.reset()
 
     def _get_generator(self, seed):
         """
@@ -438,8 +400,6 @@ class MultiTrajSolver(Solver):
         else:
             generator = default_rng(seed)
         return generator
-
-
 
 
 class _InitialConditions:

@@ -264,6 +264,7 @@ class BRSolver(Solver):
         'method': 'adams',
         'tensor_type': 'sparse',
     }
+    _rhs_reset_option = set("tensor_type")
     _avail_integrators = {}
 
     def __init__(
@@ -396,7 +397,8 @@ class BRSolver(Solver):
     def options(self, new_options):
         Solver.options.fset(self, new_options)
 
-    def _apply_options(self, keys):
+    def __apply_options(self, keys):
+        # TODO: remove
         need_new_rhs = self._rhs is not None and not self._rhs.isconstant
         need_new_rhs &= 'tensor_type' in keys
         if need_new_rhs:
