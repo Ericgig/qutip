@@ -21,23 +21,23 @@ cdef Dense _dense_wrap(double complex [::1] x):
     return dense.wrap(&x[0], x.shape[0], 1)
 
 
-cdef class _StochasticSystem:
+cdef class StochasticSystem:
     """
-        RHS for stochastic differential equations.
+    RHS for stochastic differential equations.
 
-        Contain the deterministic drift term and the diffusion term[s] through
-        the ``drift`` and ``diffusion`` methods.
+    Contain the deterministic drift term and the diffusion term[s] through
+    the ``drift`` and ``diffusion`` methods.
 
-        Derrivatives corresponding to the terms in the ito-tyalor expansion are
-        available through a different interface:
-        ``set_state``, ``a``, ``bi``, ``Libj`` etc.
+    Derrivatives corresponding to the terms in the ito-tyalor expansion are
+    available through a different interface:
+    ``set_state``, ``a``, ``bi``, ``Libj`` etc.
 
-        A different interface is used since each term is not independant, but
-        which terms is needed change according to the integration method.
-        Whereas the raw drift and diffusion are independant.
+    A different interface is used since each term is not independant, but
+    which terms is needed change according to the integration method.
+    Whereas the raw drift and diffusion are independant.
     """
-    def __init__(self):
-        raise NotImplementedError
+    def __init__(self, drift, diffusion):
+        self.drift_func = drift
 
     cpdef Data drift(self, t, Data state):
         """
@@ -116,7 +116,7 @@ cdef class _StochasticSystem:
         raise NotImplementedError
 
 
-cdef class StochasticClosedSystem(_StochasticSystem):
+cdef class StochasticClosedSystem(StochasticSystem):
     """
         RHS for closed quantum stochastic system (ssesolve)
 
@@ -190,7 +190,7 @@ cdef class StochasticClosedSystem(_StochasticSystem):
         return out
 
 
-cdef class StochasticOpenSystem(_StochasticSystem):
+cdef class StochasticOpenSystem(StochasticSystem):
     """
         RHS for open quantum stochastic system (smesolve)
 
@@ -523,7 +523,7 @@ cdef class StochasticOpenSystem(_StochasticSystem):
         return out
 
 
-cdef class SimpleStochasticSystem(_StochasticSystem):
+cdef class SimpleStochasticSystem(StochasticSystem):
     """
     Simple system that can be solver analytically.
     Used in tests.
