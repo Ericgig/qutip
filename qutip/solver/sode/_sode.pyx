@@ -5,7 +5,7 @@ from qutip.core.cy.qobjevo cimport QobjEvo
 from qutip.core.data cimport Data, Dense, imul_dense, iadd_dense
 from collections import defaultdict
 cimport cython
-from qutip.solver.sode.ssystem cimport _StochasticSystem
+from qutip.solver.sode.ssystem cimport _StochasticSystem, TaylorStochasticSystem
 import numpy as np
 
 
@@ -45,7 +45,7 @@ cdef class Euler:
         b = system.diffusion(t, state)
 
         if self.measurement_noise:
-            expect = system.expect(t, state)
+            expect = system._shift(t, state)
             for i in range(system.num_collapse):
                 dW[0, i] -= expect[i].real * dt
 
@@ -84,7 +84,7 @@ cdef class Platen(Euler):
         cdef list expect
 
         if self.measurement_noise:
-            expect = system.expect(t, state)
+            expect = system._shift(t, state)
             for i in range(system.num_collapse):
                 dW[0, i] -= expect[i].real * dt
 
@@ -252,10 +252,10 @@ cdef class Explicit15(Euler):
 
 
 cdef class Milstein:
-    cdef _StochasticSystem system
+    cdef TaylorStochasticSystem system
     cdef bint measurement_noise
 
-    def __init__(self, _StochasticSystem system, measurement_noise=False):
+    def __init__(self, TaylorStochasticSystem system, measurement_noise=False):
             self.system = system
             self.measurement_noise = measurement_noise
 
@@ -294,9 +294,9 @@ cdef class Milstein:
         iadd_dense(out, system.a(), dt)
 
         if self.measurement_noise:
-            expect = system.expect(t, state)
+            expect = system._shift(t, state)
             for i in range(system.num_collapse):
-                dW[0, i] -= system.expect_i(i).real * dt
+                dW[0, i] -= system._shift_i(i).real * dt
 
         for i in range(num_ops):
             iadd_dense(out, system.bi(i), dW[0, i])
@@ -313,11 +313,11 @@ cdef class Milstein:
 cdef class PredCorr:
     cdef Dense euler
     cdef double alpha, eta
-    cdef _StochasticSystem system
+    cdef TaylorStochasticSystem system
     cdef bint measurement_noise
 
     def __init__(
-        self, _StochasticSystem system,
+        self, TaylorStochasticSystem system,
         double alpha=0., double eta=0.5,
         measurement_noise=False
     ):
@@ -348,7 +348,7 @@ cdef class PredCorr:
         Numerical Solution of Stochastic Differential Equations
         By Peter E. Kloeden, Eckhard Platen
         """
-        cdef _StochasticSystem system = self.system
+        cdef TaylorStochasticSystem system = self.system
         cdef int i, j, k, num_ops = system.num_collapse
         cdef double eta=self.eta, alpha=self.alpha
         cdef Dense euler = self.euler
@@ -356,9 +356,9 @@ cdef class PredCorr:
         system.set_state(t, state)
 
         if self.measurement_noise:
-            expect = system.expect(t, state)
+            expect = system._shift(t, state)
             for i in range(system.num_collapse):
-                dW[0, i] -= system.expect_i(i).real * dt
+                dW[0, i] -= system._shift_i(i).real * dt
 
         imul_dense(out, 0.)
         iadd_dense(out, state, 1)
@@ -386,7 +386,7 @@ cdef class PredCorr:
 
 
 cdef class Taylor15(Milstein):
-    def __init__(self, _StochasticSystem system):
+    def __init__(self, TaylorStochasticSystem system):
         self.system = system
         self.measurement_noise = False
 
@@ -398,7 +398,7 @@ cdef class Taylor15(Milstein):
         Numerical Solution of Stochastic Differential Equations
         By Peter E. Kloeden, Eckhard Platen
         """
-        cdef _StochasticSystem system = self.system
+        cdef TaylorStochasticSystem system = self.system
         system.set_state(t, state)
         cdef int i, j, k, num_ops = system.num_collapse
         cdef double[:] dz, dw
@@ -431,14 +431,14 @@ cdef class Taylor15(Milstein):
 
 
 cdef class Milstein_imp:
-    cdef _StochasticSystem system
+    cdef TaylorStochasticSystem system
     cdef bint use_inv
     cdef QobjEvo implicit
     cdef Data inv
     cdef double prev_dt
     cdef dict imp_opt
 
-    def __init__(self, _StochasticSystem system, solve_method=None, solve_options={}):
+    def __init__(self, TaylorStochasticSystem system, solve_method=None, solve_options={}):
         self.system = system
         self.prev_dt = 0
         if solve_method == "inv":
@@ -475,7 +475,7 @@ cdef class Milstein_imp:
         Numerical Solution of Stochastic Differential Equations
         By Peter E. Kloeden, Eckhard Platen
         """
-        cdef _StochasticSystem system = self.system
+        cdef TaylorStochasticSystem system = self.system
         cdef int i, j, num_ops = system.num_collapse
         cdef double dw
 
@@ -513,7 +513,7 @@ cdef class Taylor15_imp(Milstein_imp):
         Numerical Solution of Stochastic Differential Equations
         By Peter E. Kloeden, Eckhard Platen
         """
-        cdef _StochasticSystem system = self.system
+        cdef TaylorStochasticSystem system = self.system
         system.set_state(t, state)
         cdef int i, j, k, num_ops = system.num_collapse
         cdef double[:] dz, dw

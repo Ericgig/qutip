@@ -12,7 +12,10 @@ import numpy as np
 from qutip.core import spre, spost, liouvillian
 
 __all__ = [
-    "StochasticOpenSystem", "StochasticClosedSystem"
+    "StochasticSystem",
+    "TaylorStochasticSystem",
+    "StochasticOpenSystem",
+    "StochasticClosedSystem",
 ]
 
 @cython.boundscheck(False)
@@ -21,102 +24,213 @@ cdef Dense _dense_wrap(double complex [::1] x):
     return dense.wrap(&x[0], x.shape[0], 1)
 
 
-cdef class StochasticSystem:
+cdef class _StochasticSystem:
     """
     RHS for stochastic differential equations.
-
-    Contain the deterministic drift term and the diffusion term[s] through
-    the ``drift`` and ``diffusion`` methods.
-
-    Derrivatives corresponding to the terms in the ito-tyalor expansion are
-    available through a different interface:
-    ``set_state``, ``a``, ``bi``, ``Libj`` etc.
-
-    A different interface is used since each term is not independant, but
-    which terms is needed change according to the integration method.
-    Whereas the raw drift and diffusion are independant.
     """
-    def __init__(self, drift, diffusion):
-        self.drift_func = drift
+    def __init__(self):
+        pass
 
     cpdef Data drift(self, t, Data state):
         """
-            Compute the drift term for the ``state`` at time ``t``.
+        Compute the drift term for the ``state`` at time ``t``.
         """
         raise NotImplementedError
 
     cpdef list diffusion(self, t, Data state):
         """
-            Compute the diffusion terms for the ``state`` at time ``t``.
+        Compute the diffusion terms for the ``state`` at time ``t``.
         """
         raise NotImplementedError
 
-    cpdef list expect(self, t, Data state):
+    cpdef list _shift(self, t, Data state):
         """
-            Compute the expectation terms for the ``state`` at time ``t``.
+        Shift between the noise ``dW`` and measurement.
+        Used in custom evolution when the measurement is known and the noise
+        is desired.
         """
         raise NotImplementedError
+
+
+cdef class StochasticSystem(_StochasticSystem):
+    """
+    Right-hand side (RHS) for Stochastic Differential Equations (SDE).
+
+    Encapsulates the deterministic drift term and the stochastic diffusion
+    term[s].
+
+    Parameters
+    ----------
+    drift : callable ``(t: float, state: Data) -> Data``
+        Deterministic drift function.
+
+    diffusion : list of callable or callable
+        Stochastic diffusion function(s). Either a list of independant
+        diffusion functions or a single function returning a list of diffusion
+        term(s). The signature should be
+        ``(t: float, state: Data) -> Data | list[Data]``.
+
+    num_diffusion : int
+        The total number of Wiener processes (diffusion terms).
+
+    _shift : callable ``(t: float, state: Data) -> list[float]``, optional
+        A function with signature defining the shift between noise $dW$ and
+        measurement. Not use in normal evolution.
+    """
+    cdef:
+      public object drift_func, diffusion_func, shift
+      public int num_diffusion
+
+    def __init__(self, drift, diffusion, num_diffusion, _shift=None):
+        self.drift_func = drift
+        self.diffusion_func = diffusion
+        self.num_diffusion = num_diffusion
+        self._shift_func = _shift
+
+    cpdef Data drift(self, t, Data state):
+        return self.drift_func(t, state)
+
+    cpdef list diffusion(self, t, Data state):
+        if isinstance(self.diffusion_func, list):
+            return [func(t, state) for func in self.diffusion_func]
+        return self.diffusion_func(t, state)
+
+    cpdef list _shift(self, t, Data state):
+        if self._shift_func is None:
+            raise NotImplementedError
+        return self._shift_func(t, state)
+
+
+cdef class TaylorStochasticSystem(_StochasticSystem):
+    """
+    Base class for SDE systems with analytical Ito-Taylor derivatives.
+
+    To implement a specific SDE, subclass this and override the required
+    methods. Solvers update the internal state using `set_state`
+    before querying individual operators.
+
+    To use this object, create a child class and overwrite the needed method.
+    In order of importance ``a`` and ``bi`` are always needed.
+    ``Libj`` is required for order 1 method such as Milstein.
+    Other derivative are only needed for higher order methods such are
+    taylor order 1.5.
+
+    Overwrite ``__init__`` and ``set_state`` as needed.
+
+    Notes
+    -----
+    Current SDE integration methods assume that the diffusion terms commute.
+    ``Libj(a, b) == Libj(b, a)``, for all $i, j$, at every order (``LiLjbk``).
+    """
+    def __init__(self, int num_diffusion):
+        """
+        Parameters
+        ----------
+        num_diffusion : int
+          Number of diffusion terms.
+        """
+        self.num_diffusion = num_diffusion
 
     cpdef void set_state(self, double t, Data state) except *:
         """
-            Initialize the set of derrivatives.
+        Update the internal time and state cache.
+
+        This method is guaranteed to be called by the solver before evaluating
+        any drift, diffusion, or derivative operators.
         """
-        raise NotImplementedError
+        self.t = t
+        self.state = state
 
     cpdef Data a(self):
         """
-          Drift term
+        Deterministic drift vector $a(t, x)$.
         """
         raise NotImplementedError
 
     cpdef Data bi(self, int i):
         """
-          Diffusion term for the ``i``th operator.
-        """
-        raise NotImplementedError
-
-    cpdef complex expect_i(self, int i):
-        """
-          Expectation value of the ``i``th operator.
+        Diffusion vector $b^i(t, x)$ for the $i$-th Wiener process.
         """
         raise NotImplementedError
 
     cpdef Data Libj(self, int i, int j):
         """
-            bi_n * d bj / dx_n
+        First-order diffusion derivative operator acting on a diffusion term.
+
+        $$(L_i b^j)_\mu = \sum_n b^i_n \frac{\partial b^j_\mu}{\partial x_n}$$
         """
         raise NotImplementedError
 
     cpdef Data Lia(self, int i):
         """
-            bi_n * d a / dx_n
+        First-order diffusion derivative operator acting on the drift term.
+
+        $$(L_i a)_\mu = \sum_n b^i_n \frac{\partial a_\mu}{\partial x_n}$$
         """
         raise NotImplementedError
 
     cpdef Data L0bi(self, int i):
         """
-            dbi/dt
-            + a_n * d bi / dx_n
-            + sum_k bk_n bk_m *0.5 d**2 (bi) / (dx_n dx_m)
+        Drift derivative operator acting on a diffusion term.
+
+        $$(L_0 b^i)_\mu =
+            \frac{\partial b^i_\mu}{\partial t}
+            + \sum_n a_n \frac{\partial b^i_\mu}{\partial x_n}
+            + \frac{1}{2} \sum_{k,n,m} b^k_n b^k_m
+            \frac{\partial^2 b^i_\mu}{\partial x_n \partial x_m}
+        $$
         """
         raise NotImplementedError
 
     cpdef Data LiLjbk(self, int i, int j, int k):
         """
-            bi_n * d/dx_n ( bj_m * d bk / dx_m)
+        Second-order diffusion derivative operator acting on a diffusion term.
+
+        $$(L_i L_j b^k)_\mu =
+            \sum_n b^i_n \frac{\partial}{\partial x_n}
+            \left( \sum_m b^j_m \frac{\partial b^k_\mu}{\partial x_m} \right)
+        $$
         """
         raise NotImplementedError
 
     cpdef Data L0a(self):
         """
-            da/dt
-            + a_n * d a / dx_n
-            + sum_k bk_n bk_m *0.5 d**2 (a) / (dx_n dx_m)
+        Drift derivative operator acting on the drift term.
+
+        $$(L_0 a)_\mu =
+            \frac{\partial a_\mu}{\partial t}
+            + \sum_n a_n \frac{\partial a_\mu}{\partial x_n}
+            + \frac{1}{2} \sum_{k,n,m} b^k_n b^k_m
+              \frac{\partial^2 a_\mu}{\partial x_n \partial x_m}
+        $$
         """
         raise NotImplementedError
 
+    cpdef complex _shift_i(self, int i):
+        """
+        Shift between the noise ``dW`` and measurement.
+        Used in custom evolution when the measurement is known and the noise
+        is desired.
+        """
+        raise NotImplementedError
 
-cdef class StochasticClosedSystem(StochasticSystem):
+    cpdef Data drift(self, t, Data state):
+        if self.t != t or self.state is not state:
+            self.set_state(t, state)
+        return self.a()
+
+    cpdef list diffusion(self, t, Data state):
+        if self.t != t or self.state is not state:
+            self.set_state(t, state)
+        return [self.bi(i) for i in range(self.num_diffusion)]
+
+    cpdef list _shift(self, t, Data state):
+        if self.t != t or self.state is not state:
+            self.set_state(t, state)
+        return [self._shift_i(i) for i in range(self.num_diffusion)]
+
+
+cdef class StochasticClosedSystem(_StochasticSystem):
     """
         RHS for closed quantum stochastic system (ssesolve)
 
@@ -128,6 +242,8 @@ cdef class StochasticClosedSystem(StochasticSystem):
         diffusion = (c_i - e_i / 2) * psi
     """
     cdef readonly list cpcd_ops
+    cdef readonly list c_ops
+    cdef readonly QobjEvo L
 
     def __init__(self, H, sc_ops):
         self.L = -1j * H
@@ -190,7 +306,7 @@ cdef class StochasticClosedSystem(StochasticSystem):
         return out
 
 
-cdef class StochasticOpenSystem(StochasticSystem):
+cdef class StochasticOpenSystem(TaylorStochasticSystem):
     """
         RHS for open quantum stochastic system (smesolve)
 
@@ -202,6 +318,8 @@ cdef class StochasticOpenSystem(StochasticSystem):
     cdef double dt
     cdef int _is_set
     cdef bint _a_set, _b_set, _Lb_set, _L0b_set, _La_set, _LLb_set, _L0a_set
+    cdef readonly list c_ops
+    cdef readonly QobjEvo L
 
     cdef Dense _a, temp, _L0a
     cdef complex[::1] expect_Cv
@@ -523,7 +641,7 @@ cdef class StochasticOpenSystem(StochasticSystem):
         return out
 
 
-cdef class SimpleStochasticSystem(StochasticSystem):
+cdef class SimpleStochasticSystem(_StochasticSystem):
     """
     Simple system that can be solver analytically.
     Used in tests.
@@ -534,6 +652,8 @@ cdef class SimpleStochasticSystem(StochasticSystem):
 
     """
     cdef double dt
+    cdef readonly list c_ops
+    cdef readonly QobjEvo L
 
     def __init__(self, H, c_ops):
         self.L = -1j * H
