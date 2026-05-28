@@ -46,11 +46,11 @@ cdef class Euler:
 
         if self.measurement_noise:
             expect = system._shift(t, state)
-            for i in range(system.num_collapse):
+            for i in range(system.num_diffusion):
                 dW[0, i] -= expect[i].real * dt
 
         cdef Data new_state = _data.add(state, a, dt)
-        for i in range(system.num_collapse):
+        for i in range(system.num_diffusion):
             new_state = _data.add(new_state, b[i], dW[0, i])
         return new_state
 
@@ -72,7 +72,7 @@ cdef class Platen(Euler):
         Chapter 7 Eq. (7.47), H.-P Breuer, F. Petruccione
         """
         cdef _StochasticSystem system = self.system
-        cdef int i, j, num_ops = system.num_collapse
+        cdef int i, j, num_ops = system.num_diffusion
         cdef double sqrt_dt = np.sqrt(dt)
         cdef double sqrt_dt_inv = 0.25 / sqrt_dt
         cdef double dw, dw2, dw2p, dw2m
@@ -85,7 +85,7 @@ cdef class Platen(Euler):
 
         if self.measurement_noise:
             expect = system._shift(t, state)
-            for i in range(system.num_collapse):
+            for i in range(system.num_diffusion):
                 dW[0, i] -= expect[i].real * dt
 
         out = _data.mul(d1, 0.5)
@@ -134,7 +134,7 @@ cdef class Explicit15(Euler):
         By Peter E. Kloeden, Eckhard Platen
         """
         cdef _StochasticSystem system = self.system
-        cdef int i, j, k, num_ops = system.num_collapse
+        cdef int i, j, k, num_ops = system.num_diffusion
         cdef double sqrt_dt = np.sqrt(dt)
         cdef double sqrt_dt_inv = 1./sqrt_dt
         cdef double ddz, ddw, ddd
@@ -284,7 +284,7 @@ cdef class Milstein:
         + 0.5*d2_i' d2_j*(dW_i*dw_j -dt*delta_ij)
         """
         cdef _StochasticSystem system = self.system
-        cdef int i, j, num_ops = system.num_collapse
+        cdef int i, j, num_ops = system.num_diffusion
         cdef double dw
 
         system.set_state(t, state)
@@ -295,7 +295,7 @@ cdef class Milstein:
 
         if self.measurement_noise:
             expect = system._shift(t, state)
-            for i in range(system.num_collapse):
+            for i in range(system.num_diffusion):
                 dW[0, i] -= system._shift_i(i).real * dt
 
         for i in range(num_ops):
@@ -349,7 +349,7 @@ cdef class PredCorr:
         By Peter E. Kloeden, Eckhard Platen
         """
         cdef TaylorStochasticSystem system = self.system
-        cdef int i, j, k, num_ops = system.num_collapse
+        cdef int i, j, k, num_ops = system.num_diffusion
         cdef double eta=self.eta, alpha=self.alpha
         cdef Dense euler = self.euler
 
@@ -357,7 +357,7 @@ cdef class PredCorr:
 
         if self.measurement_noise:
             expect = system._shift(t, state)
-            for i in range(system.num_collapse):
+            for i in range(system.num_diffusion):
                 dW[0, i] -= system._shift_i(i).real * dt
 
         imul_dense(out, 0.)
@@ -400,10 +400,10 @@ cdef class Taylor15(Milstein):
         """
         cdef TaylorStochasticSystem system = self.system
         system.set_state(t, state)
-        cdef int i, j, k, num_ops = system.num_collapse
+        cdef int i, j, k, num_ops = system.num_diffusion
         cdef double[:] dz, dw
 
-        num_ops = system.num_collapse
+        num_ops = system.num_diffusion
         dw = dW[0, :]
         dz = 0.5 * (dW[0, :] + dW[1, :] / np.sqrt(3)) * dt
 
@@ -476,7 +476,7 @@ cdef class Milstein_imp:
         By Peter E. Kloeden, Eckhard Platen
         """
         cdef TaylorStochasticSystem system = self.system
-        cdef int i, j, num_ops = system.num_collapse
+        cdef int i, j, num_ops = system.num_diffusion
         cdef double dw
 
         system.set_state(t, state)
@@ -515,10 +515,10 @@ cdef class Taylor15_imp(Milstein_imp):
         """
         cdef TaylorStochasticSystem system = self.system
         system.set_state(t, state)
-        cdef int i, j, k, num_ops = system.num_collapse
+        cdef int i, j, k, num_ops = system.num_diffusion
         cdef double[:] dz, dw
 
-        num_ops = system.num_collapse
+        num_ops = system.num_diffusion
         dw = dW[0, :]
         dz = 0.5 * (dW[0, :] + dW[1, :] / np.sqrt(3)) * dt
 

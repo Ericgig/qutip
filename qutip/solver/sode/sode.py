@@ -25,19 +25,15 @@ class SIntegrator(Integrator):
     name : str
         The name of the integrator.
 
-    supports_blackbox : bool
-        If True, then the integrator calls only ``system.matmul``,
-        ``system.matmul_data``, ``system.expect``, ``system.expect_data`` and
-        ``isconstant``, ``isoper`` or ``issuper``. This allows the solver using
-        the integrator to modify the system in creative ways. In particular,
-        the solver may modify the system depending on *both* the time ``t``
-        *and* the current ``state`` the system is being applied to.
-
-        If the integrator calls any other methods, set to False.
-
-    supports_time_dependent : bool
-        If True, then the integrator supports time dependent systems. If False,
-        ``supports_blackbox`` should usually be ``False`` too.
+    RHS_format : {"SDESystem", "SDETaylorSystem", "Solver"}
+        Which format the SDE integrator rhs is used by the integration method.
+        - "SDESystem": Instance of :class:"StochasticSystem".
+        - "SDETaylorSystem": Instance of a child class of
+          :class:"TaylorStochasticSystem". Depending on the integration method,
+          not all derivative may need to be defined.
+        - "solver": The SDE integrator take the Solver instance that created it
+          and build the RHS itself. These are limited to integration method
+          that mixes the physics of the problem and the numerics.
 
     integrator_options : dict
         A dictionary of options used by the integrator and their default
@@ -48,8 +44,8 @@ class SIntegrator(Integrator):
     _is_set = False
     _stepper_options = []
     # How the rhs is passed to the integrator.
-    # "Solver", "system", "QobjEvo", or "callable".
-    _entry = "system"
+    # "SDESystem", "SDETaylorSystem", "Solver"
+    RHS_format = "SDESystem"
 
     def set_state(self, t, state0, generator):
         """
@@ -255,6 +251,7 @@ class PlatenSODE(_Explicit_Simple_Integrator):
     stepper = _sode.Platen
     N_dw = 1
     _stepper_options = ["measurement_noise"]
+    RHS_format = "SDESystem"
 
 
 class PredCorr_SODE(_Explicit_Simple_Integrator):
@@ -282,6 +279,7 @@ class PredCorr_SODE(_Explicit_Simple_Integrator):
     stepper = _sode.PredCorr
     N_dw = 1
     _stepper_options = ["alpha", "eta", "measurement_noise"]
+    RHS_format = "SDETaylorSystem"
 
     @property
     def options(self):

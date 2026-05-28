@@ -3,7 +3,7 @@ from qutip.core.data cimport Data, Dense
 from qutip.core.cy.qobjevo cimport QobjEvo
 
 cdef class _StochasticSystem:
-    cdef public int num_collapse
+    cdef public int num_diffusion
 
     cpdef Data drift(self, t, Data state)
     cpdef list diffusion(self, t, Data state)

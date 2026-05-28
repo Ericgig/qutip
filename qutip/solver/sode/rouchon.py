@@ -32,12 +32,12 @@ class RouchonSODE(SIntegrator):
         "dt": 0.0001,
         "tol": 1e-7,
     }
-    _entry = "system"
+    RHS_format = "Solver"
 
-    def __init__(self, system, options):
+    def __init__(self, solver, options):
         self._options = self.integrator_options.copy()
         self.options = options
-        self.system = system
+        self.system = solver.rhs
         self._make_operators(self.system)
 
     def _make_operators(self, solver):

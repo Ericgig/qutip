@@ -79,7 +79,6 @@ cdef class StochasticSystem(_StochasticSystem):
     """
     cdef:
       public object drift_func, diffusion_func, shift
-      public int num_diffusion
 
     def __init__(self, drift, diffusion, num_diffusion, _shift=None):
         self.drift_func = drift
@@ -250,7 +249,7 @@ cdef class StochasticClosedSystem(_StochasticSystem):
         self.c_ops = sc_ops
         self.cpcd_ops = [op + op.dag() for op in sc_ops]
 
-        self.num_collapse = len(self.c_ops)
+        self.num_diffusion = len(self.c_ops)
         for c_op in self.c_ops:
             self.L += -0.5 * c_op.dag() * c_op
 
@@ -260,7 +259,7 @@ cdef class StochasticClosedSystem(_StochasticSystem):
         cdef Data temp, out
 
         out = self.L.matmul_data(t, state)
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             c_op = self.cpcd_ops[i]
             e = c_op.expect_data(t, state)
             c_op = self.c_ops[i]
@@ -273,7 +272,7 @@ cdef class StochasticClosedSystem(_StochasticSystem):
         cdef int i
         cdef QobjEvo c_op
         cdef list out = []
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             c_op = self.c_ops[i]
             _out = c_op.matmul_data(t, state)
             c_op = self.cpcd_ops[i]
@@ -281,11 +280,11 @@ cdef class StochasticClosedSystem(_StochasticSystem):
             out.append(_data.add(_out, state, -0.5 * expect))
         return out
 
-    cpdef list expect(self, t, Data state):
+    cpdef list _shift(self, t, Data state):
         cdef int i
         cdef QobjEvo c_op
         cdef list expect = []
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             c_op = self.cpcd_ops[i]
             expect.append(c_op.expect_data(t, state))
         return expect
@@ -302,7 +301,7 @@ cdef class StochasticClosedSystem(_StochasticSystem):
         out.L = L
         out.c_ops = c_ops
         out.cpcd_ops = cpcd_ops
-        out.num_collapse = len(c_ops)
+        out.num_diffusion = len(c_ops)
         return out
 
 
@@ -336,7 +335,7 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
             self.L = self.L + liouvillian(None, c_ops)
 
         self.c_ops = [spre(op) + spost(op.dag()) for op in sc_ops]
-        self.num_collapse = len(self.c_ops)
+        self.num_diffusion = len(self.c_ops)
         self.state_size = self.L.shape[1]
         self._is_set = 0
         self.N_root = int(self.state_size**0.5)
@@ -350,18 +349,18 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
         cdef QobjEvo c_op
         cdef complex expect
         cdef list out = []
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             c_op = self.c_ops[i]
             vec = c_op.matmul_data(t, state)
             expect = _data.trace_oper_ket(vec)
             out.append(_data.add(vec, state, -expect))
         return out
 
-    cpdef list expect(self, t, Data state):
+    cpdef list _shift(self, t, Data state):
         cdef int i
         cdef QobjEvo c_op
         cdef list expect = []
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             c_op = self.c_ops[i]
             vec = c_op.matmul_data(t, state)
             expect.append(_data.trace_oper_ket(vec))
@@ -383,7 +382,7 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
         self._L0a_set = False
 
         if not self._is_set:
-            n = self.num_collapse
+            n = self.num_diffusion
             l = self.state_size
             self._is_set = 1
             self._a = dense.zeros(self.state_size, 1)
@@ -427,7 +426,7 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
             self._compute_b()
         return _dense_wrap(self._b[i, :])
 
-    cpdef complex expect_i(self, int i):
+    cpdef complex _shift_i(self, int i):
         if not self._is_set:
             raise RuntimeError(
                 "Derrivatives set for ito taylor expansion need "
@@ -448,7 +447,7 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
         cdef int i
         cdef QobjEvo c_op
         cdef Dense b_vec, state=self.state
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             c_op = <QobjEvo> self.c_ops[i]
             b_vec = <Dense> _dense_wrap(self._b[i, :])
             imul_dense(b_vec, 0)
@@ -480,9 +479,9 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
         if not self._b_set:
             self._compute_b()
 
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             c_op = <QobjEvo> self.c_ops[i]
-            for j in range(i, self.num_collapse):
+            for j in range(i, self.num_diffusion):
                 b_vec = <Dense> _dense_wrap(self._b[j, :])
                 Lb_vec = <Dense> _dense_wrap(self._Lb[i, j, :])
                 imul_dense(Lb_vec, 0)
@@ -506,7 +505,7 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
         if not self._b_set:
             self._compute_b()
 
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             b_vec = <Dense> _dense_wrap(self._b[i, :])
             La_vec = <Dense> _dense_wrap(self._La[i, :])
             imul_dense(La_vec, 0.)
@@ -530,7 +529,7 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
         if not self._a_set:
             self._compute_a()
 
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             c_op = <QobjEvo> self.c_ops[i]
             L0b_vec = <Dense> _dense_wrap(self._L0b[i, :])
             b_vec = <Dense> _dense_wrap(self._b[i, :])
@@ -556,7 +555,7 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
             for j in range(i):
                 b_vec = <Dense> _dense_wrap(self._b[j, :])
                 iadd_dense(L0b_vec, b_vec, -self.expect_Cb[j,i])
-            for j in range(i, self.num_collapse):
+            for j in range(i, self.num_diffusion):
                 b_vec = <Dense> _dense_wrap(self._b[j, :])
                 iadd_dense(L0b_vec, b_vec, -self.expect_Cb[i,j])
         self._L0b_set = True
@@ -586,9 +585,9 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
         if not self._Lb_set:
             self._compute_Lb()
 
-        for i in range(self.num_collapse):
-          for j in range(i, self.num_collapse):
-            for k in range(j, self.num_collapse):
+        for i in range(self.num_diffusion):
+          for j in range(i, self.num_diffusion):
+            for k in range(j, self.num_diffusion):
                 c_op = <QobjEvo> self.c_ops[i]
                 LLb_vec = <Dense> _dense_wrap(self._LLb[i, j, k, :])
                 Lb_vec = <Dense> _dense_wrap(self._Lb[j, k, :])
@@ -633,7 +632,7 @@ cdef class StochasticOpenSystem(TaylorStochasticSystem):
         cdef StochasticOpenSystem out = cls.__new__(cls)
         out.L = L
         out.c_ops = c_ops
-        out.num_collapse = len(c_ops)
+        out.num_diffusion = len(c_ops)
         out.state_size = out.L.shape[1]
         out._is_set = 0
         out.N_root = int(out.state_size**0.5)
@@ -659,7 +658,7 @@ cdef class SimpleStochasticSystem(_StochasticSystem):
         self.L = -1j * H
         self.c_ops = c_ops
 
-        self.num_collapse = len(self.c_ops)
+        self.num_diffusion = len(self.c_ops)
         self.dt = 1e-6
 
     cpdef Data drift(self, t, Data state):
@@ -668,14 +667,14 @@ cdef class SimpleStochasticSystem(_StochasticSystem):
     cpdef list diffusion(self, t, Data state):
         cdef int i
         cdef out = []
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             out.append(self.c_ops[i].matmul_data(t, state))
         return out
 
-    cpdef list expect(self, t, Data state):
+    cpdef list _shift(self, t, Data state):
         cdef int i
         cdef list expect = []
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             expect.append(0j)
         return expect
 
@@ -689,7 +688,7 @@ cdef class SimpleStochasticSystem(_StochasticSystem):
     cpdef Data bi(self, int i):
         return self.c_ops[i].matmul_data(self.t, self.state)
 
-    cpdef complex expect_i(self, int i):
+    cpdef complex _shift_i(self, int i):
         return 0j
 
     cpdef Data Libj(self, int i, int j):
@@ -729,7 +728,7 @@ cdef class SimpleStochasticSystem(_StochasticSystem):
             return (f(0) + 4 * f(T/2) + f(T)) / 6
 
         out = _intergal(self.L, t) * t
-        for i in range(self.num_collapse):
+        for i in range(self.num_diffusion):
             out += _intergal(self.c_ops[i], t) * W[i]
             out -= 0.5 * _intergal(
                 lambda t: self.c_ops[i](t) @ self.c_ops[i](t), t
