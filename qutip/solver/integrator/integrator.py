@@ -212,6 +212,8 @@ class Integrator:
         for t in tlist[1:]:
             yield self.integrate(t, False)
 
+        #TODO: why cut tlist[0] here, not in solver?
+
     def reset(self, hard: bool = False):
         """Reset internal state of the ODE solver."""
         if self._is_set:
