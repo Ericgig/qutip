@@ -31,7 +31,7 @@ def L0(system, f):
             sec = sec - f(t, (rho + dxi * dt))
             sec = sec + f0
             sec = sec / dt / dt * 0.5
-            for k in range(system.num_collapse):
+            for k in range(system.num_diffusion):
                 out = out + (
                     sec
                     * _data.inner(dxi, system.diffusion(t, rho)[k])
@@ -111,7 +111,7 @@ def _run_derr_check(solver, state):
     Compare each derrivatives to the finite differences equivalent.
     """
     t = 0
-    N = solver.num_collapse
+    N = solver.num_diffusion
     a = solver.drift
     solver.set_state(t, state)
 

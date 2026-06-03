@@ -917,7 +917,7 @@ class StochasticSolver(MultiTrajSolver):
         """
         Build the rhs as a QobjEvo.
         """
-        raise NotImplementedError()
+        return self._rhs
 
     @property
     def rhs_func(self):
@@ -1057,6 +1057,40 @@ class StochasticSolver(MultiTrajSolver):
         if raw_data:
             return _DataFeedback(default, open=cls._open)
         return _QobjFeedback(default, open=cls._open)
+
+    @property
+    def _integrator(self):
+        """ Return the initialted integrator. """
+        if not self._integrator_instance:
+            _time_start = time()
+            method = self._options["method"]
+            if method in self.avail_integrators():
+                integrator = self.avail_integrators()[method]
+            elif issubclass(method, Integrator):
+                integrator = method
+            else:
+                raise ValueError("Integrator method not supported.")
+            if integrator.RHS_format == "Solver":
+                self._integrator_instance = integrator(
+                    self, self.options
+                )
+            elif integrator.RHS_format == "SDETaylorSystem":
+                if not self._open:
+                    raise TypeError(
+                        f"The integration method {method} "
+                        "only support systems with derivatives."
+                    )
+                self._integrator_instance = integrator(
+                    self.rhs, self.options
+                )
+            elif integrator.RHS_format == "SDESystem":
+                self._integrator_instance = integrator(
+                    self.rhs, self.options
+                )
+            else:
+                raise ValueError("Integrator entry point not supported.")
+            self._init_integrator_time = time() - _time_start
+        return self._integrator_instance
 
 
 class SMESolver(StochasticSolver):
