@@ -31,9 +31,10 @@ class SIntegrator(Integrator):
         - "SDETaylorSystem": Instance of a child class of
           :class:"TaylorStochasticSystem". Depending on the integration method,
           not all derivative may need to be defined.
-        - "solver": The SDE integrator take the Solver instance that created it
-          and build the RHS itself. These are limited to integration method
-          that mixes the physics of the problem and the numerics.
+        - "system": An instance of `_StochasticRHS`. For cases where the
+          integrator build the RHS operator ifself. These are limited to
+          integration method that mixes the physics of the problem and the
+          numerics.
 
     integrator_options : dict
         A dictionary of options used by the integrator and their default

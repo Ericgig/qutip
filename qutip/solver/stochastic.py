@@ -1070,9 +1070,9 @@ class StochasticSolver(MultiTrajSolver):
                 integrator = method
             else:
                 raise ValueError("Integrator method not supported.")
-            if integrator.RHS_format == "Solver":
+            if integrator.RHS_format == "system":
                 self._integrator_instance = integrator(
-                    self, self.options
+                    self.rhs, self.options
                 )
             elif integrator.RHS_format == "SDETaylorSystem":
                 if not self._open:

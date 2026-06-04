@@ -3,8 +3,7 @@ from qutip import (
     qeye, num, destroy, create, QobjEvo, Qobj,
     basis, rand_herm, fock_dm, liouvillian, operator_to_vector
 )
-from qutip.solver.sode.ssystem import *
-from qutip.solver.sode.ssystem import SimpleStochasticSystem, StochasticClosedSystem
+from qutip.solver.sode.ssystem import StochasticOpenSystem
 import qutip.core.data as _data
 import pytest
 from itertools import product
