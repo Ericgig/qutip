@@ -3,14 +3,13 @@
 Quantum Solvers and Integrators Architecture
 ############################################
 
-The solver framework in QuTiP is responsible for simulating the time-evolution of
-quantum systems. Built directly on top of the core data layer,
-the architecture enforces a separation of concerns between physical equations
-(the *what*) and numerical solvers (the *how*).
+The solver framework in QuTiP is responsible for simulating the time-evolution of quantum systems.
+Built directly on top of the core data layer,
+the architecture enforces a separation of concerns between physical equations and numerical solvers.
 
 This document serves as an overview of the internal architecture of QuTiP's solvers,
-guiding core developers and contributors on how the system is structured, how data
-flows through it, and how to extend it.
+guiding core developers and contributors on how the system is structured,
+how data flows through it, and how to extend it.
 
 
 Core Architecture and Separation of Concerns
@@ -28,7 +27,7 @@ tasks between two primary base classes:
 
 2. **The Numerical Layer (:class:`Integrator`)**: This layer handles the low-level
    numerical implementation of Ordinary Differential Equations (ODEs) or Stochastic
-   Differential Equations (SODEs). The solver communicates the physical state and derivative 
+   Differential Equations (SDEs). The solver communicates the physical state and derivative
    rules down to the :class:`Integrator`. The selection of which numerical scheme to run
    is entirely dictated by the solver's configuration options through the ``"method"`` parameter.
 
@@ -43,19 +42,16 @@ User-Facing Interfaces vs. Internal Infrastructure
 To maintain an intuitive user experience, QuTiP hides internal architectural complexity
 behind high-level functional wrappers:
 
-- **Functional Helpers**: Functions such as :func:`sesolve` or :func:`mesolve` serve as
-  convenience entry points for the end user. In a single call, these helper functions
-  instantiate the appropriate underlying :class:`Solver` class, run the evolution,
-  and return a completed results container.
-- **Physics to Function Mapping**: Multiple functional entry points can map back to the
-  same physical equations. For instance, :func:`sesolve`, :func:`fsesolve`, and
-  :func:`krylovsolve` all represent closed-system Schrödinger dynamics, yet they diverge
-  internally by invoking completely separate numerical strategies or backend structural logic.
-- **Encapsulation Boundaries**: End users typically interact exclusively with top-level
-  functions or the core :class:`Solver` class interface. The numerical :class:`Integrator`
-  and the configuration parsing via :class:`SolverOptions` operate silently under the hood.
-  Once execution concludes, the resulting :class:`Result` instance is returned to the user
-  as a read-only data container.
+- Functions such as :func:`sesolve` or :func:`mesolve` serve as convenience entry points for the end user.
+  In a single call, these helper functions instantiate the appropriate underlying :class:`Solver` class,
+  run the evolution, and return a completed results container.
+- Multiple functional entry points can map back to the same physical equations.
+  For instance, :func:`sesolve`, :func:`fsesolve`, and :func:`krylovsolve`
+  all represent closed-system Schrödinger dynamics, using :class:`SESolver` but different integrators.
+- End users typically interact exclusively with top-level functions or the core :class:`Solver` class interface.
+  The numerical :class:`Integrator` and the configuration parsing via :class:`SolverOptions` operate silently under the hood.
+  Once execution concludes, the resulting :class:`Result` instance is returned
+  to the user and expected to be used as a read-only data container.
 
 
 .. toctree::
@@ -63,9 +59,10 @@ behind high-level functional wrappers:
    :caption: Sections
 
    terminology
-   motivation
-   Solver
-   Integrator
-   Result
-   SolverOptions
-   Feedback
+   .. motivation
+   .. solver
+   integrator
+   integrator_stochastic
+   .. result
+   .. solveroptions
+   .. feedback

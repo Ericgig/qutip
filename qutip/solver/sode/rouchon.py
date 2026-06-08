@@ -68,7 +68,7 @@ class RouchonSODE(SIntegrator):
 
         self.id = _data.identity[dtype](self.H.shape[0])
 
-    def set_state(self, t, state0, generator):
+    def set_state(self, t, state0, wiener, is_measurement=False):
         """
         Set the state of the SODE solver.
 
@@ -85,14 +85,18 @@ class RouchonSODE(SIntegrator):
         """
         self.t = t
         self.state = state0
-        if isinstance(generator, Wiener):
-            self.wiener = generator
-        else:
-            self.wiener = Wiener(
-                t, self.options["dt"], generator,
-                (1, self.num_collapses,)
-            )
-        self.system._register_feedback(self.wiener)
+        self.wiener = wiener
+        self.wiener._prepare(self.N_dw)
+        if is_measurement:
+            raise NotImplementedError
+        # if isinstance(generator, Wiener):
+        #    self.wiener = generator
+        #else:
+        #    self.wiener = Wiener(
+        #        t, self.options["dt"], generator,
+        #        (1, self.num_collapses,)
+        #    )
+        #self.system._register_feedback(self.wiener)
         self._make_operators(self.system)
         self._is_set = True
 

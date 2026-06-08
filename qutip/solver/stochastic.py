@@ -12,7 +12,7 @@ from time import time
 from collections.abc import Sequence
 from .multitrajresult import MultiTrajResult
 from .sode.ssystem import StochasticOpenSystem, StochasticClosedSystem
-from .sode._noise import PreSetWiener
+from .sode._noise import Wiener, PreSetWiener
 from .result import Result, ExpectOp
 from .multitraj import _MultiTrajRHS, MultiTrajSolver
 from .. import Qobj, QobjEvo
@@ -738,6 +738,34 @@ class StochasticSolver(MultiTrajSolver):
                     f"{len(self._rhs.sc_ops)} dW_factors are expected."
                 )
         self._dW_factors = new_dW_factors
+
+    def _initialize_run_one_traj(self, seed, state, tlist, e_ops,
+                                 **integrator_kwargs):
+        result = self._trajectory_resultclass(e_ops, self.options)
+        if "generator" in integrator_kwargs:
+            generator = integrator_kwargs.pop("generator")
+        else:
+            generator = self._get_generator(seed)
+
+        is_measurement = False
+        if isinstance(generator, PreSetWiener):
+            wiener = generator
+            is_measurement = generator.is_measurement
+        elif isinstance(generator, Wiener):
+            wiener = generator
+        else:
+            num_collapse = len(self.rhs.sc_ops)
+            wiener = Wiener(
+                t, self.options["dt"], generator,
+                (self.N_dw, num_collapse)
+            )
+
+        # Reset integrator per trajectory to apply the feedback
+        self._integrator_instance = None
+        self.system._register_feedback(wiener)
+        self._integrator.set_state(tlist[0], state, wiener, is_measurement)
+        result.add(tlist[0], self._restore_state(state, copy=False))
+        return result
 
     def _integrate_one_traj(self, seed, tlist, result):
         for t, state, noise in self._integrator.run(tlist):

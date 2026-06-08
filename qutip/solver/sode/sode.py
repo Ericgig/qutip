@@ -3,7 +3,7 @@ import warnings
 from . import _sode
 from ..integrator.integrator import Integrator
 from ..stochastic import StochasticSolver, SMESolver
-from ._noise import Wiener, PreSetWiener
+from .ssystem import StochasticSystem, TaylorStochasticSystem
 
 __all__ = ["SIntegrator", "PlatenSODE", "PredCorr_SODE"]
 
@@ -43,12 +43,26 @@ class SIntegrator(Integrator):
         included here will be supported by the :cls:SolverOdeOptions.
     """
     _is_set = False
-    _stepper_options = []
+    _support_measurement_noise = False
+    _wiener_is_measurement = False
     # How the rhs is passed to the integrator.
-    # "SDESystem", "SDETaylorSystem", "Solver"
+    # "SDESystem", "SDETaylorSystem", "system"
     RHS_format = "SDESystem"
+    N_dw = 1
 
-    def set_state(self, t, state0, generator):
+    def __init__(self, rhs, options):
+        expected_type = {
+            "SDESystem": StochasticSystem,
+            "SDETaylorSystem": TaylorStochasticSystem,
+            "system": _StochasticRHS,
+        }[self.RHS_format]
+        if not isinstance(rhs, expected_type):
+            raise TypeError
+        self._options = self.integrator_options.copy()
+        self.options = options
+        self.rhs = rhs
+
+    def set_state(self, t, state0, wiener, is_measurement=False):
         """
         Set the state of the SODE solver.
 
@@ -65,34 +79,14 @@ class SIntegrator(Integrator):
         """
         self.t = t
         self.state = state0
-        stepper_opt = {
-            key: self.options[key]
-            for key in self._stepper_options
-            if key in self.options
-        }
-
-        if isinstance(generator, PreSetWiener):
-            self.wiener = generator
-            if (
-                generator.is_measurement
-                and "measurement_noise" not in self._stepper_options
-            ):
-                raise NotImplementedError(
-                    f"{type(self).__name__} does not support running"
-                    " the evolution from measurements."
-                )
-            stepper_opt["measurement_noise"] = generator.is_measurement
-        elif isinstance(generator, Wiener):
-            self.wiener = generator
-        else:
-            num_collapse = len(self.rhs.sc_ops)
-            self.wiener = Wiener(
-                t, self.options["dt"], generator,
-                (self.N_dw, num_collapse)
+        self.weiner = weiner
+        self.wiener._prepare(self.N_dw)
+        self._wiener_is_measurement = is_measurement
+        if is_measurement and not self._support_measurement_noise:
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support running"
+                " the evolution from measurements."
             )
-        self.rhs._register_feedback(self.wiener)
-        rhs = self.rhs(self.options)
-        self.step_func = self.stepper(rhs, **stepper_opt).run
         self._is_set = True
 
     def get_state(self, copy=True):
@@ -134,7 +128,25 @@ class SIntegrator(Integrator):
             )
 
 
-class _Explicit_Simple_Integrator(SIntegrator):
+class _Cython_SIntegrator(Integrator):
+    stepper = None
+    _stepper_options = []
+
+    def set_state(self, t, state0, generator):
+        stepper_opt = {
+            key: self.options[key]
+            for key in self._stepper_options
+            if key in self.options
+        }
+        super().set_state(t, state0, generator)
+        self.step_func = self.stepper(
+            self.rhs(self.options),
+            measurement_noise=generator.is_measurement,
+            **stepper_opt
+        ).run
+
+
+class _Explicit_Simple_Integrator(_Cython_SIntegrator):
     """
     Stochastic evolution solver
     """
@@ -145,11 +157,6 @@ class _Explicit_Simple_Integrator(SIntegrator):
     }
     stepper = None
     N_dw = 0
-
-    def __init__(self, rhs, options):
-        self._options = self.integrator_options.copy()
-        self.options = options
-        self.rhs = rhs
 
     def integrate(self, t, copy=True):
         delta_t = t - self.t
