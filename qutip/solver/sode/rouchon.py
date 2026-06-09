@@ -32,24 +32,24 @@ class RouchonSODE(SIntegrator):
         "dt": 0.0001,
         "tol": 1e-7,
     }
+    RHS_format = "system"
 
-    def __init__(self, rhs, options):
+    def __init__(self, system, options):
         self._options = self.integrator_options.copy()
         self.options = options
-        self.rhs = rhs
-        self._make_operators()
+        self.system = system
+        self._make_operators(self.system)
 
-    def _make_operators(self):
-        rhs = self.rhs
-        self.H = rhs.H
+    def _make_operators(self, solver):
+        self.H = solver.H
         if self.H.issuper:
             raise TypeError("The rouchon stochastic integration method can't"
                             " use a premade Liouvillian.")
-        self._issuper = rhs.issuper
+        self._issuper = solver._dims.issuper
 
         dtype = type(self.H(0).data)
-        self.c_ops = rhs.c_ops
-        self.sc_ops = rhs.sc_ops
+        self.c_ops = solver.c_ops
+        self.sc_ops = solver.sc_ops
         self.cpcds = [op + op.dag() for op in self.sc_ops]
         for op in self.cpcds:
             op.compress()
@@ -68,7 +68,7 @@ class RouchonSODE(SIntegrator):
 
         self.id = _data.identity[dtype](self.H.shape[0])
 
-    def set_state(self, t, state0, generator):
+    def set_state(self, t, state0, wiener, is_measurement=False):
         """
         Set the state of the SODE solver.
 
@@ -85,15 +85,19 @@ class RouchonSODE(SIntegrator):
         """
         self.t = t
         self.state = state0
-        if isinstance(generator, Wiener):
-            self.wiener = generator
-        else:
-            self.wiener = Wiener(
-                t, self.options["dt"], generator,
-                (1, self.num_collapses,)
-            )
-        self.rhs._register_feedback(self.wiener)
-        self._make_operators()
+        self.wiener = wiener
+        self.wiener._prepare(self.N_dw)
+        if is_measurement:
+            raise NotImplementedError
+        # if isinstance(generator, Wiener):
+        #    self.wiener = generator
+        #else:
+        #    self.wiener = Wiener(
+        #        t, self.options["dt"], generator,
+        #        (1, self.num_collapses,)
+        #    )
+        #self.system._register_feedback(self.wiener)
+        self._make_operators(self.system)
         self._is_set = True
 
     def integrate(self, t, copy=True):

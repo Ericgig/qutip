@@ -54,26 +54,52 @@ class Solver:
         "normalize_output": True,
         "method": "adams",
     }
+    _rhs_reset_option = set()
     _resultclass = Result
+    _integrator_instance = None
+    _rhs = None
 
     def __init__(self, rhs, *, options=None):
-        if isinstance(rhs, Qobj):
-            rhs = QobjEvo(rhs)
-        if not isinstance(rhs, QobjEvo):
+        if isinstance(rhs, (QobjEvo, Qobj)):
+            self._rhs = QobjEvo(rhs)
+        else:
             raise TypeError("The rhs must be a Qobj or QobjEvo")
-        self.rhs = rhs
+        self._dims = self._rhs._dims
+        self._post_init(options)
+
+    def _post_init(self, options):
         self.options = options
-        self._integrator = self._get_integrator()
         self._state_metadata = {}
         self.stats = self._initialize_stats()
-        self.rhs._register_feedback({}, solver=self.name)
+
+    @property
+    def system(self):
+        """
+        Get the rhs as a system.
+        """
+        raise NotImplementedError
+
+    @property
+    def rhs(self):
+        """
+        Build the rhs QobjEvo.
+        """
+        self._rhs._register_feedback({}, solver=self.name)
+        return self._rhs
+
+    @property
+    def rhs_func(self):
+        """
+        Get the rhs as a callable.
+        """
+        return self.rhs.matmul_data
 
     def _initialize_stats(self):
         """ Return the initial values for the solver stats.
         """
         return {
-            "method": self._integrator.name,
-            "init time": self._init_integrator_time,
+            "method": self.options["method"],
+            "init time": 0.0,
             "preparation time": 0.0,
             "run time": 0.0,
         }
@@ -87,7 +113,7 @@ class Solver:
 
         Should return the state's data such that it can be used by Integrators.
         """
-        if self.rhs.issuper and state.isket:
+        if self._dims.issuper and state.isket:
             state = ket2dm(state)
 
         if not state.dtype.sparcity() == "dense":
@@ -97,10 +123,10 @@ class Solver:
             state = state.to(dtype)
 
         if (
-            self.rhs._dims[1] != state._dims[0]
-            and self.rhs._dims[1] != state._dims
+            self._dims[1] != state._dims[0]
+            and self._dims[1] != state._dims
         ):
-            raise TypeError(f"incompatible dimensions {self.rhs.dims}"
+            raise TypeError(f"incompatible dimensions {self._dims}"
                             f" and {state.dims}")
 
         self._state_metadata = {
@@ -108,7 +134,7 @@ class Solver:
             # This is herm flag take for granted that the liouvillian keep
             # hermiticity.  But we do not check user passed super operator for
             # anything other than dimensions.
-            'isherm': not (self.rhs._dims == state._dims) and state._isherm,
+            'isherm': not (self._dims == state._dims) and state._isherm,
         }
         if state.isket:
             norm = state.norm()
@@ -125,20 +151,23 @@ class Solver:
             # refer to the ODE tolerance and some integrator do not use it.
             and np.abs(norm - 1) <= settings.core["atol"]
             # Only ket and dm can be normalized
-            and (self.rhs._dims[1] == state._dims or state.shape[1] == 1
+            and (self._dims[1] == state._dims or state.shape[1] == 1
                  or (not self._vectorize_state and state.isoper))
         )
-        if self._vectorize_state and self.rhs._dims[1] == state._dims:
+        if self._vectorize_state and self._dims[1] == state._dims:
+            print("processed input state shape1", stack_columns(state.data).shape)
             return stack_columns(state.data)
+        print("processed input state shape2", state.shape)
         return state.data
 
     def _restore_state(self, data, *, copy=True):
         """
         Retore the Qobj state from its data.
         """
+        print("output data shape", data.shape)
         if (
             self._vectorize_state
-            and self._state_metadata['dims'] == self.rhs._dims[1]
+            and self._state_metadata['dims'] == self._dims[1]
         ):
             state = Qobj(unstack_columns(data),
                          **self._state_metadata, copy=False)
@@ -198,16 +227,15 @@ class Solver:
         _data0 = self._prepare_state(state0)
         self._integrator.set_state(tlist[0], _data0)
         self._argument(args)
-        stats = self._initialize_stats()
         results = self._resultclass(
-            e_ops, self.options,
-            solver=self.name, stats=stats,
+            e_ops, {**self.options},
+            solver=self.name, stats=self.stats,
         )
+        self.stats['preparation time'] += time() - _time_start
         results.add(
             tlist[0],
             self._restore_state(self._integrator.get_state()[1], copy=False)
         )
-        stats['preparation time'] += time() - _time_start
 
         progress_bar = progress_bars[self.options['progress_bar']](
             len(tlist)-1, **self.options['progress_kwargs']
@@ -217,7 +245,7 @@ class Solver:
             results.add(t, self._restore_state(state, copy=False))
         progress_bar.finished()
 
-        stats['run time'] = progress_bar.total_time()
+        self.stats['run time'] = progress_bar.total_time()
         # TODO: It would be nice if integrator could give evolution statistics
         # stats.update(_integrator.stats)
         return results
@@ -276,19 +304,39 @@ class Solver:
         self.stats["run time"] += time() - _time_start
         return self._restore_state(state, copy=copy)
 
-    def _get_integrator(self):
+    @property
+    def _integrator(self):
         """ Return the initialted integrator. """
-        _time_start = time()
-        method = self._options["method"]
-        if method in self.avail_integrators():
-            integrator = self.avail_integrators()[method]
-        elif issubclass(method, Integrator):
-            integrator = method
-        else:
-            raise ValueError("Integrator method not supported.")
-        integrator_instance = integrator(self.rhs, self.options)
-        self._init_integrator_time = time() - _time_start
-        return integrator_instance
+        if not self._integrator_instance:
+            _time_start = time()
+            method = self._options["method"]
+            if method in self.avail_integrators():
+                integrator = self.avail_integrators()[method]
+            elif issubclass(method, Integrator):
+                integrator = method
+            else:
+                raise ValueError("Integrator method not supported.")
+            if integrator.RHS_format == "Solver":
+                self._integrator_instance = integrator(
+                    self, self.options
+                )
+            elif integrator.RHS_format == "matrix":
+                if not self.rhs.isconstant:
+                    raise TypeError(
+                        f"The integration method {method} "
+                        "only support constant systems."
+                    )
+                self._integrator_instance = integrator(
+                    self.rhs(0).data, self.options
+                )
+            elif integrator.RHS_format == "callable":
+                self._integrator_instance = integrator(
+                    self.rhs_func, self.options
+                )
+            else:
+                raise ValueError("Integrator entry point not supported.")
+            self._init_integrator_time = time() - _time_start
+        return self._integrator_instance
 
     @property
     def sys_dims(self):
@@ -310,7 +358,7 @@ class Solver:
         """
         Internal version of sys_dims that returns the full ``_dims``.
         """
-        return self.rhs._dims[0]
+        return self._dims[0]
 
     @property
     def options(self) -> dict[str, Any]:
@@ -402,18 +450,18 @@ class Solver:
         ``solver.options[key] = value`` or ``solver.options = options``.
         Allow to update the solver with the new options
         """
-        from_setter = isinstance(keys, (set))
+        from_setter = isinstance(keys, set)
         if not from_setter:
             keys = set([keys])
+
+        method = self.options["method"]
+        integrator = self.avail_integrators()[method]
 
         if not from_setter and "method" in keys:
             # Drop the ode's options.
             old_solver_options, _ = self._parse_options(
                 self.options, self.solver_options, {}
             )
-            method = self.options["method"]
-            integrator = self.avail_integrators()[method]
-
             self._options = _SolverOptions(
                 {**self.solver_options, **integrator.integrator_options},
                 self._apply_options,
@@ -422,24 +470,32 @@ class Solver:
                 **old_solver_options
             )
 
-        if self._integrator is None or not keys:
-            pass
-        elif 'method' in keys and self._integrator._is_set:
+        state = None
+        if self._integrator_instance is not None and self._integrator._is_set:
             state = self._integrator.get_state()
-            self._integrator = self._get_integrator()
+
+        if self._rhs_reset_option & keys:
+            self._rhs = None
+            self._integrator_instance = None
+        elif (
+            "method" in keys
+            or keys & integrator.integrator_options.keys()
+        ):
+            # With most ODE, changing the options need a full reset, which is
+            # almost the same cost as creating a new one. The simplest is just
+            # to restart from scratch if integrator options were touched.
+            self._integrator_instance = None
+
+        if state is not None:
             self._integrator.set_state(*state)
-        elif "method" in keys:
-            self._integrator = self._get_integrator()
-        elif keys & self._integrator.integrator_options.keys():
-            # Some of the keys are used by the integrator.
-            self._integrator.options = self._options
-            self._integrator.reset(hard=True)
 
     def _argument(self, args):
         """Update the args, for the `rhs` and other operators."""
         if args:
-            self.rhs.arguments(args)
-            self._integrator.arguments(args)
+            if self._rhs:
+                self._rhs.arguments(args)
+            if self._integrator_instance:
+                self._integrator.reset()
 
     @classmethod
     def avail_integrators(cls):

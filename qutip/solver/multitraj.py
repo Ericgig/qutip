@@ -25,19 +25,13 @@ class _MultiTrajRHS:
     """
     def __init__(self, rhs):
         self.rhs = rhs
+        self._dims = rhs._dims
 
     def arguments(self, args):
         self.rhs.arguments(args)
 
     def _register_feedback(self, type, val):
-        pass
-
-    def __getattr__(self, attr):
-        if attr == "rhs":
-            raise AttributeError
-        if hasattr(self.rhs, attr):
-            return getattr(self.rhs, attr)
-        raise AttributeError
+        self.rhs._register_feedback({key: val}, solver="Generic")
 
 
 class MultiTrajSolver(Solver):
@@ -81,16 +75,31 @@ class MultiTrajSolver(Solver):
 
     def __init__(self, rhs, *, options=None):
         if isinstance(rhs, QobjEvo):
-            self.rhs = _MultiTrajRHS(rhs)
+            self._system = _MultiTrajRHS(rhs)
         elif isinstance(rhs, _MultiTrajRHS):
-            self.rhs = rhs
+            self._system = rhs
         else:
             raise TypeError("The system should be a QobjEvo")
+        self._dims = self._system._dims
+        self._post_init(options)
+
+    def _post_init(self, options):
         self.options = options
         self.seed_sequence = SeedSequence()
-        self._integrator = self._get_integrator()
         self._state_metadata = {}
         self.stats = self._initialize_stats()
+
+    @property
+    def system(self) -> _MultiTrajRHS:
+        return self._system
+
+    @property
+    def rhs(self) -> QobjEvo:
+        return self._system.rhs
+
+    @property
+    def rhs_func(self) -> Callable:
+        return self._system.rhs.matmul_data
 
     def start(self, state0: Qobj, t0: float, seed: int | SeedSequence = None):
         """
@@ -376,8 +385,8 @@ class MultiTrajSolver(Solver):
     def _argument(self, args):
         """Update the args, for the `rhs` and `c_ops` and other operators."""
         if args:
-            self.rhs.arguments(args)
-            self._integrator.arguments(args)
+            self.system.arguments(args)
+            self._integrator.reset()
 
     def _get_generator(self, seed):
         """

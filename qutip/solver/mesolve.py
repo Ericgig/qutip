@@ -8,10 +8,12 @@ from __future__ import annotations
 
 __all__ = ['mesolve', 'MESolver']
 
+from collections import namedtuple
 from numpy.typing import ArrayLike
 from typing import Any
 from time import time
-from .. import Qobj, QobjEvo, liouvillian, lindblad_dissipator
+from .. import (Qobj, QobjEvo, liouvillian, lindblad_dissipator)
+from ..core.dimensions import Dimensions
 from ..typing import EopsLike, QobjEvoLike
 from ..core import data as _data
 from ..core.cy.lindblad_matrix_form import LindbladMatrixForm
@@ -212,6 +214,7 @@ class MESolver(SESolver):
         "method": "adams",
         "matrix_form": False,
     }
+    _rhs_reset_option = set("matrix_form")
 
     def __init__(
         self,
@@ -232,24 +235,51 @@ class MESolver(SESolver):
 
         self._num_collapse = len(c_ops)
 
-        # Check for matrix_form option
-        matrix_form = (options or {}).get('matrix_form', False)
+        self.H = QobjEvo(H)
+        self.c_ops = [QobjEvo(c) for c in c_ops]
 
-        if matrix_form:
-            if H.issuper:
-                raise TypeError(
-                    "matrix_form=True cannot be used with superoperator H"
-                )
-            self._vectorize_state = False
-            H = QobjEvo(H)
-            c_ops_qevo = [QobjEvo(c) for c in c_ops]
-            rhs = LindbladMatrixForm(H, c_ops_qevo)
+        if H._dims.issuper:
+            self._dims = H._dims
         else:
-            rhs = H if H.issuper else liouvillian(H)
-            rhs += sum(c_op if c_op.issuper else lindblad_dissipator(c_op)
-                       for c_op in c_ops)
+            self._dims = Dimensions([H._dims, H._dims])
 
-        Solver.__init__(self, rhs, options=options)
+        self._post_init(options)
+        self._vectorize_state = not self.options["matrix_form"]
+
+    @property
+    def rhs(self):
+        # Check for matrix_form option
+        if not self._rhs:
+            matrix_form = self.options["matrix_form"]
+
+            if matrix_form:
+                if self.H.issuper:
+                    raise TypeError(
+                        "matrix_form=True cannot be used with superoperator H"
+                    )
+                self._rhs = LindbladMatrixForm(self.H , self.c_ops)
+            else:
+                rhs = self.H if self.H.issuper else liouvillian(self.H)
+                rhs += sum(c_op if c_op.issuper else lindblad_dissipator(c_op)
+                           for c_op in self.c_ops)
+                self._rhs = rhs
+        return self._rhs
+
+    @property
+    def system(self):
+        System = namedtuple("system", ["H", "L", "c_ops"])
+        return System(self.H, self.L0, self.c_ops)
+
+    def _argument(self, args):
+        """Update the args, for the `rhs` and other operators."""
+        if args:
+            if self.H != 0.:
+                self.H.arguments(args)
+            #for L in self.L0:
+            #    L.arguments(args)
+            for c_op in self.c_ops:
+                c_op.arguments(args)
+        super()._argument(args)
 
     def _prepare_state(self, state):
         # In matrix_form mode the integrand has a fast path that assumes rho

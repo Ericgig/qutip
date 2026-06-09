@@ -329,6 +329,7 @@ class Propagator:
         H_0 = self.solver.rhs(0)
         self.unitary = not H_0.issuper and H_0.isherm
         self.args = args
+        self._dims = self.solver._dims
         self.memoize = max(3, int(memoize))
         self.tol = tol
 
