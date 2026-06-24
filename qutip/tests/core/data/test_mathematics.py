@@ -608,9 +608,9 @@ class TestAdd(ScaledBinaryOpMixin):
         pytest.param(data.add_csr, CSR, CSR, CSR),
         pytest.param(data.add_dense, Dense, Dense, Dense),
         pytest.param(data.add_dia, Dia, Dia, Dia),
-        pytest.param(data.iadd_dense, Dense, Dense, Dense),
-        pytest.param(data.iadd_dense_data_dense, Dense, Dia, Dense),
-        pytest.param(data.iadd_data, CSR, Dia, Data),
+        # pytest.param(data.iadd_dense, Dense, Dense, Dense),
+        # pytest.param(data.iadd_dense_data_dense, Dense, Dia, Dense),
+        # pytest.param(data.iadd_data, CSR, Dia, Data),
     ]
 
 

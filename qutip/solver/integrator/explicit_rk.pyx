@@ -23,6 +23,8 @@ cdef Data copy_to(Data in_, Data out):
     # Does not check the shape, etc.
     cdef size_t ptr
     if type(in_) is Dense and type(out) is Dense:
+        if (<Dense> out).immutable:
+            raise RuntimeError("The matrix is immutable.")
         for ptr in range(in_.shape[0] * in_.shape[1]):
             (<Dense> out).data[ptr] = (<Dense> in_).data[ptr]
         return out
@@ -211,12 +213,12 @@ cdef class Explicit_RungeKutta:
         self.k = []
         len_k = self.rk_extra_step if self.interpolate else self.rk_step
         for i in range(len_k):
-            self.k.append(self._y.copy())
-        self._y_temp = self._y.copy()
-        self._y_front = self._y.copy()
-        self._y_prev = self._y.copy()
+            self.k.append(self._y.copy(deep=True))
+        self._y_temp = self._y.copy(deep=True)
+        self._y_front = self._y.copy(deep=True)
+        self._y_prev = self._y.copy(deep=True)
         if self.first_same_as_last:
-            self._k_fsal = self._y.copy()
+            self._k_fsal = self._y.copy(deep=True)
             self._k_fsal = imul_data(<Data> self._k_fsal, 0)
             self._k_fsal = self.qevo.matmul_data(t, y0, <Data> self._k_fsal)
 

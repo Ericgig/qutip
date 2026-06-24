@@ -758,11 +758,15 @@ def spin_algebra(N, op=None):
     sp = [0 for i in range(N)]
     sm = [0 for i in range(N)]
 
+    print(sigmaz())
+
     sx[0] = 0.5 * sigmax()
     sy[0] = 0.5 * sigmay()
     sz[0] = 0.5 * sigmaz()
     sp[0] = sigmap()
     sm[0] = sigmam()
+
+    print(sz[0])
 
     # 2. Place operators in total Hilbert space
     for k in range(N - 1):
@@ -771,6 +775,8 @@ def spin_algebra(N, op=None):
         sz[0] = tensor(sz[0], identity(2))
         sp[0] = tensor(sp[0], identity(2))
         sm[0] = tensor(sm[0], identity(2))
+
+    print(sz[0])
 
     # 3. Cyclic sequence to create all N operators
     a = [i for i in range(N)]
@@ -783,6 +789,8 @@ def spin_algebra(N, op=None):
         sz[i] = sz[0].permute(b[i])
         sp[i] = sp[0].permute(b[i])
         sm[i] = sm[0].permute(b[i])
+
+    print(sz[0])
 
     spin_operators = [sx, sy, sz]
 

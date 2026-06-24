@@ -10,7 +10,7 @@ cimport cython
 
 from qutip.core.cy.qobjevo cimport QobjEvo
 from qutip.core.cy.coefficient cimport Coefficient
-from qutip.core.data cimport Data, Dense, idxint
+from qutip.core.data cimport Data, Dense, idxint, dense
 import qutip.core.data as _data
 from qutip.core import Qobj
 from scipy.linalg cimport cython_blas as blas
@@ -145,11 +145,11 @@ cdef Dense matmul_var_Dense(Dense left, Dense right,
     if tleft == 2 or tright == 2:
         # Need a conjugate, we compute the transpose of the desired results.
         # A.conj @ B^op -> (B^T^op @ A.dag)^T
-        out = _data.dense.empty(left.shape[0], right.shape[1], False)
+        out = dense.empty(left.shape[0], right.shape[1], False)
         a, b = right, left
         tleft, tright = tright ^ 1, tleft ^ 1
     else:
-        out = _data.dense.empty(left.shape[0], right.shape[1], True)
+        out = dense.empty(left.shape[0], right.shape[1], True)
         a, b = left, right
 
     left_code = _fetch_trans_code(tleft)

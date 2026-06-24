@@ -49,6 +49,8 @@ cpdef CSR reshape_csr(CSR matrix, idxint n_rows_out, idxint n_cols_out):
             cur += n_cols_in
         for row_out in range(n_rows_out):
             out.row_index[row_out + 1] += out.row_index[row_out]
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
@@ -60,8 +62,10 @@ cpdef Dense reshape_dense(Dense matrix, idxint n_rows_out, idxint n_cols_out):
     _reshape_check_input(matrix, n_rows_out, n_cols_out)
     cdef Dense out
     if not matrix.fortran:
-        out = matrix.copy()
+        out = matrix.copy(deep=False, metaonly=True)
         out.shape = (n_rows_out, n_cols_out)
+        if matrix.immutable:
+            out.frozen(True)
         return out
     out = dense.zeros(n_rows_out, n_cols_out)
     cdef size_t idx_in=0, idx_out=0
@@ -72,18 +76,23 @@ cpdef Dense reshape_dense(Dense matrix, idxint n_rows_out, idxint n_cols_out):
     for idx_in in range(size):
         out.data[idx_out] = matrix.data[idx_in]
         idx_out = _reshape_dense_reindex(idx_out + stride, size)
+    if matrix.immutable:
+        out.frozen(True)
     return out
 
 
 cpdef Dia reshape_dia(Dia matrix, idxint n_rows_out, idxint n_cols_out):
     _reshape_check_input(matrix, n_rows_out, n_cols_out)
     # Once reshaped, diagonals are no longer ligned up.
-    return Dia(
+    out = Dia(
         matrix.as_scipy().reshape((n_rows_out, n_cols_out)).todia(), copy=False
     )
+    if matrix.immutable:
+        out.frozen(True)
+    return out
 
 
-cpdef CSR column_stack_csr(CSR matrix):
+cpdef CSR column_stack_csr(CSR matrix, bint inplace=False):
     if matrix.shape[1] == 1:
         return matrix.copy()
     return reshape_csr(matrix.transpose(), matrix.shape[0]*matrix.shape[1], 1)
@@ -91,16 +100,17 @@ cpdef CSR column_stack_csr(CSR matrix):
 
 cpdef Dense column_stack_dense(Dense matrix, bint inplace=False):
     cdef Dense out
-    if inplace and matrix.fortran:
-        matrix.shape = (matrix.shape[0] * matrix.shape[1], 1)
-        return matrix
     if matrix.fortran:
-        out = matrix.copy()
-        out.shape = (matrix.shape[0]*matrix.shape[1], 1)
-        return out
-    if inplace:
-        warnings.warn("cannot stack columns inplace for C-ordered matrix")
-    out = dense.zeros(matrix.shape[0] * matrix.shape[1], 1)
+        if matrix.immutable:
+            out = matrix.copy(deep=False, metaonly=True)
+        elif not inplace:
+            out = matrix.copy(deep=True)
+        else:
+            out = matrix
+        matrix.shape = (matrix.shape[0]*matrix.shape[1], 1)
+        return matrix
+
+    out = dense.empty(matrix.shape[0] * matrix.shape[1], 1)
     cdef idxint col
     cdef int ONE=1
     for col in range(matrix.shape[1]):
@@ -112,7 +122,7 @@ cpdef Dense column_stack_dense(Dense matrix, bint inplace=False):
     return out
 
 
-cpdef Dia column_stack_dia(Dia matrix):
+cpdef Dia column_stack_dia(Dia matrix, bint inplace=False):
     if matrix.shape[1] == 1:
         return matrix.copy()
     return reshape_dia(matrix.transpose(), matrix.shape[0]*matrix.shape[1], 1)
@@ -127,7 +137,7 @@ cdef void _column_unstack_check_shape(Data matrix, idxint rows) except *:
         raise ValueError("number of rows does not divide into the shape")
 
 
-cpdef CSR column_unstack_csr(CSR matrix, idxint rows):
+cpdef CSR column_unstack_csr(CSR matrix, idxint rows, bint inplace=False):
     _column_unstack_check_shape(matrix, rows)
     cdef idxint cols = matrix.shape[0] // rows
     return reshape_csr(matrix, cols, rows).transpose()
@@ -136,17 +146,18 @@ cpdef CSR column_unstack_csr(CSR matrix, idxint rows):
 cpdef Dense column_unstack_dense(Dense matrix, idxint rows, bint inplace=False):
     _column_unstack_check_shape(matrix, rows)
     cdef idxint cols = matrix.shape[0] // rows
-    if inplace and matrix.fortran:
-        matrix.shape = (rows, cols)
-        return matrix
-    elif inplace:
-        warnings.warn("cannot unstack columns inplace for C-ordered matrix")
-    out = dense.empty(rows, cols, fortran=True)
-    memcpy(out.data, matrix.data, rows*cols * sizeof(double complex))
+    if matrix.immutable:
+        out = matrix.copy(deep=False, metaonly=True)
+    elif not inplace:
+        out = matrix.copy(deep=True)
+    else:
+        out = matrix
+    out.shape = (rows, cols)
+    out.fortran = True
     return out
 
 
-cpdef Dia column_unstack_dia(Dia matrix, idxint rows):
+cpdef Dia column_unstack_dia(Dia matrix, idxint rows, bint inplace=False):
     _column_unstack_check_shape(matrix, rows)
     cdef idxint cols = matrix.shape[0] // rows
     return reshape_dia(matrix, cols, rows).transpose()
@@ -208,11 +219,13 @@ reshape.add_specialisations([
 column_stack = _Dispatcher(
     _inspect.Signature([
         _inspect.Parameter('matrix', _inspect.Parameter.POSITIONAL_ONLY),
+        _inspect.Parameter('inplace', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
     ]),
     name='column_stack',
     module=__name__,
     inputs=('matrix',),
     out=True,
+    inplace=(0,),
 )
 column_stack.__doc__ =\
     """
@@ -249,11 +262,13 @@ column_unstack = _Dispatcher(
     _inspect.Signature([
         _inspect.Parameter('matrix', _inspect.Parameter.POSITIONAL_ONLY),
         _inspect.Parameter('rows', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        _inspect.Parameter('inplace', _inspect.Parameter.POSITIONAL_OR_KEYWORD),
     ]),
     name='column_unstack',
     module=__name__,
     inputs=('matrix',),
     out=True,
+    inplace=(0,),
 )
 column_unstack.__doc__ =\
     """

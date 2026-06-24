@@ -144,8 +144,8 @@ def test_block_build_csr():
     result = _data.block_build_csr(
         np.array([0, 0, 1, 1], dtype=_data.base.idxint_dtype),
         np.array([0, 1, 0, 1], dtype=_data.base.idxint_dtype),
-        np.array([csr.identity(2), csr.empty(2, 2, 0),
-                  csr.empty(2, 2, 0), csr.identity(2)], dtype=_data.Data),
+        np.array([csr.identity(2), csr.zeros(2, 2),
+                  csr.zeros(2, 2), csr.identity(2)], dtype=_data.Data),
         np.array([2, 2], dtype=_data.base.idxint_dtype),
         np.array([2, 2], dtype=_data.base.idxint_dtype),
     )
