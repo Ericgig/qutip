@@ -180,14 +180,14 @@ cdef class CSR(base.Data):
         self._scipy = _csr_matrix(data, col_index, row_index, self.shape)
         self.sort_indices()
         if tidyup:
-            self.mutable = True
+            self.immutable = False
             tidyup_csr(self, settings.core['auto_tidyup_atol'], True)
         if copy:
-            self.mutable = False
+            self.immutable = True
             PyArray_CLEARFLAGS(data, cnp.NPY_ARRAY_WRITEABLE)
             PyArray_CLEARFLAGS(col_index, cnp.NPY_ARRAY_WRITEABLE)
             PyArray_CLEARFLAGS(row_index, cnp.NPY_ARRAY_WRITEABLE)
-        assert not self.mutable
+        assert self.immutable
 
     @classmethod
     def sparcity(self):
@@ -265,7 +265,7 @@ cdef class CSR(base.Data):
             PyArray_ENABLEFLAGS(data, cnp.NPY_ARRAY_OWNDATA)
             PyArray_ENABLEFLAGS(indices, cnp.NPY_ARRAY_OWNDATA)
             PyArray_ENABLEFLAGS(indptr, cnp.NPY_ARRAY_OWNDATA)
-            if not self.mutable:
+            if self.immutable:
                 PyArray_CLEARFLAGS(data , cnp.NPY_ARRAY_WRITEABLE)
                 PyArray_CLEARFLAGS(indices, cnp.NPY_ARRAY_WRITEABLE)
                 PyArray_CLEARFLAGS(indptr, cnp.NPY_ARRAY_WRITEABLE)
@@ -355,7 +355,7 @@ cpdef CSR fast_from_scipy(object sci):
     out.col_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indices, 0)
     out.row_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indptr, 0)
     out.size = cnp.PyArray_SIZE(sci.data)
-    out.mutable = False
+    out.immutable = True
     return out
 
 
@@ -402,7 +402,7 @@ cdef class Sorter:
     def __init__(self, size_t size):
         self.size = size
 
-    cdef bint inplace(self, CSR matrix, base.idxint ptr, size_t size) noexcept nogil:
+    cdef void inplace(self, CSR matrix, base.idxint ptr, size_t size) noexcept nogil:
         cdef size_t n
         cdef base.idxint col0, col1, col2
         # Fast paths for tridiagonal matrices.  These fast paths minimise the
@@ -626,7 +626,7 @@ cdef CSR empty(base.idxint rows, base.idxint cols, base.idxint size):
         )
     # Set the number of non-zero elements to 0.
     out.row_index[rows] = 0
-    out.mutable = False
+    out.immutable = True
     return out
 
 

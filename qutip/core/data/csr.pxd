@@ -22,7 +22,7 @@ cdef class CSR(base.Data):
     cdef object _scipy
     cdef bint _deallocate
     cpdef CSR copy(CSR self)
-    cdef void _make_scipy(self, full=*)
+    # cdef void _make_scipy(self, full=*)
     cpdef object as_scipy(CSR self, bint full=*)
     cpdef CSR sort_indices(CSR self)
     cpdef double complex trace(CSR self)
@@ -144,7 +144,7 @@ cdef class Sorter:
     cdef base.idxint num_col
     cdef _data_col *sort
 
-    cdef bint inplace(Sorter self, CSR matrix, base.idxint ptr, size_t size) noexcept nogil
+    cdef void inplace(Sorter self, CSR matrix, base.idxint ptr, size_t size) noexcept nogil
     cdef void copy(Sorter self,
                    double complex *dest_data, base.idxint *dest_cols,
                    double complex *src_data, base.idxint *src_cols,

@@ -146,9 +146,9 @@ cdef class Dia(base.Data):
         if tidyup:
             tidyup_dia(self, settings.core['auto_tidyup_atol'], True)
         self._scipy = _dia_matrix(data, offsets, self.shape)
-        self.mutable = np.shares_memory(self._scipy.data, arg[0])
+        self.immutable = np.shares_memory(self._scipy.data, arg[0])
         PyArray_CLEARFLAGS(self._scipy.offsets, cnp.NPY_ARRAY_WRITEABLE)
-        if not self.mutable:
+        if self.immutable:
             PyArray_CLEARFLAGS(self._scipy.data, cnp.NPY_ARRAY_WRITEABLE)
 
     @classmethod
@@ -209,8 +209,8 @@ cdef class Dia(base.Data):
         cdef cnp.npy_intp num_diag
         cdef cnp.npy_intp size
         if self._scipy is None:
-            cdef cnp.npy_intp num_diag = self.num_diag if not full else self._max_diag
-            cdef cnp.npy_intp size = self.shape[1]
+            num_diag = self.num_diag if not full else self._max_diag
+            size = self.shape[1]
             data = cnp.PyArray_SimpleNewFromData(2, [num_diag, size],
                                                  cnp.NPY_COMPLEX128,
                                                  self.data)
@@ -220,12 +220,12 @@ cdef class Dia(base.Data):
             PyArray_ENABLEFLAGS(data, cnp.NPY_ARRAY_OWNDATA)
             PyArray_ENABLEFLAGS(offsets, cnp.NPY_ARRAY_OWNDATA)
             PyArray_CLEARFLAGS(self._scipy.offsets, cnp.NPY_ARRAY_WRITEABLE)
-            if not self.mutable:
+            if self.immutable:
                 PyArray_CLEARFLAGS(self._scipy.data, cnp.NPY_ARRAY_WRITEABLE)
             self._deallocate = False
             self._scipy = _dia_matrix(data, offsets, self.shape)
 
-        if not self.mutable:
+        if self.immutable:
             return _dia_matrix(
                 self._scipy.data,
                 self._scipy.offsets,
@@ -324,7 +324,7 @@ cdef Dia empty(base.idxint rows, base.idxint cols, base.idxint num_diag):
             f"Failed to allocate the `offsets` of a ({rows}, {cols}) "
             f"Dia array of {num_diag} diagonals."
         )
-    out.mutable = False
+    out.immutable = True
     return out
 
 
