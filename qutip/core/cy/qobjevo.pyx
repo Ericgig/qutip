@@ -128,8 +128,8 @@ cdef class QobjEvo:
 
     .. code-block::
 
-        def f(t, args):
-            return qutip.qeye(N) * np.exp(args['w'] * t)
+        def f(t, w):
+            return qutip.qeye(N) * np.exp(w * t)
 
         QobjEvo(f, args={'w': 1j})
 
@@ -150,8 +150,8 @@ cdef class QobjEvo:
 
     .. code-block::
 
-        def f1_t(t, args):
-            return np.exp(-1j * t * args["w1"])
+        def f1_t(t, w1):
+            return np.exp(-1j * t * w1)
 
         QobjEvo([[H1, f1_t]], args={"w1": 1.})
 
@@ -270,6 +270,7 @@ cdef class QobjEvo:
             out = _EvoElement(
                 op[0].copy() if copy else op[0],
                 coefficient(op[1], tlist=tlist, args=args, order=order,
+                            function_style=function_style,
                             boundary_conditions=boundary_conditions)
             )
             qobj = op[0]
@@ -846,10 +847,11 @@ cdef class QobjEvo:
                 qobjs.append(element._qobj)
                 coeffs.append(element._coefficient)
         for qobj, coeff in zip(qobjs, coeffs):
-            cleaned_elements.append(_EvoElement(qobj, coeff))
+            if not _data.iszero(qobj.data):
+                cleaned_elements.append(_EvoElement(qobj, coeff))
         return cleaned_elements
 
-    def compress(self):
+    def compress(self, *, _skip_coeff=False, _skip_qobj=False):
         """
         Look for redundance in the :obj:`.QobjEvo` components:
 
@@ -877,19 +879,28 @@ cdef class QobjEvo:
             else:
                 func_elements.append(element)
 
-        coeff_elements = self._compress_merge_coeff(coeff_elements)
-        coeff_elements = self._compress_merge_qobj(coeff_elements)
+        if not _skip_qobj:
+            coeff_elements = self._compress_merge_qobj(coeff_elements)
+        if not _skip_coeff:
+            coeff_elements = self._compress_merge_coeff(coeff_elements)
 
-        cleaned_elements = []
-        if len(cte_elements) >= 2:
-            # Multiple constant parts
-            cleaned_elements.append(_ConstantElement(
-                sum(element._qobj for element in cte_elements)
-            ))
+        cleaned_elements = coeff_elements + func_elements
+
+        # Combine all constant elements. If the sum is zero, we omit the
+        # constant part. However, if there are no other elements, we must
+        # include the zero constant part (there must be at least one element).
+        if len(cte_elements) >= 1:
+            constant_part = sum(element._qobj for element in cte_elements)
         else:
-            cleaned_elements += cte_elements
+            constant_part = None
 
-        cleaned_elements += coeff_elements + func_elements
+        if (
+            (constant_part and not _data.iszero(constant_part.data))
+            or not cleaned_elements
+        ):
+            cleaned_elements.append(_ConstantElement(
+                constant_part or qutip.qzero_like(self)
+            ))
 
         self.elements = cleaned_elements
 

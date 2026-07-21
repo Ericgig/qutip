@@ -208,7 +208,7 @@ def test_pseudo_inverse(method, kwargs):
 
 
 @pytest.mark.parametrize('sparse', [True, False])
-def test_steadystate_floquet(sparse):
+def test_steadystate_fourier(sparse):
     """
     Test the steadystate solution for a periodically
     driven system.
@@ -223,7 +223,7 @@ def test_steadystate_floquet(sparse):
 
     H = 0.5 * w_c * sz
 
-    H_t = [H, [sx, lambda t, args: args["A_l"] * np.cos(args["w_l"] * t)]]
+    H_t = [H, [sx, lambda t, **args: args["A_l"] * np.cos(args["w_l"] * t)]]
 
     psi0 = qutip.basis(2, 0)
 
@@ -238,7 +238,7 @@ def test_steadystate_floquet(sparse):
         H_t, psi0, t_l, c_ops, e_ops=[sz], args=args
     ).expect[0]
 
-    rho_ss = qutip.steadystate_floquet(H, c_ops,
+    rho_ss = qutip.steadystate_fourier(H, c_ops,
                                        A_l * sx, w_l, n_it=3, sparse=sparse)
     expect_ss = qutip.expect(sz, rho_ss)
 

@@ -6,7 +6,8 @@ from __future__ import annotations
 import functools
 import numbers
 import warnings
-from typing import Any, Literal, Union, overload
+from typing import Any, Literal, TypeVar, Union, overload
+from collections.abc import Callable
 import numpy as np
 from numpy.typing import ArrayLike
 import scipy.sparse
@@ -39,15 +40,16 @@ _CALL_ALLOWED = {
     ('oper', 'ket'),
 }
 
+T = TypeVar('T')
 
-def _require_equal_type(method):
+def _require_equal_type(method: Callable[[Qobj, Qobj | complex], T]) -> Callable[[Qobj, Qobj | complex], T]:
     """
     Decorate a binary Qobj method to ensure both operands are Qobj and of the
     same type and dimensions.  Promote numeric scalar to identity matrices of
     the same type and shape.
     """
     @functools.wraps(method)
-    def out(self, other):
+    def out(self: Qobj, other: Qobj | complex) -> T:
         if isinstance(other, Qobj):
             if self._dims != other._dims:
                 msg = (
@@ -416,11 +418,18 @@ class Qobj:
 
     def __mul__(self, other: complex) -> Qobj:
         """
-        If other is a Qobj, we dispatch to __matmul__. If not, we
-        check that other is a valid complex scalar, i.e., we can do
-        complex(other). Otherwise, we return NotImplemented.
-        """
+        Product of a Qobj with a scalar.
 
+        Per default, only python complex are supported (``complex(other)``
+        works), but qutip's plug-in could add additional supported types
+        (jax tracer, cupy complex, etc.)
+
+        Note
+        ----
+        Product between Qobj is supported for backward compatibility, but could
+        be removed in a future major release. ``@`` is prefered for these
+        operations.
+        """
         if isinstance(other, Qobj):
             return self.__matmul__(other)
 
@@ -454,11 +463,21 @@ class Qobj:
         return self.__mul__(other)
 
     def __matmul__(self, other: Qobj) -> Qobj:
-        if not isinstance(other, Qobj):
+        if isinstance(other, np.ndarray):
+            warnings.warn(
+                "Support for Qobj @ numpy.array has been deprecated "
+                "and will be removed in qutip 5.5 or later. "
+                "Please use Qobj(A) @ B instead.",
+                FutureWarning
+            )
             try:
                 other = Qobj(other)
-            except TypeError:
+            except Exception:
                 return NotImplemented
+
+        if not isinstance(other, Qobj):
+            return NotImplemented
+
         new_dims = self._dims @ other._dims
         if new_dims.type == 'scalar':
             return _data.inner(self._data, other._data)
@@ -859,6 +878,25 @@ class Qobj:
         out = np.asarray(self.data.to_array(), order=order)
         return out.squeeze() if squeeze else out
 
+    def full_tensor(self) -> np.ndarray:
+        """
+        Dense ndarray reshaped according to the tensor dimensions of the
+        quantum object.
+
+        Returns
+        -------
+        data : numpy.ndarray
+            Dense ndarray representation of the quantum object with one axis
+            for each entry in ``dims``.
+
+        Examples
+        --------
+        >>> oper = qutip.qeye([2, 3])
+        >>> oper.full_tensor().shape
+        (2, 3, 2, 3)
+        """
+        return to_tensor_rep(self)
+
     def data_as(self, format: str = None, copy: bool = True) -> Any:
         """Matrix from quantum object.
 
@@ -940,7 +978,7 @@ class Qobj:
             Quantum operator is not square.
         """
         if not self._dims.issquare:
-            raise TypeError("expm is only valid for square operators")
+            raise TypeError("logm is only valid for square operators")
         return Qobj(_data.logm(self._data),
                     dims=self._dims,
                     isherm=self._isherm,
@@ -992,7 +1030,7 @@ class Qobj:
         """
         if self._dims[0] != self._dims[1]:
             raise TypeError('sqrt only valid on square matrices')
-        return Qobj(_data.sqrtm(self._data),
+        return Qobj(_data.sqrtm(self._data, isherm=self._isherm),
                     dims=self._dims,
                     copy=False)
 
@@ -1583,7 +1621,7 @@ class Qobj:
         return out
 
     @overload
-    def eigenstates(self, 
+    def eigenstates(self,
         sparse: bool  = False,
         sort: Literal["low", "high"] = 'low',
         eigvals: int = 0,
@@ -1595,7 +1633,7 @@ class Qobj:
         ...
 
     @overload
-    def eigenstates(self, 
+    def eigenstates(self,
         sparse: bool  = False,
         sort: Literal["low", "high"] = 'low',
         eigvals: int = 0,
