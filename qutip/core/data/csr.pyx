@@ -44,6 +44,7 @@ cnp.import_array()
 
 cdef extern from *:
     void PyArray_ENABLEFLAGS(cnp.ndarray arr, int flags)
+    void PyArray_CLEARFLAGS(cnp.ndarray arr, int flags)
     void *PyDataMem_NEW(size_t size)
     void PyDataMem_FREE(void *ptr)
 
@@ -97,6 +98,8 @@ cdef class CSR(base.Data):
         cdef size_t ptr
         cdef base.idxint col
         cdef object data, col_index, row_index
+        # Temp: full immutable
+        copy = True
         if isinstance(arg, scipy.sparse.spmatrix):
             arg = arg.tocsr()
             if shape is not None and shape != arg.shape:
@@ -175,8 +178,16 @@ cdef class CSR(base.Data):
         # Store a reference to the backing scipy matrix so it doesn't get
         # deallocated before us.
         self._scipy = _csr_matrix(data, col_index, row_index, self.shape)
+        self.sort_indices()
         if tidyup:
+            self.mutable = True
             tidyup_csr(self, settings.core['auto_tidyup_atol'], True)
+        if copy:
+            self.mutable = False
+            PyArray_CLEARFLAGS(data, cnp.NPY_ARRAY_WRITEABLE)
+            PyArray_CLEARFLAGS(col_index, cnp.NPY_ARRAY_WRITEABLE)
+            PyArray_CLEARFLAGS(row_index, cnp.NPY_ARRAY_WRITEABLE)
+        assert not self.mutable
 
     @classmethod
     def sparcity(self):
@@ -238,24 +249,49 @@ cdef class CSR(base.Data):
         # relatively expensive method, but also because we transferred
         # ownership of our data to the numpy arrays, and we can't allow them to
         # be collected while we're alive.
-        if self._scipy is not None:
-            return self._scipy
-        cdef cnp.npy_intp length = self.size if full else nnz(self)
-        data = cnp.PyArray_SimpleNewFromData(1, [length],
-                                             cnp.NPY_COMPLEX128,
-                                             self.data)
-        indices = cnp.PyArray_SimpleNewFromData(1, [length],
-                                                base.idxint_DTYPE,
-                                                self.col_index)
-        indptr = cnp.PyArray_SimpleNewFromData(1, [self.shape[0] + 1],
-                                               base.idxint_DTYPE,
-                                               self.row_index)
-        PyArray_ENABLEFLAGS(data, cnp.NPY_ARRAY_OWNDATA)
-        PyArray_ENABLEFLAGS(indices, cnp.NPY_ARRAY_OWNDATA)
-        PyArray_ENABLEFLAGS(indptr, cnp.NPY_ARRAY_OWNDATA)
-        self._deallocate = False
-        self._scipy = _csr_matrix(data, indices, indptr, self.shape)
-        return self._scipy
+        cdef cnp.npy_intp length
+
+        if self._scipy is None:
+            length = self.size if full else nnz(self)
+            data = cnp.PyArray_SimpleNewFromData(
+                1, [length], cnp.NPY_COMPLEX128, self.data
+            )
+            indices = cnp.PyArray_SimpleNewFromData(
+                1, [length], base.idxint_DTYPE, self.col_index
+            )
+            indptr = cnp.PyArray_SimpleNewFromData(
+                1, [self.shape[0] + 1], base.idxint_DTYPE, self.row_index
+            )
+            PyArray_ENABLEFLAGS(data, cnp.NPY_ARRAY_OWNDATA)
+            PyArray_ENABLEFLAGS(indices, cnp.NPY_ARRAY_OWNDATA)
+            PyArray_ENABLEFLAGS(indptr, cnp.NPY_ARRAY_OWNDATA)
+            if not self.mutable:
+                PyArray_CLEARFLAGS(data , cnp.NPY_ARRAY_WRITEABLE)
+                PyArray_CLEARFLAGS(indices, cnp.NPY_ARRAY_WRITEABLE)
+                PyArray_CLEARFLAGS(indptr, cnp.NPY_ARRAY_WRITEABLE)
+            self._deallocate = False
+            self._scipy = _csr_matrix(data, indices, indptr, self.shape)
+
+        if self.immutable:
+            # self._scipy can be modified (csr.as_scipy.data = np.array(...))
+            # This would causes our pointers and the scipy object to be
+            # desynchronized. Since the data is flagged as non-writable, a
+            # shallow copy is enough.
+            return _csr_matrix(
+                self._scipy.data,
+                self._scipy.indices,
+                self._scipy.indptr,
+                self.shape
+            )
+        else:
+            # Scipy's copy is slower and goes through safety check that exclude
+            # empty csr
+            return _csr_matrix(
+                self._scipy.data.copy(),
+                self._scipy.indices.copy(),
+                self._scipy.indptr.copy(),
+                self.shape
+            )
 
     cpdef CSR sort_indices(self):
         cdef Sorter sort
@@ -319,6 +355,7 @@ cpdef CSR fast_from_scipy(object sci):
     out.col_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indices, 0)
     out.row_index = <base.idxint *> cnp.PyArray_GETPTR1(sci.indptr, 0)
     out.size = cnp.PyArray_SIZE(sci.data)
+    out.mutable = False
     return out
 
 
@@ -365,7 +402,7 @@ cdef class Sorter:
     def __init__(self, size_t size):
         self.size = size
 
-    cdef void inplace(self, CSR matrix, base.idxint ptr, size_t size) nogil:
+    cdef bint inplace(self, CSR matrix, base.idxint ptr, size_t size) noexcept nogil:
         cdef size_t n
         cdef base.idxint col0, col1, col2
         # Fast paths for tridiagonal matrices.  These fast paths minimise the
@@ -549,7 +586,7 @@ cpdef CSR sorted(CSR matrix):
     return out
 
 
-cpdef CSR empty(base.idxint rows, base.idxint cols, base.idxint size):
+cdef CSR empty(base.idxint rows, base.idxint cols, base.idxint size):
     """
     Allocate an empty CSR matrix of the given shape, with space for `size`
     elements in the `data` and `col_index` arrays.
@@ -589,10 +626,11 @@ cpdef CSR empty(base.idxint rows, base.idxint cols, base.idxint size):
         )
     # Set the number of non-zero elements to 0.
     out.row_index[rows] = 0
+    out.mutable = False
     return out
 
 
-cpdef CSR empty_like(CSR other):
+cdef CSR empty_like(CSR other):
     return empty(other.shape[0], other.shape[1], nnz(other))
 
 

@@ -23,8 +23,8 @@ cdef class Dense(base.Data):
 
 cpdef Dense fast_from_numpy(object array)
 cdef Dense wrap(double complex *ptr, base.idxint rows, base.idxint cols, bint fortran=*)
-cpdef Dense empty(base.idxint rows, base.idxint cols, bint fortran=*)
-cpdef Dense empty_like(Dense other, int fortran=*)
+cdef Dense empty(base.idxint rows, base.idxint cols, bint fortran=*)
+cdef Dense empty_like(Dense other, int fortran=*)
 cpdef Dense zeros(base.idxint rows, base.idxint cols, bint fortran=*)
 cpdef Dense identity(base.idxint dimension, double complex scale=*,
                      bint fortran=*)

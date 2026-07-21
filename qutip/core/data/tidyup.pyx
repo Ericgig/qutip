@@ -21,7 +21,7 @@ cpdef CSR tidyup_csr(CSR matrix, double tol, bint inplace=True):
     cdef bint re, im
     cdef size_t row, ptr, ptr_start, ptr_end=0, nnz
     cdef double complex value
-    cdef CSR out = matrix if inplace else matrix.copy()
+    cdef CSR out = matrix if (inplace and matrix.mutable) else matrix.copy()
     nnz = 0
     out.row_index[0] = 0
     for row in range(matrix.shape[0]):
@@ -44,7 +44,7 @@ cpdef CSR tidyup_csr(CSR matrix, double tol, bint inplace=True):
 
 
 cpdef Dense tidyup_dense(Dense matrix, double tol, bint inplace=True):
-    cdef Dense out = matrix if inplace else matrix.copy()
+    cdef Dense out = matrix if (inplace and matrix.mutable) else matrix.copy()
     cdef double complex value
     cdef size_t ptr
     for ptr in range(matrix.shape[0] * matrix.shape[1]):
@@ -57,7 +57,7 @@ cpdef Dense tidyup_dense(Dense matrix, double tol, bint inplace=True):
 
 
 cpdef Dia tidyup_dia(Dia matrix, double tol, bint inplace=True):
-    cdef Dia out = matrix if inplace else matrix.copy()
+    cdef Dia out = matrix if (inplace and matrix.mutable) else matrix.copy()
     cdef base.idxint diag=0, new_diag=0, ONE=1, start, end, col
     cdef bint re, im, has_data
     cdef double complex value

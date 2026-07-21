@@ -49,6 +49,8 @@ is_numpy1 = np.lib.NumpyVersion(np.__version__) < '2.0.0b1'
 
 cdef class Dense(base.Data):
     def __init__(self, data, shape=None, copy=True):
+        # temporary measure:
+        copy = True
         if is_numpy1:
             # np2 accept None which act as np1's False
             copy = builtins.bool(copy)
@@ -85,6 +87,8 @@ cdef class Dense(base.Data):
         self.data = <double complex *> cnp.PyArray_GETPTR2(self._np, 0, 0)
         self.fortran = cnp.PyArray_IS_F_CONTIGUOUS(self._np)
         self.shape = (shape[0], shape[1])
+        self.mutable = np.shares_memory(self._np, base)
+        assert not self.mutable
 
     @classmethod
     def sparcity(self):
@@ -157,6 +161,8 @@ cdef class Dense(base.Data):
         cdef cnp.npy_intp *strides = cnp.PyArray_STRIDES(array)
         # Not necessary when creating a new array because this will already
         # have been done, but needed for as_ndarray() if we have been mutated.
+        if not self.mutable:
+            disable = cnp.NPY_ARRAY_WRITEABLE
         dims[0] = self.shape[0]
         dims[1] = self.shape[1]
         if self.shape[0] == 1 or self.shape[1] == 1:
@@ -183,21 +189,7 @@ cdef class Dense(base.Data):
         dimensions.  This is not a view onto the data, and changes to new array
         will not affect the original data structure.
         """
-        cdef size_t size = (
-          _mul_mem_checked(self.shape[0], self.shape[1], sizeof(double complex))
-        )
-        cdef double complex *ptr = <double complex *> PyDataMem_NEW(size)
-        if not ptr:
-            raise MemoryError(
-                "Could not allocate memory to convert to a numpy array a "
-                f"({self.shape[0]}, {self.shape[1]}) Dense matrix."
-            )
-        memcpy(ptr, self.data, size)
-        cdef object out =\
-            cnp.PyArray_SimpleNewFromData(2, [self.shape[0], self.shape[1]],
-                                          cnp.NPY_COMPLEX128, ptr)
-        self._fix_flags(out, make_owner=True)
-        return out
+        return self.as_ndarray().copy()
 
     cpdef object as_ndarray(self):
         """
@@ -208,6 +200,8 @@ cdef class Dense(base.Data):
         The array may be uninitialised, depending on how the Dense type was
         created.  The output will be contiguous and of dtype 'complex128', but
         may be C- or Fortran-ordered.
+
+        It may be marked as not writtable.
         """
         if self._np is not None:
             # We have to do this every time in case someone has changed our
@@ -255,6 +249,7 @@ cpdef Dense fast_from_numpy(object array):
     out._np = array
     out.data = <double complex *> cnp.PyArray_GETPTR2(array, 0, 0)
     out.fortran = cnp.PyArray_IS_F_CONTIGUOUS(array)
+    out.mutable = True  # TODO: include in pickle?
     return out
 
 cdef Dense wrap(double complex *data, base.idxint rows, base.idxint cols, bint fortran=False):
@@ -263,10 +258,11 @@ cdef Dense wrap(double complex *data, base.idxint rows, base.idxint cols, bint f
     out._deallocate = False
     out.fortran = fortran or cols == 1 or rows == 1
     out.shape = (rows, cols)
+    out.mutable = True
     return out
 
 
-cpdef Dense empty(base.idxint rows, base.idxint cols, bint fortran=True):
+cdef Dense empty(base.idxint rows, base.idxint cols, bint fortran=True):
     """
     Return a new Dense type of the given shape, with the data allocated but
     uninitialised.
@@ -283,10 +279,11 @@ cpdef Dense empty(base.idxint rows, base.idxint cols, bint fortran=True):
         )
     out._deallocate = True
     out.fortran = fortran
+    out.mutable = False
     return out
 
 
-cpdef Dense empty_like(Dense other, int fortran=-1):
+cdef Dense empty_like(Dense other, int fortran=-1):
     cdef bint fortran_
     if fortran < 0:
         fortran_ = other.fortran
@@ -310,6 +307,7 @@ cpdef Dense zeros(base.idxint rows, base.idxint cols, bint fortran=True):
         )
     out.fortran = fortran
     out._deallocate = True
+    out.mutable = False
     return out
 
 
@@ -350,6 +348,7 @@ cpdef Dense from_csr(CSR matrix, bint fortran=False):
         for ptr_in in range(matrix.row_index[row], matrix.row_index[row + 1]):
             out.data[ptr_out + matrix.col_index[ptr_in]*col_stride] = matrix.data[ptr_in]
         ptr_out += row_stride
+    out.mutable = False
     return out
 
 
