@@ -219,9 +219,9 @@ cdef class Dia(base.Data):
                                                     self.offsets)
             PyArray_ENABLEFLAGS(data, cnp.NPY_ARRAY_OWNDATA)
             PyArray_ENABLEFLAGS(offsets, cnp.NPY_ARRAY_OWNDATA)
-            PyArray_CLEARFLAGS(self._scipy.offsets, cnp.NPY_ARRAY_WRITEABLE)
+            PyArray_CLEARFLAGS(offsets, cnp.NPY_ARRAY_WRITEABLE)
             if self.immutable:
-                PyArray_CLEARFLAGS(self._scipy.data, cnp.NPY_ARRAY_WRITEABLE)
+                PyArray_CLEARFLAGS(data, cnp.NPY_ARRAY_WRITEABLE)
             self._deallocate = False
             self._scipy = _dia_matrix(data, offsets, self.shape)
 
@@ -229,13 +229,13 @@ cdef class Dia(base.Data):
             return _dia_matrix(
                 self._scipy.data,
                 self._scipy.offsets,
-                self.shape
+                self.shape,
             )
         # Scipy's copy is slower and goes through safety check
         return _dia_matrix(
-            self._scipy.data.copy(),
+            self._scipy.data,
             self._scipy.offsets.copy(),
-            self.shape
+            self.shape,
         )
 
     cpdef double complex trace(self):

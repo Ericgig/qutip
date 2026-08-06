@@ -54,6 +54,7 @@ __all__ = ['CSR']
 
 cdef int _ONE = 1
 
+
 cdef object _csr_matrix(data, indices, indptr, shape):
     """
     Factory method of scipy csr_matrix: we skip all the index type-checking
@@ -157,13 +158,11 @@ cdef class CSR(base.Data):
                     col = self.col_index[ptr] + 1
             self.shape[1] = col
         else:
-            if not isinstance(shape, tuple):
-                raise TypeError("shape must be a 2-tuple of positive ints")
-            if not (len(shape) == 2
-                    and isinstance(shape[0], int)
-                    and isinstance(shape[1], int)
-                    and shape[0] > 0
-                    and shape[1] > 0):
+            if not (isinstance(shape, tuple) and len(shape) == 2):
+                raise ValueError("shape must be a 2-tuple of positive ints")
+            self.shape = shape
+
+            if not (shape[0] > 0 and shape[1] > 0):
                 raise ValueError("shape must be a 2-tuple of positive ints")
             if row_index.shape[0] - 1 != shape[0]:
                 raise ValueError(
@@ -174,7 +173,7 @@ cdef class CSR(base.Data):
                     "Some of the value's column is "
                     "greater than the number of columns."
                 )
-            self.shape = shape
+
         # Store a reference to the backing scipy matrix so it doesn't get
         # deallocated before us.
         self._scipy = _csr_matrix(data, col_index, row_index, self.shape)
@@ -383,15 +382,19 @@ cpdef inline base.idxint nnz(CSR matrix) noexcept nogil:
 cdef bool _sorter_cmp_ptr(base.idxint *i, base.idxint *j) nogil:
     return i[0] < j[0]
 
+
 cdef bool _sorter_cmp_struct(_data_col x, _data_col y) nogil:
     return x.col < y.col
+
 
 ctypedef fused _swap_data:
     double complex
     base.idxint
 
+
 cdef inline void _sorter_swap(_swap_data *a, _swap_data *b) noexcept nogil:
     a[0], b[0] = b[0], a[0]
+
 
 cdef class Sorter:
     # Look on my works, ye mighty, and despair!
@@ -567,6 +570,7 @@ cdef class Sorter:
         if self.sort != NULL:
             mem.PyMem_Free(self.sort)
 
+
 cpdef CSR sorted(CSR matrix):
     cdef CSR out = empty_like(matrix)
     cdef Sorter sort
@@ -662,6 +666,7 @@ cpdef CSR identity(base.idxint dimension, double complex scale=1):
     out.row_index[dimension] = dimension
     return out
 
+
 cpdef CSR from_dense(Dense matrix):
     # Assume worst-case scenario for non-zero.
     cdef CSR out = empty(matrix.shape[0], matrix.shape[1],
@@ -685,6 +690,7 @@ cpdef CSR from_dense(Dense matrix):
             ptr_in += col_stride
         out.row_index[row + 1] = ptr_out
     return out
+
 
 cdef CSR from_coo_pointers(
     base.idxint *rows, base.idxint *cols, double complex *data,
@@ -772,6 +778,7 @@ cdef inline base.idxint _diagonal_length(
         return n_rows if offset <= n_cols - n_rows else n_cols - offset
     return n_cols if offset > n_cols - n_rows else n_rows + offset
 
+
 cdef CSR diag(
     double complex[:] diagonal, base.idxint offset,
     base.idxint n_rows, base.idxint n_cols,
@@ -815,6 +822,7 @@ cdef CSR diag(
     for row in range(start_row + n_diag + 1, n_rows + 1):
         out.row_index[row] = nnz
     return out
+
 
 cdef CSR diags_(
     list diagonals, base.idxint[:] offsets,
@@ -878,6 +886,7 @@ cdef CSR diags_(
             nnz += 1
         out.row_index[row + 1] = nnz
     return out
+
 
 @cython.wraparound(True)
 def diags(diagonals, offsets=None, shape=None):

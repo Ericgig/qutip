@@ -65,12 +65,15 @@ def one_element_csr(shape, position, value=1.0):
     if not (0 <= position[0] < shape[0] and 0 <= position[1] < shape[1]):
         raise ValueError("Position of the elements out of bound: " +
                          str(position) + " in " + str(shape))
-    data = csr.empty(*shape, 1)
-    sci = data.as_scipy(full=True)
-    sci.data[0] = value
-    sci.indices[0] = position[1]
-    sci.indptr[:position[0]+1] = 0
-    sci.indptr[position[0]+1:] = 1
+    print(shape, position)
+    data = csr.CSR(
+        (
+            [value],
+            position[1:2],
+            [0] * (position[0] + 1) + [1] * (shape[0] - position[0])
+        ),
+        shape=shape,
+    )
     return data
 
 

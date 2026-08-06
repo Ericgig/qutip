@@ -87,7 +87,7 @@ cdef class Dense(base.Data):
         self.data = <double complex *> cnp.PyArray_GETPTR2(self._np, 0, 0)
         self.fortran = cnp.PyArray_IS_F_CONTIGUOUS(self._np)
         self.shape = (shape[0], shape[1])
-        self.immutable = not np.shares_memory(self._np, base)
+        self.immutable = not np.shares_memory(self._np, data)
         assert self.immutable
 
     @classmethod
@@ -189,7 +189,10 @@ cdef class Dense(base.Data):
         dimensions.  This is not a view onto the data, and changes to new array
         will not affect the original data structure.
         """
-        return self.as_ndarray().copy()
+        if self.immutable:
+            return self.as_ndarray().copy(order="K")
+        else:
+            return self.as_ndarray()
 
     cpdef object as_ndarray(self):
         """

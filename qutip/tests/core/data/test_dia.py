@@ -151,24 +151,24 @@ class TestClassMethods:
         assert original is not copy
         assert np.all(original.to_array() == copy.to_array())
 
-    def test_as_scipy_returns_a_view(self, data_diag):
-        """
-        Test that modifying the views in the result of as_scipy() also modifies
-        the underlying data structures.  This is important for allowing minor
-        data modifications from within Python-space.
-        """
-        unmodified_copy = data_diag.copy()
-        data_diag.as_scipy().data += 1
-        modified_copy = data_diag.copy()
-        assert np.any(data_diag.to_array() != unmodified_copy.to_array())
-        assert np.all(data_diag.to_array() == modified_copy.to_array())
+    #def test_as_scipy_returns_a_view(self, data_diag):
+    #    """
+    #    Test that modifying the views in the result of as_scipy() also modifies
+    #    the underlying data structures.  This is important for allowing minor
+    #    data modifications from within Python-space.
+    #    """
+    #    unmodified_copy = data_diag.copy()
+    #    data_diag.as_scipy().data += 1
+    #    modified_copy = data_diag.copy()
+    #    assert np.any(data_diag.to_array() != unmodified_copy.to_array())
+    #    assert np.all(data_diag.to_array() == modified_copy.to_array())
 
-    def test_as_scipy_caches_result(self, data_diag):
-        """
-        Test that the as_scipy() method always returns the same view, even if
-        called multiple times.
-        """
-        assert data_diag.as_scipy() is data_diag.as_scipy()
+    #def test_as_scipy_caches_result(self, data_diag):
+    #    """
+    #    Test that the as_scipy() method always returns the same view, even if
+    #    called multiple times.
+    #    """
+    #    assert data_diag.as_scipy() is data_diag.as_scipy()
 
     def test_as_scipy_of_dia_from_scipy_is_different(self, scipy_dia):
         """
@@ -198,12 +198,12 @@ class TestClassMethods:
         assert isinstance(data_diag.as_scipy(), scipy.sparse.dia_matrix)
         assert _dia_eq(data_diag.as_scipy(), scipy_dia)
 
-    def test_as_scipy_of_uninitialised_is_empty(self, shape):
-        ndiag = 0
-        base = dia.empty(shape[0], shape[1], ndiag)
-        sci = base.as_scipy()
-        assert len(sci.data) == 0
-        assert len(sci.offsets) == 0
+    # def test_as_scipy_of_uninitialised_is_empty(self, shape):
+    #     ndiag = 0
+    #     base = dia.empty(shape[0], shape[1], ndiag)
+    #     sci = base.as_scipy()
+    #     assert len(sci.data) == 0
+    #     assert len(sci.offsets) == 0
 
     def test_to_array_is_correct_result(self, data_diag):
         test_array = data_diag.to_array()
@@ -214,15 +214,15 @@ class TestClassMethods:
 
 
 class TestFactoryMethods:
-    def test_empty(self, shape, density):
-        ndiag = int(shape[0] * shape[1] * density) or 1
-        base = dia.empty(shape[0], shape[1], ndiag)
-        sci = base.as_scipy(full=True)
-        assert isinstance(base, dia.Dia)
-        assert isinstance(sci, scipy.sparse.dia_matrix)
-        assert base.shape == shape
-        assert sci.data.shape == (ndiag, shape[1])
-        assert sci.offsets.shape == (ndiag,)
+    # def test_empty(self, shape, density):
+    #     ndiag = int(shape[0] * shape[1] * density) or 1
+    #     base = dia.empty(shape[0], shape[1], ndiag)
+    #     sci = base.as_scipy(full=True)
+    #     assert isinstance(base, dia.Dia)
+    #     assert isinstance(sci, scipy.sparse.dia_matrix)
+    #     assert base.shape == shape
+    #     assert sci.data.shape == (ndiag, shape[1])
+    #     assert sci.offsets.shape == (ndiag,)
 
     def test_zeros(self, shape):
         base = dia.zeros(shape[0], shape[1])

@@ -3,7 +3,7 @@ import operator
 import pytest
 
 import numpy as np
-import scipy.sparse
+import scipy.sparse as spsparse
 import scipy.linalg
 
 import qutip
@@ -45,7 +45,7 @@ def test_QobjData():
     assert np.all(q1.data.to_array() == data1)
 
     data2 = _random_not_singular(N)
-    data2 = scipy.sparse.csr_matrix(data2)
+    data2 = spsparse.csr_matrix(data2)
     q2 = qutip.Qobj(data2)
     assert isinstance(q2.data, qutip.core.data.Data)
 
@@ -77,12 +77,12 @@ def test_QobjCopyArgument(original_data, copy):
             original_data = original_data.data
 
         if isinstance(original_data, np.ndarray):
-            # For numpy object we compare with data's data. This should be dense so
-            # we get its data as ndarray.
+            # For numpy object we compare with data's data. This should be
+            # dense so we get its data as ndarray.
             qobj_data = qobj_data.as_ndarray()
 
-            # We look at the memory and see if it is shared or not to asses wether
-            # copy argument worked or not.
+            # We look at the memory and see if it is shared or not to asses
+            # wether copy argument worked or not.
             assert np.shares_memory(qobj_data, original_data) != copy
 
         else:
@@ -1301,42 +1301,36 @@ def test_groundstate():
 @pytest.mark.filterwarnings(
     "ignore::scipy.sparse.SparseEfficiencyWarning"
 )
-def test_data_as():
-    qobj = qutip.qeye(2, dtype="CSR")
+@pytest.mark.parametrize(["dtype", "asked_type", "out_type"], [
+    pytest.param("CSR", None, spsparse.csr_matrix, id='csr empty'),
+    pytest.param("CSR", "csr_matrix", spsparse.csr_matrix, id='csr_matrix'),
+    pytest.param("CSR", "csr_array", spsparse.csr_array, id='csr_array'),
+    pytest.param("Dia", None, spsparse.dia_matrix, id='dia empty'),
+    pytest.param("Dia", "dia_matrix", spsparse.dia_matrix, id='dia_matrix'),
+    pytest.param("Dia", "dia_array", spsparse.dia_array, id='dia_array'),
+    pytest.param("Dense", None, np.ndarray, id='Dense empty'),
+    pytest.param("Dense", "ndarray", np.ndarray, id='ndarray'),
+])
+def test_data_as(dtype, asked_type, out_type):
+    qobj = qutip.qeye(2, dtype=dtype)
 
-    assert scipy.sparse.isspmatrix_csr(qobj.data_as("csr_matrix"))
-    assert scipy.sparse.isspmatrix_csr(qobj.data_as(copy=False))
+    assert isinstance(qobj.data_as(asked_type), out_type)
+
+
+@pytest.mark.filterwarnings(
+    "ignore::scipy.sparse.SparseEfficiencyWarning"
+)
+@pytest.mark.parametrize(["dtype", "asked_type", "expected_type"], [
+    pytest.param("CSR", "ndarray", "csr_matrix", id='csr'),
+    pytest.param("Dia", "csr_matrix", "dia_matrix", id='dia'),
+    pytest.param("Dense", "dia_matrix", "ndarray", id='ndarray'),
+])
+def test_data_as_wrong_type(dtype, asked_type, expected_type):
+    qobj = qutip.qeye(2, dtype=dtype)
+
     with pytest.raises(ValueError) as err:
-        qobj.data_as("ndarray")
-    assert "csr_matrix" in str(err.value)
-
-    qobj.data_as(copy=False)[0, 0] = 0
-    qobj.data_as(copy=True)[0, 1] = 2
-    assert qobj == qutip.num(2, dtype="CSR")
-
-    qobj = qutip.qeye(2, dtype="Dense")
-
-    assert isinstance(qobj.data_as("ndarray"), np.ndarray)
-    assert isinstance(qobj.data_as(copy=False), np.ndarray)
-
-    qobj.data_as(copy=False)[0, 0] = 0
-    qobj.data_as(copy=True)[0, 1] = 2
-    assert qobj == qutip.num(2, dtype="Dense")
-    with pytest.raises(ValueError) as err:
-        qobj.data_as("csr_matrix")
-    assert "ndarray" in str(err.value)
-
-    qobj = qutip.qeye(2, dtype="Dia")
-
-    assert scipy.sparse.isspmatrix_dia(qobj.data_as("dia_matrix"))
-    assert scipy.sparse.isspmatrix_dia(qobj.data_as(copy=False))
-
-    qobj.data_as(copy=False).data[:, 0] = 0
-    qobj.data_as(copy=True).data[:, 0] = 2
-    assert qobj == qutip.num(2, dtype="Dia")
-    with pytest.raises(ValueError) as err:
-        qobj.data_as("ndarray")
-    assert "dia_matrix" in str(err.value)
+        qobj.data_as(asked_type)
+    assert expected_type in str(err.value)
 
 
 @pytest.mark.parametrize(

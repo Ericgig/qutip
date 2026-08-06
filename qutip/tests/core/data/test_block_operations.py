@@ -138,14 +138,11 @@ def test_block_build_csr():
             np.array([1, 1], dtype=_data.base.idxint_dtype),
         )
 
-    # Test no segfault if input is csr.empty
-    # (users are not expected to be exposed to csr.empty directly, but it is
-    # good to avoid segfaults, so we test this here explicitly)
     result = _data.block_build_csr(
         np.array([0, 0, 1, 1], dtype=_data.base.idxint_dtype),
         np.array([0, 1, 0, 1], dtype=_data.base.idxint_dtype),
-        np.array([csr.identity(2), csr.empty(2, 2, 0),
-                  csr.empty(2, 2, 0), csr.identity(2)], dtype=_data.Data),
+        np.array([csr.identity(2), csr.zeros(2, 2),
+                  csr.zeros(2, 2), csr.identity(2)], dtype=_data.Data),
         np.array([2, 2], dtype=_data.base.idxint_dtype),
         np.array([2, 2], dtype=_data.base.idxint_dtype),
     )
