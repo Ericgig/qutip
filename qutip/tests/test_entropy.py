@@ -221,7 +221,7 @@ class TestConditionalEntropy:
                     + qutip.entropy_conditional(bd, 1)))
 
 
-_alpha = 2*np.pi * np.random.rand()
+alpha = 2*np.pi * np.random.rand()
 
 
 @pytest.mark.parametrize(["gate", "expected"], [
@@ -230,8 +230,8 @@ _alpha = 2*np.pi * np.random.rand()
     pytest.param(qutip.gates.berkeley(), 2/9, id="Berkeley"),
     pytest.param(qutip.gates.swap(), 0, id="SWAP"),
     pytest.param(qutip.gates.sqrtswap(), 1/6, id="sqrt(SWAP)"),
-    pytest.param(qutip.gates.swapalpha(_alpha),
-                 np.sin(np.pi*_alpha)**2 / 6, id="SWAP(alpha)"),
+    pytest.param(qutip.gates.swapalpha(alpha),
+                 np.sin(np.pi*alpha)**2 / 6, id=f"SWAP({alpha=})"),
 ])
 def test_entangling_power(gate, expected):
     assert abs(qutip.entangling_power(gate) - expected) < 1e-12
