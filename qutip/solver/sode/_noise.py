@@ -100,7 +100,7 @@ class _Noise:
         self.T = T
         self.dt = dt
         self.num = num
-        self.noise = np.random.randn(N, num) * dt**0.5
+        self.noise = generator.standard_normal((N, num)) * dt**0.5
 
     def dw(self, dt):
         """

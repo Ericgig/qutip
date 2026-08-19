@@ -14,6 +14,7 @@ __all__ = [
 import numpy as np
 
 from . import Qobj, expect, qeye_like, settings
+from ._random import get_rng
 
 
 def _verify_input(op, state):
@@ -326,7 +327,7 @@ def measure_observable(state, op, tol=None):
     """
     eigenvalues, projectors, probabilities = (
         measurement_statistics_observable(state, op, tol))
-    i = np.random.choice(len(eigenvalues), p=probabilities)
+    i = get_rng().choice(len(eigenvalues), p=probabilities)
     if state.isket:
         state = (projectors[i] * state) / probabilities[i]**0.5
     else:
@@ -370,7 +371,7 @@ def measure_povm(state, ops, tol=None):
     """
     collapsed_states, probabilities = (
         measurement_statistics_povm(state, ops, tol))
-    index = np.random.choice(len(collapsed_states), p=probabilities)
+    index = get_rng().choice(len(collapsed_states), p=probabilities)
     state = collapsed_states[index]
     return index, state
 

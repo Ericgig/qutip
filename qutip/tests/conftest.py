@@ -63,21 +63,22 @@ import warnings
 
 
 
-GENERATOR = np.random.default_rng()
-
+SEEDSEQ = np.random.SeedSequence()
+import qutip._random as _random
 
 @pytest.fixture
-def fixture__seeded_np_random(request):
-    seed = GENERATOR.integers(2**32)
-    request.node.user_properties.append(("numpy_seed", seed))
+def fixture_seeded_qt_random(request):
+    seed = SEEDSEQ.spawn(1)[0]
+    request.node.user_properties.append(("qt_seed", seed))
     with warnings.filterwarnings("ignore:RANDOM:UserWarning"):
-        np.random.seed(seed)
+        _random.seedseq = seed
         yield
+        _random.seedseq = np.random.SeedSequence()
 
 
 @pytest.fixture
 def fixture_random_seed(request):
-    seed = GENERATOR.integers(2**32)
+    seed = SEEDSEQ.spawn(1)[0]
     request.node.user_properties.append(("numpy_seed", seed))
     with warnings.filterwarnings("ignore:RANDOM:UserWarning"):
         yield seed
@@ -85,7 +86,7 @@ def fixture_random_seed(request):
 
 @pytest.fixture
 def fixture_generator(request):
-    seed = GENERATOR.integers(2**32)
+    seed = SEEDSEQ.spawn(1)[0]
     request.node.user_properties.append(("numpy_generator", seed))
     with warnings.filterwarnings("ignore:RANDOM:UserWarning"):
         yield np.random.default_rng(seed)

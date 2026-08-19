@@ -8,6 +8,7 @@ from time import time
 from .solver_base import Solver
 from ..core import QobjEvo, Qobj
 from ..core.numpy_backend import np
+from .._random import get_SeedSequence
 from numpy.typing import ArrayLike
 from numpy.random import SeedSequence, default_rng
 from numbers import Number
@@ -87,7 +88,7 @@ class MultiTrajSolver(Solver):
         else:
             raise TypeError("The system should be a QobjEvo")
         self.options = options
-        self.seed_sequence = SeedSequence()
+        self.seed_sequence = get_SeedSequence()
         self._integrator = self._get_integrator()
         self._state_metadata = {}
         self.stats = self._initialize_stats()
