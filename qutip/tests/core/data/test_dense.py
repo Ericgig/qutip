@@ -48,8 +48,11 @@ class TestClassMethods:
                                        'float64',
                                        'int32', 'int64',
                                        'uint32'])
-    def test_init_from_ndarray_other_dtype(self, shape, dtype):
-        numpy_dense = np.random.rand(*shape).astype(dtype, casting='unsafe')
+    def test_init_from_ndarray_other_dtype(self, shape, dtype,
+                                           fixture_generator):
+        numpy_dense = fixture_generator.random(shape).astype(
+            dtype, casting='unsafe'
+        )
         test = data.Dense(numpy_dense)
         assert test.shape == shape
         assert test.as_ndarray().dtype == np.complex128

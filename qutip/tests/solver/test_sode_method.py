@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 from itertools import product
 from qutip.core import data as _data
@@ -32,14 +33,14 @@ def get_error_order(system, state, method, plot=False, **kw):
     return np.polyfit(np.log(ts), np.log(err + 1e-20), 1)[0]
 
 
-def _make_oper(kind, N):
+def _make_oper(kind, N, fixture_generator):
     a = destroy(N)
     if kind == "qeye":
-        out = qeye(N) * np.random.rand()
+        out = qeye(N) * fixture_generator.random()
     elif kind == "create":
-        out = a.dag() * np.random.rand()
+        out = a.dag() * fixture_generator.random()
     elif kind == "destroy":
-        out = a * np.random.rand()
+        out = a * fixture_generator.random()
     elif kind == "destroy td":
         out = [a, lambda t: 1 + t/2]
     elif kind == "destroy2":
@@ -49,7 +50,10 @@ def _make_oper(kind, N):
     elif kind == "herm td":
         out = [rand_herm(N), lambda t: -1 + t/2 + t**2]
     elif kind == "random":
-        out = Qobj(np.random.randn(N, N) + 1j * np.random.rand(N, N))
+        out = Qobj(
+            fixture_generator.standard_normal((N, N))
+            + 1j * fixture_generator.random((N, N))
+        )
     return QobjEvo(out)
 
 
@@ -75,12 +79,12 @@ def _make_oper(kind, N):
     pytest.param("herm td", ["qeye"], id='H td'),
     pytest.param("qeye", ["qeye", "destroy", "destroy2"], id='3 sc_ops'),
 ])
-def test_methods(H, sc_ops, method, order, kw):
+def test_methods(H, sc_ops, method, order, kw, fixture_generator):
     if kw == {"solve_method": "inv"} and ("td" in H or "td" in sc_ops[0]):
         pytest.skip("inverse method only available for constant cases.")
     N = 5
-    H = _make_oper(H, N)
-    sc_ops = [_make_oper(op, N) for op in sc_ops]
+    H = _make_oper(H, N, fixture_generator)
+    sc_ops = [_make_oper(op, N, fixture_generator) for op in sc_ops]
     system = SimpleStochasticSystem(H, sc_ops)
     state = rand_ket(N).data
     error_order = get_error_order(system, state, method, **kw)
@@ -89,14 +93,15 @@ def test_methods(H, sc_ops, method, order, kw):
     assert (order + 0.25) < error_order
 
 
-def get_error_order_integrator(integrator, ref_integrator, state, plot=False):
+def get_error_order_integrator(integrator, ref_integrator, state,
+                               fixture_generator, plot=False):
     ts = np.logspace(-4, -1, 20)
     err = np.zeros(len(ts), dtype=float)
     for i, t in enumerate(ts):
         integrator.options["dt"] = t
         ref_integrator.options["dt"] = t
-        integrator.set_state(0., state, np.random.default_rng(0))
-        ref_integrator.set_state(0., state, np.random.default_rng(0))
+        integrator.set_state(0., state, copy.deepcopy(fixture_generator))
+        ref_integrator.set_state(0., state, copy.deepcopy(fixture_generator))
         out = integrator.integrate(t)[1]
         target = ref_integrator.integrate(t)[1]
         err[i] = _data.norm.l2(out - target)
@@ -132,18 +137,20 @@ def get_error_order_integrator(integrator, ref_integrator, state, plot=False):
     pytest.param("herm td", ["random"], ["destroy"], id='H td'),
     pytest.param("herm", ["random"], ["destroy td"], id='sc_ops td'),
 ])
-def test_open_integrator(method, order, H, c_ops, sc_ops):
+def test_open_integrator(method, order, H, c_ops, sc_ops, fixture_generator):
     N = 5
-    H = _make_oper(H, N)
-    c_ops = [_make_oper(op, N) for op in c_ops]
-    sc_ops = [_make_oper(op, N) for op in sc_ops]
+    H = _make_oper(H, N, fixture_generator)
+    c_ops = [_make_oper(op, N, fixture_generator) for op in c_ops]
+    sc_ops = [_make_oper(op, N, fixture_generator) for op in sc_ops]
 
     rhs = _StochasticRHS(StochasticOpenSystem, H, sc_ops, c_ops, False)
     ref_sode = SMESolver.avail_integrators()["taylor1.5"](rhs, {"dt": 0.01})
     sode = SMESolver.avail_integrators()[method](rhs, {"dt": 0.01})
     state = operator_to_vector(fock_dm(5, 3, dtype="Dense")).data
 
-    error_order = get_error_order_integrator(sode, ref_sode, state)
+    error_order = get_error_order_integrator(
+        sode, ref_sode, state, fixture_generator
+    )
     assert (order + 0.25) < error_order
 
 
@@ -159,17 +166,19 @@ def test_open_integrator(method, order, H, c_ops, sc_ops):
     pytest.param("herm td", ["destroy"], id='H td'),
     pytest.param("herm", ["destroy td"], id='sc_ops td'),
 ])
-def test_closed_integrator(method, order, H, sc_ops):
+def test_closed_integrator(method, order, H, sc_ops, fixture_generator):
     N = 5
-    H = _make_oper(H, N)
-    sc_ops = [_make_oper(op, N) for op in sc_ops]
+    H = _make_oper(H, N, fixture_generator)
+    sc_ops = [_make_oper(op, N, fixture_generator) for op in sc_ops]
 
     rhs = _StochasticRHS(StochasticClosedSystem, H, sc_ops, (), False)
     ref_sode = SMESolver.avail_integrators()["explicit1.5"](rhs, {"dt": 0.01})
     sode = SMESolver.avail_integrators()[method](rhs, {"dt": 0.01})
     state = operator_to_vector(fock_dm(5, 3, dtype="Dense")).data
 
-    error_order = get_error_order_integrator(sode, ref_sode, state)
+    error_order = get_error_order_integrator(
+        sode, ref_sode, state, fixture_generator
+    )
     assert (order + 0.25) < error_order
 
 
@@ -183,7 +192,7 @@ def test_closed_integrator(method, order, H, sc_ops):
     "explicit1.5",
     "taylor1.5_imp",
 ])
-def test_get_state(method):
+def test_get_state(method, fixture_generator):
     N = 3
     H = qeye(N)
     sc_ops = [destroy(N)]
@@ -192,7 +201,7 @@ def test_get_state(method):
     sode = SMESolver.avail_integrators()[method](rhs, {"dt": 0.01})
     state = operator_to_vector(fock_dm(3, dtype="Dense")).data
 
-    sode.set_state(0., state, np.random.default_rng(0))
+    sode.set_state(0., state, fixture_generator)
     sode.integrate(0.01)
     t1, state1, _ = sode.get_state(copy=True)
     t2, state2, _ = sode.get_state(copy=True)

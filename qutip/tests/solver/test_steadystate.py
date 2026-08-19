@@ -267,7 +267,7 @@ def test_rcm():
     assert bandwidth(L) > bandwidth(_permute_rcm(L, b)[0])
 
 
-def test_wbm():
+def test_wbm(fixture_generator):
     N = 5
     a = qutip.destroy(N)
     I = qutip.qeye(N)
@@ -278,7 +278,7 @@ def test_wbm():
 
     # shuffling the Liouvillian to ensure the diag is almost empty
     perm = np.arange(N**4)
-    np.random.shuffle(perm)
+    fixture_generator.shuffle(perm)
     L = _data.permute.indices(L, None, perm, dtype="CSR")
 
     def dia_dominance(mat):

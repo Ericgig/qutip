@@ -71,7 +71,7 @@ class TestMatVec:
         Superoperator: Operator - vector - operator conversion for non-square
         matrix.
         """
-        op1 = qutip.Qobj(np.random.rand(6).reshape((3, 2)))
+        op1 = qutip.Qobj(fixture_generator.random(6).reshape((3, 2)))
         op2 = qutip.vector_to_operator(qutip.operator_to_vector(op1))
         np.testing.assert_allclose(op1.full(), op2.full(), 1e-8)
 
@@ -139,7 +139,7 @@ class TestMatVec:
         """
         Superoperator: Conversion matrix to vector to matrix
         """
-        M = _data.create(np.random.rand(10, 10))
+        M = _data.create(fixture_generator.random((10, 10)))
         V = qutip.stack_columns(M)
         M2 = qutip.unstack_columns(V)
         np.testing.assert_allclose(M.to_array(), M2.to_array(), 1e-8)
@@ -148,7 +148,7 @@ class TestMatVec:
         """
         Superoperator: Conversion vector to matrix to vector
         """
-        V = _data.create(np.random.rand(100, 1))
+        V = _data.create(fixture_generator.random((100, 1)))
         M = qutip.unstack_columns(V)
         V2 = qutip.stack_columns(M)
         np.testing.assert_allclose(V.to_array(), V2.to_array(), 1e-8)
@@ -167,7 +167,7 @@ class TestMatVec:
         corresponding index conversions.
         """
         N = 10
-        M = _data.create(np.random.rand(N, N))
+        M = _data.create(fixture_generator.random((N, N)))
         V = qutip.stack_columns(M)
         for idx in range(N * N):
             i, j = qutip.unstacked_index(N, idx)

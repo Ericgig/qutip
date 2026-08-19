@@ -169,6 +169,10 @@ def e_op_num(t, state):
 
 
 class TestMultiTrajResult:
+    @pytest.fixture(autouse=True)
+    def _set_fixture_generator(self, fixture_generator):
+        self.fixture_generator = fixture_generator
+
     def _fill_trajectories(self, multiresult, N, ntraj,
                            collapse=False, noise=0, dm=False,
                            include_no_jump=False, rel_weights=None):
@@ -178,7 +182,7 @@ class TestMultiTrajResult:
             result = Result(multiresult._raw_ops, multiresult.options)
             result.collapse = []
             for t in range(N):
-                delta = 1 + noise * np.random.randn()
+                delta = 1 + noise * self.fixture_generator.standard_normal()
                 state = qutip.basis(N, t) * delta
                 if dm:
                     state = state.proj()
@@ -453,24 +457,24 @@ class TestMultiTrajResult:
 
         for j in range(ntraj):
             traj = Result(res._raw_ops, res.options)
-            seeds = np.random.randint(10_000, size=len(tlist))
+            seeds = self.fixture_generator.integers(10_000, size=len(tlist))
             for t, seed in zip(tlist, seeds):
                 random_state = qutip.rand_ket(dim, seed=seed)
                 traj.add(t, random_state)
 
             if collapse:
                 traj.collapse = []
-                for _ in range(np.random.randint(5)):
+                for _ in range(self.fixture_generator.integers(5)):
                     traj.collapse.append(
-                        (np.random.uniform(tlist[0], tlist[-1]),
-                         np.random.randint(2)))
+                        (self.fixture_generator.uniform(tlist[0], tlist[-1]),
+                         self.fixture_generator.integers(2)))
             if trace:
-                traj.trace = np.random.rand(len(tlist))
+                traj.trace = self.fixture_generator.random(len(tlist))
 
             if abs_weights and j==0:
-                res.add_deterministic(traj, np.random.rand())
+                res.add_deterministic(traj, self.fixture_generator.random())
             else:
-                res.add((0, traj, np.random.rand()))
+                res.add((0, traj, self.fixture_generator.random()))
 
 
         return res

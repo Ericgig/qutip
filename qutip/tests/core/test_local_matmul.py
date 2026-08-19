@@ -52,29 +52,30 @@ def test_two_qubit_gate_on_dm():
     assert result_state == expected_state
 
 
-def _rand_single_hilbert_qobj(shape, _dtype):
-    data = (np.random.rand(*shape) + 1j * np.random.rand(*shape))
+def _rand_single_hilbert_qobj(shape, _dtype, fixture_generator):
+    data = (fixture_generator.random(shape)
+            + 1j * fixture_generator.random(shape))
     if _dtype != "dense":
         # Make the data sparse
-        data *= (np.random.rand(*shape) < 0.2)
+        data *= (fixture_generator.random(shape) < 0.2)
     return Qobj(data, dtype=_dtype)
 
 
-def _rand_state(hilbert, square, order):
+def _rand_state(hilbert, square, order, fixture_generator):
     dN = 0 if square else 1
     state = tensor([
-        _rand_single_hilbert_qobj((N, N + dN), "dense")
+        _rand_single_hilbert_qobj((N, N + dN), "dense", fixture_generator)
         for N in hilbert
     ])
     state.data = state.data.reorder(fortran=order == "F")
     return state
 
 
-def _rand_oper(hilbert, modes, square, dtype):
+def _rand_oper(hilbert, modes, square, dtype, fixture_generator):
     dN = 0 if square else 1
     op = [
         _rand_single_hilbert_qobj(
-            (hilbert[mode] + dN, hilbert[mode]), dtype
+            (hilbert[mode] + dN, hilbert[mode]), dtype, fixture_generator
         )
         for mode in modes
     ]
@@ -188,10 +189,11 @@ def _reference_super(pres, posts, state, modes):
     return pre_oper @ state @ post_oper
 
 
-def test_single_mode_ket(hilbert, square_operator, dtype):
+def test_single_mode_ket(hilbert, square_operator, dtype, fixture_generator):
     mode = 6 % len(hilbert)
 
-    op = _rand_oper(hilbert, [mode], square_operator, dtype)[0]
+    op = _rand_oper(hilbert, [mode], square_operator, dtype,
+                    fixture_generator)[0]
     state = rand_ket(hilbert)
 
     expected = _reference_N_mode([op], state, [mode])
@@ -200,11 +202,13 @@ def test_single_mode_ket(hilbert, square_operator, dtype):
     assert expected == result
 
 
-def test_single_mode_dm(hilbert, square_operator, square_state, dtype, order):
+def test_single_mode_dm(hilbert, square_operator, square_state, dtype, order,
+                        fixture_generator):
     mode = 6 % len(hilbert)
 
-    op = _rand_oper(hilbert, [mode], square_operator, dtype)[0]
-    state = _rand_state(hilbert, square_state, order)
+    op = _rand_oper(hilbert, [mode], square_operator, dtype,
+                    fixture_generator)[0]
+    state = _rand_state(hilbert, square_state, order, fixture_generator)
 
     expected = _reference_N_mode([op], state, [mode])
     result = local_matmul(op, state, mode)
@@ -212,11 +216,13 @@ def test_single_mode_dm(hilbert, square_operator, square_state, dtype, order):
     assert expected == result
 
 
-def test_single_mode_dm_dual(hilbert, square_operator, square_state, dtype, order):
+def test_single_mode_dm_dual(hilbert, square_operator, square_state, dtype,
+                             order, fixture_generator):
     mode = 6 % len(hilbert)
 
-    op = _rand_oper(hilbert, [mode], square_operator, dtype)[0].trans()
-    state = _rand_state(hilbert, square_state, order).trans()
+    op = _rand_oper(hilbert, [mode], square_operator, dtype,
+                    fixture_generator)[0].trans()
+    state = _rand_state(hilbert, square_state, order, fixture_generator).trans()
 
     expected = _reference_N_mode([op], state, [mode], True)
     result = local_matmul(op, state, mode, True)
@@ -224,10 +230,12 @@ def test_single_mode_dm_dual(hilbert, square_operator, square_state, dtype, orde
     assert expected == result
 
 
-def test_multi_mode_ket(large_hilbert, square_operator, dtype):
+def test_multi_mode_ket(large_hilbert, square_operator, dtype,
+                        fixture_generator):
     modes = [2, 0, 1]
 
-    op = _rand_oper(large_hilbert, modes, square_operator, dtype)
+    op = _rand_oper(large_hilbert, modes, square_operator, dtype,
+                    fixture_generator)
     state = rand_ket(large_hilbert)
 
     expected = _reference_N_mode(op, state, modes)
@@ -236,11 +244,13 @@ def test_multi_mode_ket(large_hilbert, square_operator, dtype):
     assert expected == result
 
 
-def test_multi_mode_dm(large_hilbert, square_operator, square_state, dtype, order):
+def test_multi_mode_dm(large_hilbert, square_operator, square_state, dtype,
+                       order, fixture_generator):
     modes = [1, 2, 0]
 
-    op = _rand_oper(large_hilbert, modes, square_operator, dtype)
-    state = _rand_state(large_hilbert, square_state, order)
+    op = _rand_oper(large_hilbert, modes, square_operator, dtype,
+                    fixture_generator)
+    state = _rand_state(large_hilbert, square_state, order, fixture_generator)
 
     expected = _reference_N_mode(op, state, modes)
     result = local_matmul(tensor(op), state, modes)
@@ -248,14 +258,17 @@ def test_multi_mode_dm(large_hilbert, square_operator, square_state, dtype, orde
     assert expected == result
 
 
-def test_multi_mode_dm_dual(large_hilbert, square_operator, square_state, dtype, order):
+def test_multi_mode_dm_dual(large_hilbert, square_operator, square_state, dtype,
+                            order, fixture_generator):
     modes = [2, 1, 0]
 
     op = [
         oper.trans()
-        for oper in _rand_oper(large_hilbert, modes, square_operator, dtype)
+        for oper in _rand_oper(large_hilbert, modes, square_operator, dtype,
+                       fixture_generator)
     ]
-    state = _rand_state(large_hilbert, square_state, order).trans()
+    state = _rand_state(large_hilbert, square_state, order,
+                        fixture_generator).trans()
 
     expected = _reference_N_mode(op, state, modes, True)
     result = local_matmul(tensor(op), state, modes, True)
@@ -263,16 +276,19 @@ def test_multi_mode_dm_dual(large_hilbert, square_operator, square_state, dtype,
     assert expected == result
 
 
-def test_super_single(hilbert, square_operator, square_state, dtype, order):
+def test_super_single(hilbert, square_operator, square_state, dtype, order,
+                      fixture_generator):
     mode = 6 % len(hilbert)
     if square_state:
         hilbert_right = hilbert
     else:
         hilbert_right = [N + 1 for N in hilbert]
 
-    pre = _rand_oper(hilbert, [mode], square_operator, dtype)[0]
-    post = _rand_oper(hilbert_right, [mode], square_operator, dtype)[0].trans()
-    state = _rand_state(hilbert, square_state, order)
+    pre = _rand_oper(hilbert, [mode], square_operator, dtype,
+                     fixture_generator)[0]
+    post = _rand_oper(hilbert_right, [mode], square_operator, dtype,
+                      fixture_generator)[0].trans()
+    state = _rand_state(hilbert, square_state, order, fixture_generator)
 
     expected = _reference_super([pre], [post], state, [mode])
     result = local_matmul(sprepost(pre, post), state, mode)
@@ -280,19 +296,22 @@ def test_super_single(hilbert, square_operator, square_state, dtype, order):
     assert expected == result
 
 
-def test_super_multi(large_hilbert, square_operator, square_state, dtype, order):
+def test_super_multi(large_hilbert, square_operator, square_state, dtype, order,
+                     fixture_generator):
     modes = [3, 0, 1]
     if square_state:
         hilbert_right = large_hilbert
     else:
         hilbert_right = [N + 1 for N in large_hilbert]
 
-    pre = _rand_oper(large_hilbert, modes, square_operator, dtype)
+    pre = _rand_oper(large_hilbert, modes, square_operator, dtype,
+                     fixture_generator)
     post = [
         oper.trans()
-        for oper in _rand_oper(hilbert_right, modes, square_operator, dtype)
+        for oper in _rand_oper(hilbert_right, modes, square_operator, dtype,
+                       fixture_generator)
     ]
-    state = _rand_state(large_hilbert, square_state, order)
+    state = _rand_state(large_hilbert, square_state, order, fixture_generator)
 
     expected = _reference_super(pre, post, state, modes)
     sop = sprepost(tensor(pre), tensor(post))

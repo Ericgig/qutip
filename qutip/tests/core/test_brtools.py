@@ -28,11 +28,10 @@ transform = {
                          ids=['', 'transpose', 'conj', 'dag'])
 @pytest.mark.parametrize('transright', [0, 1, 2, 3],
                          ids=['', 'transpose', 'conj', 'dag'])
-def test_matmul_var(datatype, transleft, transright):
+def test_matmul_var(datatype, transleft, transright, fixture_generator):
     shape = (5, 5)
-    rng = np.random.default_rng(seed=11)
-    left = qutip.data.to(datatype, _make_rand_data(shape, rng))
-    right = qutip.data.to(datatype, _make_rand_data(shape, rng))
+    left = qutip.data.to(datatype, _make_rand_data(shape, fixture_generator))
+    right = qutip.data.to(datatype, _make_rand_data(shape, fixture_generator))
 
     expected = qutip.data.matmul(
         transform[transleft](left),

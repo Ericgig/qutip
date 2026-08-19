@@ -20,7 +20,9 @@ def _canonicalise_eigenvector(vec):
 
 # Random diagonal Hamiltonian.
 _diagonal_dimension = 10
-_diagonal_eigenvalues = np.sort(np.random.rand(_diagonal_dimension))
+_diagonal_eigenvalues = np.linspace(
+    0.05, 0.95, _diagonal_dimension
+)
 _diagonal_eigenstates = np.array([[0]*n + [1] + [0]*(_diagonal_dimension-n-1)
                                   for n in range(_diagonal_dimension)])
 _diagonal_hamiltonian = qutip.qdiags(_diagonal_eigenvalues, 0)

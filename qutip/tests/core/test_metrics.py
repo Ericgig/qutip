@@ -440,9 +440,9 @@ class Test_dnorm:
             == pytest.approx(expected, abs=1e-7)
         )
 
-    def test_qubit_scalar(self, dimension):
+    def test_qubit_scalar(self, dimension, fixture_generator):
         """dnorm(a * A) == a * dnorm(A) for scalar a, qobj A."""
-        a = np.random.random()
+        a = fixture_generator.random()
         A = rand_super_bcsz(dimension)
         B = rand_super_bcsz(dimension)
         assert dnorm(a*A, a*B) == pytest.approx(a*dnorm(A, B), abs=1e-7)

@@ -126,8 +126,9 @@ def _assert_qobj_almost_eq(obj1, obj2, tol=1e-10):
     assert _data.iszero((obj1 - obj2).data, tol)
 
 
-def _assert_qobjevo_different(obj1, obj2):
-    assert any(obj1(t) != obj2(t) for t in np.random.rand(10) * .9 + 0.05)
+def _assert_qobjevo_different(obj1, obj2, fixture_generator):
+    assert any(obj1(t) != obj2(t)
+               for t in fixture_generator.random(10) * .9 + 0.05)
 
 
 def _div(a, b):
@@ -326,7 +327,7 @@ def test_unary_ket(unary_op):
 
 @pytest.mark.parametrize('args_coeff_type',
                          ['func_coeff', 'string', 'func_call'])
-def test_args(pseudo_qevo, args_coeff_type):
+def test_args(pseudo_qevo, args_coeff_type, fixture_generator):
     obj = QobjEvo(*pseudo_qevo[args_coeff_type])
     args = {'w1': 3, "w2": 3}
 
@@ -338,13 +339,13 @@ def test_args(pseudo_qevo, args_coeff_type):
     _assert_qobjevo_equivalent(obj, pseudo_qevo)
 
     obj.arguments(args)
-    _assert_qobjevo_different(obj, pseudo_qevo)
+    _assert_qobjevo_different(obj, pseudo_qevo, fixture_generator)
     for t in TESTTIMES:
         _assert_qobj_almost_eq(obj(t), pseudo_qevo(t, **args))
 
     args = {'w1': 4, "w2": 4}
     obj.arguments(**args)
-    _assert_qobjevo_different(obj, pseudo_qevo)
+    _assert_qobjevo_different(obj, pseudo_qevo, fixture_generator)
     for t in TESTTIMES:
         _assert_qobj_almost_eq(obj(t), pseudo_qevo(t, **args))
 
@@ -404,9 +405,10 @@ def test_mul_vec(all_qevo):
                         op.matmul(t, vec).full(), atol=1e-14)
 
 
-def test_matmul(all_qevo):
+def test_matmul(all_qevo, fixture_generator):
     "QobjEvo matmul oper"
-    mat = np.random.rand(N, N) + 1 + 1j * np.random.rand(N, N)
+    mat = (fixture_generator.random((N, N)) + 1
+           + 1j * fixture_generator.random((N, N)))
     matQobj = Qobj(mat)
     matDense = Qobj(mat).to(_data.Dense)
     matF = Qobj(np.asfortranarray(mat)).to(_data.Dense)
@@ -422,12 +424,13 @@ def test_matmul(all_qevo):
                         op.matmul(t, matCSR).full(), atol=1e-14)
 
 
-def test_adjoint_rmatmul_data(all_qevo):
+def test_adjoint_rmatmul_data(all_qevo, fixture_generator):
     """
     Test that QobjEvo.adjoint_rmatmul_data(t, state, out) correctly computes
     state @ QobjEvo(t).dag() and accumulates into the output buffer.
     """
-    mat = np.random.rand(N, N) + 1 + 1j * np.random.rand(N, N)
+    mat = (fixture_generator.random((N, N)) + 1
+           + 1j * fixture_generator.random((N, N)))
     matDense = Qobj(mat).to(_data.Dense)
     matF = Qobj(np.asfortranarray(mat)).to(_data.Dense)
     op = all_qevo
@@ -444,7 +447,8 @@ def test_adjoint_rmatmul_data(all_qevo):
         assert_allclose(expected, result_f, atol=1e-14)
 
         # Test accumulation into output buffer
-        initial_out = np.random.rand(N, N) + 1j * np.random.rand(N, N)
+        initial_out = (fixture_generator.random((N, N))
+                   + 1j * fixture_generator.random((N, N)))
         out_buffer = Qobj(initial_out).to(_data.Dense)
         expected_accum = Qobj(initial_out).full() + expected
 
@@ -454,7 +458,7 @@ def test_adjoint_rmatmul_data(all_qevo):
         assert_allclose(expected_accum, result, atol=1e-14)
 
 
-def test_adjoint_rmatmul_data_mixed_representations():
+def test_adjoint_rmatmul_data_mixed_representations(fixture_generator):
     """
     Test adjoint_rmatmul_data with mixed data representations (Dia, CSR, Dense)
     and time-dependent coefficients using non-hermitian operators.
@@ -472,7 +476,8 @@ def test_adjoint_rmatmul_data_mixed_representations():
         [H_dense, '0.05 * sin(2*t)'],
     ])
 
-    mat = np.random.rand(N, N) + 1 + 1j * np.random.rand(N, N)
+    mat = (fixture_generator.random((N, N)) + 1
+           + 1j * fixture_generator.random((N, N)))
     matDense = Qobj(mat).to(_data.Dense)
 
     for t in TESTTIMES:
@@ -494,10 +499,12 @@ def test_expect_psi(all_qevo):
                         atol=1e-14)
 
 
-def test_expect_rho(all_qevo):
+def test_expect_rho(all_qevo, fixture_generator):
     "QobjEvo expect rho"
-    vec = _data.dense.fast_from_numpy(np.random.rand(N*N) + 1
-                                      + 1j * np.random.rand(N*N))
+    vec = _data.dense.fast_from_numpy(
+        fixture_generator.random(N*N) + 1
+        + 1j * fixture_generator.random(N*N)
+    )
     mat = _data.column_unstack_dense(vec, N)
     qobj = Qobj(mat)
     op = liouvillian(all_qevo)
@@ -561,10 +568,10 @@ def test_layer_support(qobjdtype, statedtype):
     assert_allclose(mul_any, mul_dense)
 
 
-def test_QobjEvo_step_coeff():
+def test_QobjEvo_step_coeff(fixture_generator):
     "QobjEvo step interpolation"
-    coeff1 = np.random.rand(6)
-    coeff2 = np.random.rand(6) + np.random.rand(6) * 1.j
+    coeff1 = fixture_generator.random(6)
+    coeff2 = fixture_generator.random(6) + fixture_generator.random(6) * 1.j
     # uniform t_dims =
     tlist = np.array([2, 3, 4, 5, 6, 7], dtype=float)
     qobjevo = QobjEvo([[sigmaz(), coeff1], [sigmax(), coeff2]],

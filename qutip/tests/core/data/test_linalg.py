@@ -83,16 +83,16 @@ class TestSolve():
         assert "singular" in str(err.value).lower()
 
 
-    def test_incorrect_shape_non_square(self):
-        A = qutip.Qobj(np.random.rand(5, 10)).data
-        b = qutip.Qobj(np.random.rand(10, 1)).data
+    def test_incorrect_shape_non_square(self, fixture_generator):
+        A = qutip.Qobj(fixture_generator.random((5, 10))).data
+        b = qutip.Qobj(fixture_generator.random((10, 1))).data
         with pytest.raises(ValueError):
             test1 = _data.solve(A, b)
 
 
-    def test_incorrect_shape_mismatch(self):
-        A = qutip.Qobj(np.random.rand(10, 10)).data
-        b = qutip.Qobj(np.random.rand(9, 1)).data
+    def test_incorrect_shape_mismatch(self, fixture_generator):
+        A = qutip.Qobj(fixture_generator.random((10, 10))).data
+        b = qutip.Qobj(fixture_generator.random((9, 1))).data
         with pytest.raises(ValueError):
             test1 = _data.solve(A, b)
 
@@ -104,19 +104,19 @@ class TestSVD():
     def _gen_dm(self, N, rank, dtype):
         return qutip.rand_dm(N, rank=rank, dtype=dtype).data
 
-    def _gen_non_square(self, N):
-        mat = np.random.randn(N, N//2)
+    def _gen_non_square(self, N, fixture_generator):
+        mat = fixture_generator.standard_normal((N, N//2))
         for i in range(N//2):
             # Ensure no zeros singular values
             mat[i,i] += 5
         return _data.Dense(mat)
 
     @pytest.mark.parametrize("shape", ["square", "non-square"])
-    def test_mathematically_correct_svd(self, shape):
+    def test_mathematically_correct_svd(self, shape, fixture_generator):
         if shape == "square":
             matrix = self._gen_dm(10, 6, Dense)
         else:
-            matrix = self._gen_non_square(12)
+            matrix = self._gen_non_square(12, fixture_generator)
         u, s, v = self.op_numpy(matrix.to_array())
         test_U, test_S, test_V = _data.svd(matrix, True)
         only_S = _data.svd(matrix, False)

@@ -20,10 +20,9 @@ def _random_not_singular(N):
     """
     return a N*N complex array with determinant not 0.
     """
-    data = np.zeros((1, 1))
-    while np.linalg.det(data) == 0:
-        data = np.random.random((N, N)) + \
-               1j * np.random.random((N, N)) - (0.5 + 0.5j)
+    data = np.arange(N * N, dtype=float).reshape(N, N) + 1
+    data = data + 1j * np.flipud(data)
+    data[0] += np.arange(N)
     return data
 
 
@@ -89,39 +88,39 @@ def test_QobjCopyArgument(original_data, copy):
             assert (original_data is qobj_data) != copy
 
 
-def test_QobjType():
+def test_QobjType(fixture_generator):
     "qutip.Qobj type"
-    N = int(np.ceil(10.0 * np.random.random())) + 5
+    N = int(np.ceil(10.0 * fixture_generator.random())) + 5
 
-    ket_data = np.random.random((N, 1))
+    ket_data = fixture_generator.random((N, 1))
     ket_qobj = qutip.Qobj(ket_data)
     assert ket_qobj.type == 'ket'
     assert ket_qobj.isket
 
-    bra_data = np.random.random((1, N))
+    bra_data = fixture_generator.random((1, N))
     bra_qobj = qutip.Qobj(bra_data)
     assert bra_qobj.type == 'bra'
     assert bra_qobj.isbra
 
-    oper_data = np.random.random((N, N))
+    oper_data = fixture_generator.random((N, N))
     oper_qobj = qutip.Qobj(oper_data)
     assert oper_qobj.type == 'oper'
     assert oper_qobj.isoper
 
     N = 9
-    super_data = np.random.random((N, N))
+    super_data = fixture_generator.random((N, N))
     super_qobj = qutip.Qobj(super_data, dims=[[[3], [3]], [[3], [3]]])
     assert super_qobj.type == 'super'
     assert super_qobj.issuper
     assert super_qobj.superrep == 'super'
 
-    super_data = np.random.random(N)
+    super_data = fixture_generator.random(N)
     super_qobj = qutip.Qobj(super_data, dims=[[[3], [3]], [[1]]])
     assert super_qobj.type == 'operator-ket'
     assert super_qobj.isoperket
     assert super_qobj.superrep == 'super'
 
-    super_data = np.random.random((1, N))
+    super_data = fixture_generator.random((1, N))
     super_qobj = qutip.Qobj(super_data, dims=[[[1]], [[3], [3]]])
     assert super_qobj.type == 'operator-bra'
     assert super_qobj.isoperbra
@@ -305,7 +304,7 @@ class TestQobjCPTPCaching:
         assert copied._iscptp == channel._iscptp
 
 
-def test_QobjDimsShape():
+def test_QobjDimsShape(fixture_generator):
     "qutip.Qobj shape"
     N = 10
     data = _random_not_singular(N)
@@ -314,7 +313,8 @@ def test_QobjDimsShape():
     assert q1.dims == [[10], [10]]
     assert q1.shape == (10, 10)
 
-    data = np.random.random((N, 1)) + 1j*np.random.random((N, 1)) - (0.5+0.5j)
+    data = (fixture_generator.random((N, 1))
+            + 1j*fixture_generator.random((N, 1)) - (0.5+0.5j))
 
     q1 = qutip.Qobj(data)
     assert q1.dims == [[10], [1]]
@@ -356,7 +356,7 @@ def test_QobjMulNonsquareDims():
     assert (q1 * q2 * q1.dag()).dims == [[4, 2], [4, 2]]
 
 
-def test_QobjAddition():
+def test_QobjAddition(fixture_generator):
     "qutip.Qobj addition"
     data1 = np.array([[1, 2], [3, 4]])
     data2 = np.array([[5, 6], [7, 8]])
@@ -377,7 +377,7 @@ def test_QobjAddition():
     # check that addition is commutative
     assert q1 + q2 == q2 + q1
 
-    data = np.random.random((5, 5))
+    data = fixture_generator.random((5, 5))
     q = qutip.Qobj(data)
     x1 = q + 5
     x2 = 5 + q
@@ -511,11 +511,11 @@ def test_QobjNotImplemented():
     assert (scalar*qobj) == "object not accepted by _data.mul, mul"
     assert (qobj/scalar) == "object not accepted by _data.mul, rtruediv"
 
-def test_QobjDivision():
+def test_QobjDivision(fixture_generator):
     "qutip.Qobj division"
     data = _random_not_singular(5)
     q = qutip.Qobj(data)
-    randN = 10 * np.random.random()
+    randN = 10 * fixture_generator.random()
     q = q / randN
     assert np.allclose(q.full(), data/randN)
 
@@ -801,18 +801,19 @@ def test_QobjFull():
     assert np.all(b == data)
 
 
-def test_QobjNorm():
+def test_QobjNorm(fixture_generator):
     "qutip.Qobj norm"
     # vector L2-norm test
     N = 20
-    x = np.random.random(N) + 1j*np.random.random(N)
+    x = fixture_generator.random(N) + 1j*fixture_generator.random(N)
     A = qutip.Qobj(x)
     np.testing.assert_allclose(A.norm(), scipy.linalg.norm(x, 2), atol=1e-12)
     # vector max (inf) norm test
     np.testing.assert_allclose(A.norm('max'), scipy.linalg.norm(x, np.inf),
                                atol=1e-12)
     # operator frobius norm
-    x = np.random.random((N, N)) + 1j * np.random.random((N, N))
+    x = (fixture_generator.random((N, N))
+         + 1j * fixture_generator.random((N, N)))
     A = qutip.Qobj(x)
     np.testing.assert_allclose(A.norm('fro'), scipy.linalg.norm(x, 'fro'),
                                atol=1e-12)
@@ -987,7 +988,8 @@ def test_dag_preserves_superrep(dimension, conversion):
     pytest.param(qutip.tensor, True, False, id='tensor'),
 ])
 def test_arithmetic_preserves_superrep(superrep,
-                                       operation, check_op, check_scalar):
+                                       operation, check_op, check_scalar,
+                                       fixture_generator):
     """
     Checks that binary ops preserve 'superrep'.
 
@@ -998,9 +1000,11 @@ def test_arithmetic_preserves_superrep(superrep,
     """
     dims = [[[2], [2]], [[2], [2]]]
     shape = (4, 4)
-    S1 = qutip.Qobj(np.random.random(shape), superrep=superrep, dims=dims)
-    S2 = qutip.Qobj(np.random.random(shape), superrep=superrep, dims=dims)
-    x = np.random.random()
+    S1 = qutip.Qobj(fixture_generator.random(shape), superrep=superrep,
+                    dims=dims)
+    S2 = qutip.Qobj(fixture_generator.random(shape), superrep=superrep,
+                    dims=dims)
+    x = fixture_generator.random()
 
     check_list = []
     if check_op:
@@ -1252,12 +1256,12 @@ def test_overlap():
         np.testing.assert_allclose(A.overlap(Bd), np.conj(ans))
 
 
-def test_unit():
+def test_unit(fixture_generator):
     """
     Test qutip.Qobj: unit
     """
-    psi = (10*np.random.randn()*qutip.basis(2, 0)
-           - 10j*np.random.randn()*qutip.basis(2, 1))
+    psi = (10*fixture_generator.standard_normal()*qutip.basis(2, 0)
+           - 10j*fixture_generator.standard_normal()*qutip.basis(2, 1))
     psi2 = psi.unit()
     psi.unit(inplace=True)
     assert psi == psi2
@@ -1301,9 +1305,10 @@ def test_no_real_casting():
     pytest.param([[1], [[2, 1, 1], [2, 1, 1]]], [[1], [[2], [2]]],
                  id='operbra'),
 ])
-def test_contract(expanded, contracted, inplace):
+def test_contract(expanded, contracted, inplace, fixture_generator):
     shape = (np.prod(contracted[0]), np.prod(contracted[1]))
-    data = np.random.rand(*shape) + 1j*np.random.rand(*shape)
+    data = (fixture_generator.random(shape)
+            + 1j*fixture_generator.random(shape))
     qobj = qutip.Qobj(data, dims=expanded)
     assert qobj.dims == expanded
     out = qobj.contract(inplace=inplace)
@@ -1344,9 +1349,10 @@ def test_contract(expanded, contracted, inplace):
     pytest.param([[[2, 1, 1], [1, 2, 1]], [[3, 4], [1]]],
                  [[[2], [2]], [[3, 4], [1]]], id='super')
 ])
-def test_drop_scalar_dims(indims, outdims, inplace):
+def test_drop_scalar_dims(indims, outdims, inplace, fixture_generator):
     shape = (np.prod(flatten(indims[0])), np.prod(flatten(indims[1])))
-    data = np.random.rand(*shape) + 1j*np.random.rand(*shape)
+    data = (fixture_generator.random(shape)
+            + 1j*fixture_generator.random(shape))
     qobj = qutip.Qobj(data, dims=indims)
     assert qobj.dims == indims
     out = qobj.drop_scalar_dims(inplace=inplace)
@@ -1366,8 +1372,9 @@ def test_drop_scalar_dims(indims, outdims, inplace):
     pytest.param((2, 5), id='wide'),
     pytest.param((3, 3), id='oper'),
 ])
-def test_sum_zero(shape):
-    data = np.random.rand(*shape) + 1j*np.random.rand(*shape)
+def test_sum_zero(shape, fixture_generator):
+    data = (fixture_generator.random(shape)
+            + 1j*fixture_generator.random(shape))
     qobj = qutip.Qobj(data)
     assert qobj + 0 == qobj
     assert qobj - 0 == qobj
@@ -1382,14 +1389,15 @@ def test_sum_zero(shape):
     pytest.param((2, 5), id='wide'),
     pytest.param((3, 3), id='oper'),
 ])
-def test_sum_buildin(shape):
-    data = np.random.rand(*shape) + 1j*np.random.rand(*shape)
+def test_sum_buildin(shape, fixture_generator):
+    data = (fixture_generator.random(shape)
+            + 1j*fixture_generator.random(shape))
     qobj = qutip.Qobj(data)
     assert sum([qobj, 2 * qobj, -qobj]) == 2 * qobj
 
 
-def test_groundstate():
-    eigenvals = np.sort(np.random.rand(10))
+def test_groundstate(fixture_generator):
+    eigenvals = np.sort(fixture_generator.random(10))
     eigenvals[1:] += 0.1  # Ensure no degenerate groundstate
     qobj = qutip.rand_herm(10, distribution="eigen", eigenvalues=eigenvals)
     groundenergy, groundstate = qobj.groundstate()

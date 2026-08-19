@@ -16,7 +16,7 @@ def _func2(x, a, b, c, d=0, e=0, f=0):
     assert d > 0
     assert e > 0
     assert f > 0
-    time.sleep(np.random.rand() * 0.1)  # random delay
+    time.sleep(0.01)
     return x**2
 
 @pytest.mark.parametrize('map', [
