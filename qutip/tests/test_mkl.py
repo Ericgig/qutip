@@ -14,13 +14,12 @@ pytestmark = [
 
 
 class Test_spsolve:
-    def test_single_rhs_vector_real(self):
+    def test_single_rhs_vector_real(self, fixture_generator):
         Adense = np.array([[0, 1, 1],
                            [1, 0, 1],
                            [0, 0, 1]])
         As = scipy.sparse.csr_matrix(Adense)
-        rng = np.random.default_rng(seed=1234)
-        x = rng.standard_normal(3)
+        x = fixture_generator.standard_normal(3)
         b = As * x
         x2 = mkl_spsolve(As, b, verbose=True)
         np.testing.assert_allclose(x, x2)

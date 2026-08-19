@@ -55,14 +55,14 @@ def test_partial_transpose_comparison():
     np.abs(np.max(rho_pt1.full() - rho_pt2.full())) < 1e-12
 
 
-def test_partial_transpose_randomized():
+def test_partial_transpose_randomized(fixture_generator):
     """partial transpose: randomized tests on tripartite system"""
 
     rho = tensor(rand_dm(2, density=1),
                  rand_dm(2, density=1),
                  rand_dm(2, density=1))
 
-    mask = np.random.randint(2, size=3)
+    mask = fixture_generator.integers(2, size=3)
 
     rho_pt_ref = _partial_transpose_reference(rho, mask)
 

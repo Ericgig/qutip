@@ -111,11 +111,11 @@ def test_anim_qfunc():
 @pytest.mark.filterwarnings(
     "ignore:The input coordinates to pcolor:UserWarning"
 )
-def test_anim_spin_distribution():
+def test_anim_spin_distribution(fixture_generator):
     j = 5
     psi = qutip.spin_state(j, -j)
-    psi = qutip.spin_coherent(j, np.random.rand() * np.pi,
-                              np.random.rand() * 2 * np.pi)
+    psi = qutip.spin_coherent(j, fixture_generator.random() * np.pi,
+                              fixture_generator.random() * 2 * np.pi)
     theta = np.linspace(0, np.pi, 50)
     phi = np.linspace(0, 2 * np.pi, 50)
     Q, THETA, PHI = qutip.spin_q_function(psi, theta, phi)

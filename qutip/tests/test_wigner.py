@@ -3,7 +3,6 @@ import numpy as np
 from scipy.integrate import trapezoid
 import itertools
 from scipy.special import laguerre
-from numpy.random import rand
 from numpy.testing import assert_equal, assert_almost_equal, assert_allclose
 
 import qutip
@@ -459,7 +458,7 @@ def test_angle_slicing():
     assert (np.sum(np.abs(wigner4 - wigner1)) < 1e-11)
 
 
-def test_wigner_coherent():
+def test_wigner_coherent(fixture_generator):
     "wigner: test wigner function calculation for coherent states"
     xvec = np.linspace(-5.0, 5.0, 100)
     yvec = xvec
@@ -472,7 +471,7 @@ def test_wigner_coherent():
     dy = yvec[1] - yvec[0]
 
     N = 20
-    beta = rand() + rand() * 1.0j
+    beta = fixture_generator.random() + fixture_generator.random() * 1.0j
     psi = coherent(N, beta)
 
     # calculate the wigner function using qutip and analytic formula
@@ -528,7 +527,7 @@ def test_wigner_fock():
         assert (np.sum(W_analytic) * dx * dy - 1.0 < 1e-8)
 
 
-def test_wigner_compare_methods_dm():
+def test_wigner_compare_methods_dm(fixture_generator):
     "wigner: compare wigner methods for random density matrices"
 
     xvec = np.linspace(-5.0, 5.0, 100)
@@ -546,7 +545,7 @@ def test_wigner_compare_methods_dm():
     for n in range(10):
         # try ten different random density matrices
 
-        rho = rand_dm(N, density=0.5 + rand() / 2)
+        rho = rand_dm(N, density=0.5 + fixture_generator.random() / 2)
 
         # calculate the wigner function using qutip and analytic formula
         W_qutip1 = wigner(rho, xvec, yvec, g=2)
@@ -560,7 +559,7 @@ def test_wigner_compare_methods_dm():
         assert (np.sum(W_qutip2) * dx * dy - 1.0 < 1e-8)
 
 
-def test_wigner_compare_methods_ket():
+def test_wigner_compare_methods_ket(fixture_generator):
     "wigner: compare wigner methods for random state vectors"
 
     xvec = np.linspace(-5.0, 5.0, 100)
@@ -578,7 +577,7 @@ def test_wigner_compare_methods_ket():
     for n in range(10):
         # try ten different random density matrices
 
-        psi = rand_ket(N, density=0.5 + rand() / 2)
+        psi = rand_ket(N, density=0.5 + fixture_generator.random() / 2)
 
         # calculate the wigner function using qutip and analytic formula
         W_qutip1 = wigner(psi, xvec, yvec, g=2)

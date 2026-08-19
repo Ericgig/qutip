@@ -99,7 +99,7 @@ def test_rand_herm(dimensions, density, distribution, dtype):
 
 @pytest.mark.repeat(3)
 @pytest.mark.parametrize('density', [0.2, 0.8], ids=["sparse", "dense"])
-def test_rand_herm_Eigs(dimensions, density):
+def test_rand_herm_Eigs(dimensions, density, fixture_generator):
     """
     Random Qobjs: Hermitian matrix - Eigs given
     """
@@ -107,7 +107,7 @@ def test_rand_herm_Eigs(dimensions, density):
         N = dimensions.size
     else:
         N = np.prod(dimensions)
-    eigs = np.random.random(N)
+    eigs = fixture_generator.random(N)
     eigs /= np.sum(eigs)
     eigs.sort()
     random_qobj = rand_herm(dimensions, density, "eigen", eigenvalues=eigs)
@@ -148,7 +148,7 @@ def test_rand_unitary(dimensions, distribution, density, dtype):
     pytest.param("herm", {"density": 0.7}),
     pytest.param("herm", {"density": 0.3}),
 ])
-def test_rand_dm(dimensions, kw, dtype, distribution):
+def test_rand_dm(dimensions, kw, dtype, distribution, fixture_generator):
     """
     Random Qobjs: Density matrix
     """
@@ -158,7 +158,7 @@ def test_rand_dm(dimensions, kw, dtype, distribution):
         N = np.prod(dimensions)
 
     if "eigenvalues" in kw:
-        eigs = np.random.random(N)
+        eigs = fixture_generator.random(N)
         eigs /= np.sum(eigs)
         eigs.sort()
         kw["eigenvalues"] = eigs

@@ -5,11 +5,11 @@ import qutip
 
 @pytest.mark.flaky(reruns=2)
 @pytest.mark.parametrize('num_mat', [1, 2, 3, 5])
-def test_simdiag(num_mat, fixture_random_seed):
+def test_simdiag(num_mat, fixture_random_seed, fixture_generator):
     N = 10
 
     U = qutip.rand_unitary(N, seed=fixture_random_seed)
-    commuting_matrices = [U * qutip.qdiags(np.random.rand(N), 0) * U.dag()
+    commuting_matrices = [U * qutip.qdiags(fixture_generator.random(N), 0) * U.dag()
                           for _ in range(num_mat)]
     all_evals, evecs = qutip.simdiag(commuting_matrices)
 
@@ -20,11 +20,11 @@ def test_simdiag(num_mat, fixture_random_seed):
 
 @pytest.mark.flaky(reruns=2)
 @pytest.mark.parametrize('num_mat', [1, 2, 3, 5])
-def test_simdiag_no_evals(num_mat, fixture_random_seed):
+def test_simdiag_no_evals(num_mat, fixture_random_seed, fixture_generator):
     N = 10
 
     U = qutip.rand_unitary(N, seed=fixture_random_seed)
-    commuting_matrices = [U * qutip.qdiags(np.random.rand(N), 0) * U.dag()
+    commuting_matrices = [U * qutip.qdiags(fixture_generator.random(N), 0) * U.dag()
                           for _ in range(num_mat)]
     evecs = qutip.simdiag(commuting_matrices, evals=False)
 
@@ -56,11 +56,11 @@ def test_simdiag_degen(fixture_random_seed):
 
 @pytest.mark.flaky(reruns=2)
 @pytest.mark.repeat(2)
-def test_simdiag_degen_large(fixture_random_seed):
+def test_simdiag_degen_large(fixture_random_seed, fixture_generator):
     N = 20
     U = qutip.rand_unitary(N, seed=fixture_random_seed)
     commuting_matrices = [
-        U * qutip.qdiags(np.random.randint(0, 3, N), 0) * U.dag()
+        U * qutip.qdiags(fixture_generator.integers(0, 3, N), 0) * U.dag()
         for _ in range(5)
     ]
     all_evals, evecs = qutip.simdiag(commuting_matrices, tol=1e-12)

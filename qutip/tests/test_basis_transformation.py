@@ -3,18 +3,19 @@ import pytest
 import qutip
 
 
-def real_hermitian(n_levels):
-    qobj = qutip.Qobj(0.5 - np.random.random_sample((n_levels, n_levels)))
+def real_hermitian(n_levels, fixture_generator):
+    qobj = qutip.Qobj(0.5 - fixture_generator.random((n_levels, n_levels)))
     return qobj + qobj.dag()
 
 
-def imaginary_hermitian(n_levels):
-    qobj = qutip.Qobj(1j*(0.5 - np.random.random_sample((n_levels, n_levels))))
+def imaginary_hermitian(n_levels, fixture_generator):
+    qobj = qutip.Qobj(1j*(0.5 - fixture_generator.random((n_levels, n_levels))))
     return qobj + qobj.dag()
 
 
-def complex_hermitian(n_levels):
-    return real_hermitian(n_levels) + imaginary_hermitian(n_levels)
+def complex_hermitian(n_levels, fixture_generator):
+    return (real_hermitian(n_levels, fixture_generator)
+            + imaginary_hermitian(n_levels, fixture_generator))
 
 
 def rand_bra(n_levels):
@@ -26,9 +27,9 @@ def rand_bra(n_levels):
                                                    complex_hermitian])
 @pytest.mark.parametrize("n_levels", [2, 10])
 def test_transformation_to_eigenbasis_is_reversible(hermitian_constructor,
-                                                    n_levels):
+                                                    n_levels, fixture_generator):
     """Transform n-level real-values to eigenbasis and back"""
-    H1 = hermitian_constructor(n_levels)
+    H1 = hermitian_constructor(n_levels, fixture_generator)
     _, ekets = H1.eigenstates()
     Heb = H1.transform(ekets)  # In the eigenbasis (should be diagonal)
     H2 = Heb.transform(ekets, True)  # Back to original basis
@@ -46,9 +47,9 @@ def test_ket_and_dm_transformations_equivalent(n_levels):
     assert (rho1 - rho2).norm() < 1e-6
 
 
-def test_eigenbasis_transformation_makes_diagonal_operator():
+def test_eigenbasis_transformation_makes_diagonal_operator(fixture_generator):
     """Check diagonalization via eigenbasis transformation."""
-    cx, cy, cz = np.random.random_sample((3,))
+    cx, cy, cz = fixture_generator.random(3)
     H = cx*qutip.sigmax() + cy*qutip.sigmay() + cz*qutip.sigmaz()
     _, ekets = H.eigenstates()
     Heb = H.transform(ekets).tidyup()  # Heb should be diagonal

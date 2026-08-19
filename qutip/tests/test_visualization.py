@@ -514,10 +514,10 @@ def test_plot_expectation_values(n_of_results, n_of_e_ops, one_axes, args):
     ('sequential', {'projection': '3d'}),
     ('sequential', {'colorbar': True})
 ])
-def test_plot_spin_distribution(color, args):
+def test_plot_spin_distribution(color, args, fixture_generator):
     j = 5
-    psi = qutip.spin_coherent(j, np.random.rand() * np.pi,
-                              np.random.rand() * 2 * np.pi)
+    psi = qutip.spin_coherent(j, fixture_generator.random() * np.pi,
+                              fixture_generator.random() * 2 * np.pi)
     theta = np.linspace(0, np.pi, 50)
     phi = np.linspace(0, 2 * np.pi, 50)
     Q, THETA, PHI = qutip.spin_q_function(psi, theta, phi)
@@ -535,10 +535,10 @@ def test_plot_spin_distribution(color, args):
 @pytest.mark.filterwarnings(
     "ignore:The input coordinates to pcolor:UserWarning"
 )
-def test_plot_spin_distribution_anim():
+def test_plot_spin_distribution_anim(fixture_generator):
     j = 5
-    psi = qutip.spin_coherent(j, np.random.rand() * np.pi,
-                              np.random.rand() * 2 * np.pi)
+    psi = qutip.spin_coherent(j, fixture_generator.random() * np.pi,
+                              fixture_generator.random() * 2 * np.pi)
     theta = np.linspace(0, np.pi, 50)
     phi = np.linspace(0, 2 * np.pi, 50)
     Q, THETA, PHI = qutip.spin_q_function(psi, theta, phi)
@@ -550,11 +550,11 @@ def test_plot_spin_distribution_anim():
     assert isinstance(ani, mpl.animation.ArtistAnimation)
 
 
-def test_plot_spin_distribution_ValueError():
+def test_plot_spin_distribution_ValueError(fixture_generator):
     text = "Unexpected value of projection keyword argument"
     j = 5
-    psi = qutip.spin_coherent(j, np.random.rand() * np.pi,
-                              np.random.rand() * 2 * np.pi)
+    psi = qutip.spin_coherent(j, fixture_generator.random() * np.pi,
+                              fixture_generator.random() * 2 * np.pi)
     theta = np.linspace(0, np.pi, 50)
     phi = np.linspace(0, 2 * np.pi, 50)
     Q, THETA, PHI = qutip.spin_q_function(psi, theta, phi)
