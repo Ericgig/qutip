@@ -231,7 +231,7 @@ def test_sphereplot_anim():
     ('normal'),
     ('error')
 ])
-def test_update_yaxis(response):
+def test_update_yaxis(response, fixture_random_seed):
     if response == 'normal':
         fig, ax = qutip.matrix_histogram(np.zeros((3, 3)))
         plt.close()
@@ -243,8 +243,9 @@ def test_update_yaxis(response):
 
         with pytest.raises(ValueError) as exc_info:
             fig, ax = qutip.matrix_histogram(
-                                             qutip.rand_dm(5, seed=fixture_random_seed),
-                                             y_basis=[1])
+                qutip.rand_dm(5, seed=fixture_random_seed),
+                y_basis=[1],
+            )
 
         assert str(exc_info.value) == text
         plt.close()
@@ -254,7 +255,7 @@ def test_update_yaxis(response):
     ('normal'),
     ('error')
 ])
-def test_update_xaxis(response):
+def test_update_xaxis(response, fixture_random_seed):
     if response == 'normal':
         fig, ax = qutip.matrix_histogram(np.zeros((3, 3)))
         plt.close()
@@ -266,19 +267,21 @@ def test_update_xaxis(response):
 
         with pytest.raises(ValueError) as exc_info:
             fig, ax = qutip.matrix_histogram(
-                                             qutip.rand_dm(5, seed=fixture_random_seed),
-                                             x_basis=[1])
+                qutip.rand_dm(5, seed=fixture_random_seed),
+                x_basis=[1],
+            )
         assert str(exc_info.value) == text
         plt.close()
 
 
-def test_get_matrix_components():
+def test_get_matrix_components(fixture_random_seed):
     text = "got an unexpected argument, error for bar_style"
 
     with pytest.raises(ValueError) as exc_info:
         fig, ax = qutip.matrix_histogram(
-                         qutip.rand_dm(5, seed=fixture_random_seed),
-                                         bar_style='error')
+            qutip.rand_dm(5, seed=fixture_random_seed),
+            bar_style='error',
+        )
     assert str(exc_info.value) == text
 
 

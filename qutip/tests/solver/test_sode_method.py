@@ -33,7 +33,7 @@ def get_error_order(system, state, method, plot=False, **kw):
     return np.polyfit(np.log(ts), np.log(err + 1e-20), 1)[0]
 
 
-def _make_oper(kind, N, fixture_generator, fixture_random_seed):
+def _make_oper(kind, N, fixture_generator):
     a = destroy(N)
     if kind == "qeye":
         out = qeye(N) * fixture_generator.random()
@@ -46,9 +46,9 @@ def _make_oper(kind, N, fixture_generator, fixture_random_seed):
     elif kind == "destroy2":
         out = a**2
     elif kind == "herm":
-        out = rand_herm(N, seed=fixture_random_seed)
+        out = rand_herm(N, seed=fixture_generator)
     elif kind == "herm td":
-        out = [rand_herm(N, seed=fixture_random_seed), lambda t: -1 + t/2 + t**2]
+        out = [rand_herm(N, seed=fixture_generator), lambda t: -1 + t/2 + t**2]
     elif kind == "random":
         out = Qobj(
             fixture_generator.standard_normal((N, N))
@@ -79,19 +79,14 @@ def _make_oper(kind, N, fixture_generator, fixture_random_seed):
     pytest.param("herm td", ["qeye"], id='H td'),
     pytest.param("qeye", ["qeye", "destroy", "destroy2"], id='3 sc_ops'),
 ])
-def test_methods(H, sc_ops, method, order, kw, fixture_generator,
-                 fixture_random_seed):
+def test_methods(H, sc_ops, method, order, kw, fixture_generator):
     if kw == {"solve_method": "inv"} and ("td" in H or "td" in sc_ops[0]):
         pytest.skip("inverse method only available for constant cases.")
     N = 5
-    seeds = fixture_random_seed.spawn(1 + len(sc_ops) + 1)
-    H = _make_oper(H, N, fixture_generator, seeds[0])
-    sc_ops = [
-        _make_oper(op, N, fixture_generator, seed)
-        for op, seed in zip(sc_ops, seeds[1:])
-    ]
+    H = _make_oper(H, N, fixture_generator)
+    sc_ops = [_make_oper(op, N, fixture_generator) for op in sc_ops]
     system = SimpleStochasticSystem(H, sc_ops)
-    state = rand_ket(N, seed=seeds[-1]).data
+    state = rand_ket(N, seed=fixture_generator).data
     error_order = get_error_order(system, state, method, **kw)
     # The first error term of the method is dt**0.5 greater than the solver
     # order.

@@ -105,9 +105,9 @@ class TestSVD():
     def op_numpy(self, A):
         return scipy.linalg.svd(A)
 
-    def _gen_dm(self, N, rank, dtype, fixture_random_seed):
+    def _gen_dm(self, N, rank, dtype, fixture_generator):
         return qutip.rand_dm(
-            N, rank=rank, dtype=dtype, seed=fixture_random_seed
+            N, rank=rank, dtype=dtype, seed=fixture_generator
         ).data
 
     def _gen_non_square(self, N, fixture_generator):
@@ -119,10 +119,10 @@ class TestSVD():
 
     @pytest.mark.parametrize("shape", ["square", "non-square"])
     def test_mathematically_correct_svd(
-        self, shape, fixture_generator, fixture_random_seed
+        self, shape, fixture_generator
     ):
         if shape == "square":
-            matrix = self._gen_dm(10, 6, Dense, fixture_random_seed)
+            matrix = self._gen_dm(10, 6, Dense, fixture_generator)
         else:
             matrix = self._gen_non_square(12, fixture_generator)
         u, s, v = self.op_numpy(matrix.to_array())
@@ -149,9 +149,9 @@ class TestSVD():
             atol=1e-7, rtol=1e-7
         )
 
-    def test_mathematically_correct_svd_csr(self):
+    def test_mathematically_correct_svd_csr(self, fixture_generator):
         rank = 5
-        matrix = self._gen_dm(100, rank, CSR)
+        matrix = self._gen_dm(100, rank, CSR, fixture_generator)
         test_U, test_S1, test_V = _data.svd_csr(matrix, True, k=rank)
         test_S2 = _data.svd_csr(matrix, False, k=rank)
 

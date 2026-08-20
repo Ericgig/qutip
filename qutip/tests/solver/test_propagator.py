@@ -39,7 +39,7 @@ def func(t):
     return np.cos(t)
 
 
-def testPropHOTd(fixture_random_seed):
+def testPropHOTd():
     "Propagator: func td format"
     a = destroy(5)
     H = a.dag()*a
@@ -50,7 +50,7 @@ def testPropHOTd(fixture_random_seed):
     assert (U - U2).norm('max') < 1e-4
 
 
-def testPropHOTd():
+def testPropHOTd_open(fixture_random_seed):
     "Propagator: func array td format + open"
     a = destroy(5)
     H = a.dag()*a

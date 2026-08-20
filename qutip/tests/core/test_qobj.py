@@ -1153,7 +1153,7 @@ def test_sinm(fixture_random_seed):
 
 
 @pytest.mark.parametrize("sub_dimensions", ([2], [2, 2], [2, 3], [3, 5, 2]))
-def test_dual_channel(sub_dimensions, n_trials=50, fixture_random_seed=None):
+def test_dual_channel(sub_dimensions, fixture_random_seed, n_trials=50):
     """
     qutip.Qobj: dual_chan() preserves inner products with arbitrary density ops.
     """

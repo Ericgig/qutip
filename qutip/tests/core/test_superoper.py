@@ -67,7 +67,7 @@ class TestMatVec:
         rho2 = qutip.vector_to_operator(qutip.operator_to_vector(rho1))
         np.testing.assert_allclose(rho1.full(), rho2.full(), 1e-8)
 
-    def testOperatorVectorNotSquare(self):
+    def testOperatorVectorNotSquare(self, fixture_generator):
         """
         Superoperator: Operator - vector - operator conversion for non-square
         matrix.
@@ -141,7 +141,7 @@ class TestMatVec:
         rho2 = qutip.vector_to_operator(rho2_vec)
         np.testing.assert_allclose(rho1.full(), rho2.full(), 1e-8)
 
-    def testMatrixVecMat(self):
+    def testMatrixVecMat(self, fixture_generator):
         """
         Superoperator: Conversion matrix to vector to matrix
         """
@@ -150,7 +150,7 @@ class TestMatVec:
         M2 = qutip.unstack_columns(V)
         np.testing.assert_allclose(M.to_array(), M2.to_array(), 1e-8)
 
-    def testVecMatVec(self):
+    def testVecMatVec(self, fixture_generator):
         """
         Superoperator: Conversion vector to matrix to vector
         """
@@ -167,7 +167,7 @@ class TestMatVec:
         for i in range(N * N):
             assert i == qutip.stacked_index(N, *qutip.unstacked_index(N, i))
 
-    def testVecMatIndexCompability(self):
+    def testVecMatIndexCompability(self, fixture_generator):
         """
         Superoperator: Compatibility between matrix/vector and
         corresponding index conversions.
