@@ -64,13 +64,15 @@ import warnings
 
 
 SEEDSEQ = np.random.SeedSequence()
-import qutip._random as _random
+
 
 @pytest.fixture
 def fixture_seeded_qt_random(request):
+    import qutip._random as _random
     seed = SEEDSEQ.spawn(1)[0]
     request.node.user_properties.append(("qt_seed", seed))
-    with warnings.filterwarnings("ignore:RANDOM:UserWarning"):
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="RANDOM", category=UserWarning)
         _random.seedseq = seed
         yield
         _random.seedseq = np.random.SeedSequence()
@@ -80,7 +82,8 @@ def fixture_seeded_qt_random(request):
 def fixture_random_seed(request):
     seed = SEEDSEQ.spawn(1)[0]
     request.node.user_properties.append(("numpy_seed", seed))
-    with warnings.filterwarnings("ignore:RANDOM:UserWarning"):
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="RANDOM", category=UserWarning)
         yield seed
 
 
@@ -88,8 +91,24 @@ def fixture_random_seed(request):
 def fixture_generator(request):
     seed = SEEDSEQ.spawn(1)[0]
     request.node.user_properties.append(("numpy_generator", seed))
-    with warnings.filterwarnings("ignore:RANDOM:UserWarning"):
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="RANDOM", category=UserWarning)
         yield np.random.default_rng(seed)
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_makereport(item, call):
+    # Print the seeds at the end of error messages
+    outcome = yield
+    report = outcome.get_result()
+
+    if report.when == "call" and report.failed:
+        if item.user_properties:
+            props_str = "\n".join([
+                f"{name}: {value}" for name, value in item.user_properties
+            ])
+            report.longrepr = f"{report.longrepr}\n\n{props_str}"
+
 
 
 import weakref
