@@ -16,13 +16,14 @@ def datatype(request):
     return request.param
 
 
-def _random_not_singular(N):
+def _random_not_singular(N, fixture_generator):
     """
     return a N*N complex array with determinant not 0.
     """
-    data = np.arange(N * N, dtype=float).reshape(N, N) + 1
-    data = data + 1j * np.flipud(data)
-    data[0] += np.arange(N)
+    data = np.zeros((1, 1))
+    while np.linalg.det(data) <= 1e-6:
+        data = np.random.random((N, N)) + \
+               1j * np.random.random((N, N)) - (0.5 + 0.5j)
     return data
 
 
@@ -35,37 +36,34 @@ def assert_hermicity(oper, hermicity):
     assert oper.isherm == hermicity
 
 
-def test_QobjData():
+def test_QobjData(fixture_generator):
     "qutip.Qobj data"
     N = 10
-    data1 = _random_not_singular(N)
+    data1 = _random_not_singular(N, fixture_generator)
     q1 = qutip.Qobj(data1)
     assert isinstance(q1.data, qutip.core.data.Data)
     assert np.all(q1.data.to_array() == data1)
 
-    data2 = _random_not_singular(N)
+    data2 = _random_not_singular(N, fixture_generator)
     data2 = scipy.sparse.csr_matrix(data2)
     q2 = qutip.Qobj(data2)
     assert isinstance(q2.data, qutip.core.data.Data)
 
 
 @pytest.mark.parametrize("original_data",
-                         [
-                            qutip.data.Dense(_random_not_singular(2)),
-                            qutip.data.csr.identity(2),
-                            qutip.Qobj(_random_not_singular(2)),
-                            _random_not_singular(2),
-                         ],
-                         ids=[
-                             "Dense",
-                             "CSR",
-                             "Qobj",
-                             "ndarray",
-                         ])
+    [
+        lambda data: qutip.data.Dense(data),
+        lambda data: qutip.data.csr.identity(2),
+        lambda data: qutip.Qobj(data),
+        lambda data: data,
+    ],
+    ids=["Dense", "CSR", "Qobj", "ndarray"]
+)
 @pytest.mark.parametrize("copy", [True, False],
                          ids=["copy=True", "copy=False"])
-def test_QobjCopyArgument(original_data, copy):
+def test_QobjCopyArgument(original_data, copy, fixture_generator):
     """Tests that Qobj copy argument works properly when instantiating Qobj."""
+    original_data = original_data(_random_not_singular(2, fixture_generator))
     with qutip.CoreOptions(default_dtype_scope="creation"):
         # default_dtype_scope="full" would break the copy logic
         qobj_data = qutip.Qobj(original_data, copy=copy).data
@@ -132,8 +130,8 @@ def test_QobjType(fixture_generator):
 
 
 class TestQobjHermicity:
-    def test_standard(self):
-        base = _random_not_singular(10)
+    def test_standard(self, fixture_generator):
+        base = _random_not_singular(10, fixture_generator)
         assert_hermicity(qutip.Qobj(base), False)
         assert_hermicity(qutip.Qobj(base + base.conj().T), True)
         assert_hermicity(qutip.destroy(5), False)
@@ -307,7 +305,7 @@ class TestQobjCPTPCaching:
 def test_QobjDimsShape(fixture_generator):
     "qutip.Qobj shape"
     N = 10
-    data = _random_not_singular(N)
+    data = _random_not_singular(N, fixture_generator)
 
     q1 = qutip.Qobj(data)
     assert q1.dims == [[10], [10]]
@@ -320,7 +318,7 @@ def test_QobjDimsShape(fixture_generator):
     assert q1.dims == [[10], [1]]
     assert q1.shape == (10, 1)
 
-    data = _random_not_singular(4)
+    data = _random_not_singular(4, fixture_generator)
 
     q1 = qutip.Qobj(data, dims=[[2, 2], [2, 2]])
     assert q1.dims == [[2, 2], [2, 2]]
@@ -386,12 +384,12 @@ def test_QobjAddition(fixture_generator):
     assert np.all(x2.full() == data)
 
 
-def test_QobjSubtraction():
+def test_QobjSubtraction(fixture_generator):
     "qutip.Qobj subtraction"
-    data1 = _random_not_singular(5)
+    data1 = _random_not_singular(5, fixture_generator)
     q1 = qutip.Qobj(data1)
 
-    data2 = _random_not_singular(5)
+    data2 = _random_not_singular(5, fixture_generator)
     q2 = qutip.Qobj(data2)
 
     q3 = q1 - q2
@@ -513,24 +511,24 @@ def test_QobjNotImplemented():
 
 def test_QobjDivision(fixture_generator):
     "qutip.Qobj division"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     q = qutip.Qobj(data)
     randN = 10 * fixture_generator.random()
     q = q / randN
     assert np.allclose(q.full(), data/randN)
 
 
-def test_QobjPower():
+def test_QobjPower(fixture_generator):
     "qutip.Qobj power"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     q = qutip.Qobj(data)
     np.testing.assert_allclose((q**2).full(), data @ data, atol=1e-12)
     np.testing.assert_allclose((q**3).full(), data @ data @ data, atol=1e-12)
 
 
-def test_QobjNeg():
+def test_QobjNeg(fixture_generator):
     "qutip.Qobj negation"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     q = qutip.Qobj(data)
     x = -q
     assert np.all(x.full() == -data)
@@ -538,9 +536,9 @@ def test_QobjNeg():
     assert q.type == x.type
 
 
-def test_QobjEquals():
+def test_QobjEquals(fixture_generator):
     "qutip.Qobj equals"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     q1 = qutip.Qobj(data)
     q2 = qutip.Qobj(data)
     assert q1 == q2
@@ -559,9 +557,9 @@ def test_QobjEquals():
         assert q1 == q2 * 100
 
 
-def test_QobjGetItem():
+def test_QobjGetItem(fixture_generator):
     "qutip.Qobj getitem"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     q = qutip.Qobj(data)
     assert q[0, 0] == data[0, 0]
     assert q[-1, 2] == data[-1, 2]
@@ -639,9 +637,9 @@ def test_operator_ket_superrep():
     assert opbra1.superrep == opbra2.superrep
 
 
-def test_QobjConjugate():
+def test_QobjConjugate(fixture_generator):
     "qutip.Qobj conjugate"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     A = qutip.Qobj(data)
     B = A.conj()
     assert np.all(B.full() == data.conj())
@@ -650,9 +648,9 @@ def test_QobjConjugate():
     assert A.superrep == B.superrep
 
 
-def test_QobjDagger():
+def test_QobjDagger(fixture_generator):
     "qutip.Qobj adjoint (dagger)"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     A = qutip.Qobj(data)
     B = A.dag()
     assert np.all(B.full() == data.conj().T)
@@ -661,9 +659,9 @@ def test_QobjDagger():
     assert A.superrep == B.superrep
 
 
-def test_QobjDiagonals():
+def test_QobjDiagonals(fixture_generator):
     "qutip.Qobj diagonals"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     A = qutip.Qobj(data)
     b = A.diag()
     assert np.all(b == np.diag(data))
@@ -721,17 +719,17 @@ def test_QobjEigenStatesOutputType(fixture_random_seed):
            np.hstack([vec.full() for vec in kets]), dims=[5, 5]) == oper
 
 
-def test_QobjExpm():
+def test_QobjExpm(fixture_generator):
     "qutip.Qobj expm (dense)"
-    data = _random_not_singular(15)
+    data = _random_not_singular(15, fixture_generator)
     A = qutip.Qobj(data)
     B = A.expm()
     np.testing.assert_allclose(B.full(), scipy.linalg.expm(data), atol=1e-10)
 
 
-def test_QobjExpmExplicitlySparse():
+def test_QobjExpmExplicitlySparse(fixture_generator):
     "qutip.Qobj expm (sparse)"
-    data = _random_not_singular(15)
+    data = _random_not_singular(15, fixture_generator)
     A = qutip.Qobj(data)
     B = A.expm(dtype=qutip.data.CSR)
     np.testing.assert_allclose(B.full(), scipy.linalg.expm(data), atol=1e-10)
@@ -744,17 +742,17 @@ def test_QobjExpmZeroOper():
     assert B == qutip.qeye(5)
 
 
-def test_QobjLogm():
+def test_QobjLogm(fixture_generator):
     "qutip.Qobj expm (dense)"
-    data = _random_not_singular(15)
+    data = _random_not_singular(15, fixture_generator)
     A = qutip.Qobj(data)
     B = A.logm()
     np.testing.assert_allclose(B.full(), scipy.linalg.logm(data), atol=1e-10)
 
 
-def test_QobjLogmExplicitlySparse():
+def test_QobjLogmExplicitlySparse(fixture_generator):
     "qutip.Qobj logm (sparse)"
-    data = _random_not_singular(15)
+    data = _random_not_singular(15, fixture_generator)
     A = qutip.Qobj(data).to("csr")
     B = A.logm()
     np.testing.assert_allclose(B.full(), scipy.linalg.logm(data), atol=1e-10)
@@ -774,17 +772,17 @@ def test_QobjLogmNonSquareError():
         A.logm()
 
 
-def test_Qobj_sqrtm():
+def test_Qobj_sqrtm(fixture_generator):
     "qutip.Qobj sqrtm"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     A = qutip.Qobj(data)
     B = A.sqrtm()
     assert A == B * B
 
 
-def test_Qobj_inv():
+def test_Qobj_inv(fixture_generator):
     "qutip.Qobj inv"
-    data = _random_not_singular(5)
+    data = _random_not_singular(5, fixture_generator)
     A = qutip.Qobj(data)
     B = A.inv()
     assert qutip.qeye(5) == A * B
@@ -794,9 +792,9 @@ def test_Qobj_inv():
     assert qutip.qeye(5) == B * A
 
 
-def test_QobjFull():
+def test_QobjFull(fixture_generator):
     "qutip.Qobj full"
-    data = _random_not_singular(15)
+    data = _random_not_singular(15, fixture_generator)
     A = qutip.Qobj(data)
     b = A.full()
     assert np.all(b == data)

@@ -44,8 +44,8 @@ def dimension(request):
     pytest.param(rand_ket, id="pure"),
     pytest.param(rand_dm, id="mixed"),
 ])
-def state(request, dimension, fixture_random_seed):
-    return request.param(dimension, seed=fixture_random_seed)
+def state(request, dimension, fixture_generator):
+    return request.param(dimension, seed=fixture_generator)
 
 
 # Also parametrise left, right as if they're the names of two states for tests

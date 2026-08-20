@@ -296,7 +296,7 @@ def test_rand_super_bcsz(dimensions, dtype, rank, superrep, fixture_random_seed)
     pytest.param(lambda : SeedSequence(123), id="SeedSequence"),
     pytest.param(lambda : default_rng(123), id="Generator")
 ])
-def test_random_seeds(function, seed):
+def test_random_seeds(function, seed, fixture_seeded_qt_random):
     """
     Random Qobjs: Random number generator seed
     """
