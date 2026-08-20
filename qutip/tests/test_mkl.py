@@ -24,9 +24,10 @@ class Test_spsolve:
         x2 = mkl_spsolve(As, b, verbose=True)
         np.testing.assert_allclose(x, x2)
 
-    def test_single_rhs_vector_complex(self):
-        A = qutip.rand_herm(10, density=0.8, dtype='csr')
-        x = qutip.rand_ket(10).full()
+    def test_single_rhs_vector_complex(self, fixture_random_seed):
+        seeds = fixture_random_seed.spawn(2)
+        A = qutip.rand_herm(10, density=0.8, dtype='csr', seed=seeds[0])
+        x = qutip.rand_ket(10, seed=seeds[1]).full()
         b = A.full() @ x
         y = mkl_spsolve(A.data.as_scipy(), b, verbose=True)
         np.testing.assert_allclose(x, y)

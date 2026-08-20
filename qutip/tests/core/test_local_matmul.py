@@ -8,8 +8,8 @@ from qutip import (
 )
 
 
-def test_single_qubit_gate_on_ket():
-    state = rand_ket([2, 2, 2])
+def test_single_qubit_gate_on_ket(fixture_random_seed):
+    state = rand_ket([2, 2, 2], seed=fixture_random_seed)
     op = sigmax()
 
     extended_op = tensor(qeye(2), sigmax(), qeye(2))
@@ -19,8 +19,8 @@ def test_single_qubit_gate_on_ket():
     assert result_state == expected_state
 
 
-def test_super_qubit_gate_on_dm():
-    state = rand_dm([2, 2, 2], dtype="dense")
+def test_super_qubit_gate_on_dm(fixture_random_seed):
+    state = rand_dm([2, 2, 2], dtype="dense", seed=fixture_random_seed)
     op = sigmax()
 
     extended_op = tensor(qeye(2), sigmax(), qeye(2))
@@ -30,8 +30,8 @@ def test_super_qubit_gate_on_dm():
     assert result_state == expected_state
 
 
-def test_two_qubit_gate_on_ket():
-    state = rand_ket([2, 2, 2])
+def test_two_qubit_gate_on_ket(fixture_random_seed):
+    state = rand_ket([2, 2, 2], seed=fixture_random_seed)
     op = gates.cnot()
 
     extended_op = expand_operator(op, [2, 2, 2], [2, 0])
@@ -41,8 +41,8 @@ def test_two_qubit_gate_on_ket():
     assert result_state == expected_state
 
 
-def test_two_qubit_gate_on_dm():
-    state = rand_dm([2, 2, 2], dtype="dense")
+def test_two_qubit_gate_on_dm(fixture_random_seed):
+    state = rand_dm([2, 2, 2], dtype="dense", seed=fixture_random_seed)
     op = gates.cnot()
 
     extended_op = expand_operator(op, [2, 2, 2], [2, 0])
@@ -189,12 +189,13 @@ def _reference_super(pres, posts, state, modes):
     return pre_oper @ state @ post_oper
 
 
-def test_single_mode_ket(hilbert, square_operator, dtype, fixture_generator):
+def test_single_mode_ket(hilbert, square_operator, dtype, fixture_generator,
+                         fixture_random_seed):
     mode = 6 % len(hilbert)
 
     op = _rand_oper(hilbert, [mode], square_operator, dtype,
                     fixture_generator)[0]
-    state = rand_ket(hilbert)
+    state = rand_ket(hilbert, seed=fixture_random_seed)
 
     expected = _reference_N_mode([op], state, [mode])
     result = local_matmul(op, state, mode)
@@ -231,12 +232,12 @@ def test_single_mode_dm_dual(hilbert, square_operator, square_state, dtype,
 
 
 def test_multi_mode_ket(large_hilbert, square_operator, dtype,
-                        fixture_generator):
+                        fixture_generator, fixture_random_seed):
     modes = [2, 0, 1]
 
     op = _rand_oper(large_hilbert, modes, square_operator, dtype,
                     fixture_generator)
-    state = rand_ket(large_hilbert)
+    state = rand_ket(large_hilbert, seed=fixture_random_seed)
 
     expected = _reference_N_mode(op, state, modes)
     result = local_matmul(tensor(op), state, modes)
@@ -320,9 +321,9 @@ def test_super_multi(large_hilbert, square_operator, square_state, dtype, order,
     assert expected == result
 
 
-def test_input_validation_errors():
+def test_input_validation_errors(fixture_random_seed):
     """Tests that the function raises appropriate errors for bad input."""
-    ket = rand_ket([2] * 3)
+    ket = rand_ket([2] * 3, seed=fixture_random_seed)
 
     with pytest.raises(ValueError, match="out of bounds"):
         local_matmul(sigmax(), ket, modes=3)
@@ -343,4 +344,8 @@ def test_input_validation_errors():
         local_matmul(sprepost(gates.cnot(), gates.cnot()), ket.proj(), modes=0)
 
     with pytest.raises(TypeError, match="same number of subsystems"):
-        local_matmul(sprepost(sigmax(), sigmax()), ket @ rand_ket([2]).dag(), modes=0)
+        local_matmul(
+            sprepost(sigmax(), sigmax()),
+            ket @ rand_ket([2], seed=fixture_random_seed.spawn(1)[0]).dag(),
+            modes=0,
+        )

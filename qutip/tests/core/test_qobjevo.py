@@ -69,18 +69,18 @@ def _cplx(t, w2, **kw):
 
 
 real_qevo = Pseudo_qevo(
-    rand_stochastic(N).to(_data.CSR),
-    rand_stochastic(N).to(_data.CSR),
+    rand_stochastic(N, seed=101).to(_data.CSR),
+    rand_stochastic(N, seed=102).to(_data.CSR),
     _real, "sin(t*w1)", args)
 
 herm_qevo = Pseudo_qevo(
-    rand_herm(N).to(_data.Dense),
-    rand_herm(N).to(_data.Dense),
+    rand_herm(N, seed=103).to(_data.Dense),
+    rand_herm(N, seed=104).to(_data.Dense),
     _real, "sin(t*w1)", args)
 
 cplx_qevo = Pseudo_qevo(
-    rand_stochastic(N).to(_data.Dense),
-    rand_stochastic(N).to(_data.CSR) + rand_stochastic(N).to(_data.CSR) * 1j,
+    rand_stochastic(N, seed=105).to(_data.Dense),
+    rand_stochastic(N, seed=106).to(_data.CSR) + rand_stochastic(N, seed=107).to(_data.CSR) * 1j,
     _cplx, "exp(1j*t*w2)", args)
 
 
@@ -246,10 +246,10 @@ def test_binopt_inplace(all_qevo, other_qevo, bin_op):
     pytest.param(lambda a, b: a @ b, id="matmul"),
     pytest.param(lambda a, b: a & b, id="tensor"),
 ])
-def test_binopt_qobj(all_qevo, bin_op):
+def test_binopt_qobj(all_qevo, bin_op, fixture_random_seed):
     "QobjEvo arithmetic"
     obj = all_qevo
-    qobj = rand_herm(N)
+    qobj = rand_herm(N, seed=fixture_random_seed)
     for t in TESTTIMES:
         as_qevo = bin_op(obj, qobj)(t)
         as_qobj = bin_op(obj(t), qobj)
@@ -312,8 +312,8 @@ def test_unary(all_qevo, unary_op):
     pytest.param(lambda a: a.trans(), id="trans"),
     pytest.param(lambda a: -a, id="neg"),
 ])
-def test_unary_ket(unary_op):
-    obj = QobjEvo(rand_ket(5))
+def test_unary_ket(unary_op, fixture_random_seed):
+    obj = QobjEvo(rand_ket(5, seed=fixture_random_seed))
     for t in TESTTIMES:
         transformed = unary_op(obj)
         as_qevo = transformed(t)
@@ -350,15 +350,16 @@ def test_args(pseudo_qevo, args_coeff_type, fixture_generator):
         _assert_qobj_almost_eq(obj(t), pseudo_qevo(t, **args))
 
 
-def test_copy_side_effects(all_qevo):
+def test_copy_side_effects(all_qevo, fixture_random_seed):
     t = 0.2
     qevo = all_qevo
     copy = qevo.copy()
     before = qevo(t)
     # Ensure inplace modification of the copy do not affect the original
     copy *= 2
-    copy += rand_herm(N)
-    copy *= rand_herm(N)
+    seeds = fixture_random_seed.spawn(2)
+    copy += rand_herm(N, seed=seeds[0])
+    copy *= rand_herm(N, seed=seeds[1])
     copy.arguments({'w1': 3, "w2": 3})
     after = qevo(t)
     _assert_qobj_almost_eq(before, after)
@@ -554,10 +555,11 @@ def test_compress(as_list):
 @pytest.mark.parametrize(['statedtype'],
     [pytest.param(dtype, id=dtype.__name__)
      for dtype in _data.to.dtypes])
-def test_layer_support(qobjdtype, statedtype):
+def test_layer_support(qobjdtype, statedtype, fixture_random_seed):
     N = 10
-    qevo = QobjEvo(rand_herm(N).to(qobjdtype))
-    state_dense = rand_ket(N).to(_data.Dense)
+    seeds = fixture_random_seed.spawn(2)
+    qevo = QobjEvo(rand_herm(N, seed=seeds[0]).to(qobjdtype))
+    state_dense = rand_ket(N, seed=seeds[1]).to(_data.Dense)
     state = state_dense.to(statedtype).data
     state_dense = state_dense.data
     exp_any = qevo.expect_data(0, state)
@@ -648,7 +650,7 @@ class Feedback_Checker_Coefficient:
         return 1.
 
 
-def test_feedback_oper():
+def test_feedback_oper(fixture_random_seed):
     checker = Feedback_Checker_Coefficient(stacked=False)
     checker.state = basis(2, 1)
     qevo = QobjEvo(
@@ -661,18 +663,19 @@ def test_feedback_oper():
         },
     )
 
-    checker.state = rand_ket(2)
+    seeds = fixture_random_seed.spawn(4)
+    checker.state = rand_ket(2, seed=seeds[0])
     qevo.expect(0, checker.state)
-    checker.state = rand_ket(2)
+    checker.state = rand_ket(2, seed=seeds[1])
     qevo.expect(0, checker.state)
 
-    checker.state = rand_ket(2)
+    checker.state = rand_ket(2, seed=seeds[2])
     qevo.matmul_data(0, checker.state.data)
-    checker.state = rand_ket(2)
+    checker.state = rand_ket(2, seed=seeds[3])
     qevo.matmul_data(0, checker.state.data)
 
 
-def test_feedback_super():
+def test_feedback_super(fixture_random_seed):
     checker = Feedback_Checker_Coefficient()
     qevo = QobjEvo(
         [spre(qeye(2)), checker],
@@ -683,13 +686,14 @@ def test_feedback_super():
         },
     )
 
-    checker.state = rand_dm(2)
+    seeds = fixture_random_seed.spawn(3)
+    checker.state = rand_dm(2, seed=seeds[0])
     qevo.expect(0, operator_to_vector(checker.state))
     qevo.matmul_data(0, operator_to_vector(checker.state).data)
 
     qevo.arguments(e_val=MESolver.ExpectFeedback(spre(qeye(2))))
 
-    checker.state = rand_dm(2)
+    checker.state = rand_dm(2, seed=seeds[1])
     qevo.expect(0, operator_to_vector(checker.state))
     qevo.matmul_data(0, operator_to_vector(checker.state).data)
 
@@ -702,7 +706,7 @@ def test_feedback_super():
         },
     )
 
-    checker.state = rand_dm(4)
+    checker.state = rand_dm(4, seed=seeds[2])
     checker.state.dims = [[[2],[2]], [[2],[2]]]
     qevo.matmul_data(0, checker.state.data)
 

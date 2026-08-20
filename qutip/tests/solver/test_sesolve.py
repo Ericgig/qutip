@@ -299,8 +299,11 @@ def test_sesolve_step_no_start():
 
 
 @pytest.mark.parametrize("algorithm", ['lanczos', 'lanczos_fro'])
-def test_krylovsolve_pure_state(algorithm):
-    H = qutip.tensor([qutip.rand_herm(2) for _ in range(8)])
+def test_krylovsolve_pure_state(algorithm, fixture_random_seed):
+    seeds = fixture_random_seed.spawn(8)
+    H = qutip.tensor([
+        qutip.rand_herm(2, seed=seed) for seed in seeds
+    ])
     psi0 = qutip.basis([2]*8, [1]*8)
     e_op = qutip.num(256)
     e_op.dims = H.dims

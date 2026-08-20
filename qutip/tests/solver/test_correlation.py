@@ -317,13 +317,14 @@ def test_G1():
     np.testing.assert_allclose(G1, expected * scale**2, rtol=2e-5)
 
 
-def test_G2():
+def test_G2(fixture_random_seed):
     N = 10
-    H = qutip.rand_dm(N)
-    psi0 = qutip.rand_ket(N)
+    seeds = fixture_random_seed.spawn(3)
+    H = qutip.rand_dm(N, seed=seeds[0])
+    psi0 = qutip.rand_ket(N, seed=seeds[1])
     taus = np.linspace(0, 1, 11)
     scale = 2
-    a_op = qutip.rand_unitary(N) * scale
+    a_op = qutip.rand_unitary(N, seed=seeds[2]) * scale
     g1, G1 = qutip.coherence_function_g2(H, psi0, taus, [], a_op)
     expected = np.ones(11)
     np.testing.assert_allclose(g1, expected, rtol=2e-5)

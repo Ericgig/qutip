@@ -15,13 +15,14 @@ class TestSubsysApply(object):
     and semi-analytic results are identical.
     """
 
-    def test_SimpleSingleApply(self):
+    def test_SimpleSingleApply(self, fixture_random_seed):
         """
         Non-composite system, operator on Hilbert space.
         """
         tol = 1e-12
-        rho_3 = rand_dm(3)
-        single_op = rand_unitary(3)
+        seeds = fixture_random_seed.spawn(2)
+        rho_3 = rand_dm(3, seed=seeds[0])
+        single_op = rand_unitary(3, seed=seeds[1])
         analytic_result = single_op * rho_3 * single_op.dag()
         naive_result = subsystem_apply(rho_3, single_op, [True],
                                        reference=True)
@@ -34,13 +35,14 @@ class TestSubsysApply(object):
         efficient_diff_norm = norm(efficient_diff)
         assert efficient_diff_norm < tol
 
-    def test_SimpleSuperApply(self):
+    def test_SimpleSuperApply(self, fixture_random_seed):
         """
         Non-composite system, operator on Liouville space.
         """
         tol = 1e-12
-        rho_3 = rand_dm(3)
-        superop = kraus_to_super(rand_kraus_map(3))
+        seeds = fixture_random_seed.spawn(2)
+        rho_3 = rand_dm(3, seed=seeds[0])
+        superop = kraus_to_super(rand_kraus_map(3, seed=seeds[1]))
         analytic_result = vector_to_operator(superop @
                                              operator_to_vector(rho_3))
         naive_result = subsystem_apply(rho_3, superop, [True],
@@ -54,14 +56,18 @@ class TestSubsysApply(object):
         efficient_diff_norm = norm(efficient_diff)
         assert efficient_diff_norm < tol
 
-    def test_ComplexSingleApply(self):
+    def test_ComplexSingleApply(self, fixture_random_seed):
         """
         Composite system, operator on Hilbert space.
         """
         tol = 1e-12
-        rho_list = list(map(rand_dm, [2, 3, 2, 3, 2]))
+        seeds = fixture_random_seed.spawn(6)
+        rho_list = [
+            rand_dm(dimension, seed=seed)
+            for dimension, seed in zip([2, 3, 2, 3, 2], seeds[:5])
+        ]
         rho_input = tensor(rho_list)
-        single_op = rand_unitary(3)
+        single_op = rand_unitary(3, seed=seeds[5])
 
         analytic_result = rho_list
         analytic_result[1] = single_op * analytic_result[1] * single_op.dag()
@@ -81,15 +87,19 @@ class TestSubsysApply(object):
         efficient_diff_norm = norm(efficient_diff)
         assert efficient_diff_norm < tol
 
-    def test_ComplexSuperApply(self):
+    def test_ComplexSuperApply(self, fixture_random_seed):
         """
         Superoperator: Efficient numerics and reference return same result,
         acting on non-composite system
         """
         tol = 1e-10
-        rho_list = list(map(rand_dm, [2, 3, 2, 3, 2]))
+        seeds = fixture_random_seed.spawn(6)
+        rho_list = [
+            rand_dm(dimension, seed=seed)
+            for dimension, seed in zip([2, 3, 2, 3, 2], seeds[:5])
+        ]
         rho_input = tensor(rho_list)
-        superop = kraus_to_super(rand_kraus_map(3))
+        superop = kraus_to_super(rand_kraus_map(3, seed=seeds[5]))
 
         analytic_result = rho_list
         analytic_result[1] = Qobj(

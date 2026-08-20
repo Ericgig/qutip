@@ -44,8 +44,8 @@ def dimension(request):
     pytest.param(rand_ket, id="pure"),
     pytest.param(rand_dm, id="mixed"),
 ])
-def state(request, dimension):
-    return request.param(dimension)
+def state(request, dimension, fixture_random_seed):
+    return request.param(dimension, seed=fixture_random_seed)
 
 
 # Also parametrise left, right as if they're the names of two states for tests
@@ -60,10 +60,11 @@ left = right = state
 # selector to choose a particular function.
 
 class Test_fidelity:
-    def test_mixed_state_inequality(self, dimension):
+    def test_mixed_state_inequality(self, dimension, fixture_random_seed):
         tol = 1e-7
-        rho1 = rand_dm(dimension, density=0.25)
-        rho2 = rand_dm(dimension, density=0.25)
+        seeds = fixture_random_seed.spawn(2)
+        rho1 = rand_dm(dimension, density=0.25, seed=seeds[0])
+        rho2 = rand_dm(dimension, density=0.25, seed=seeds[1])
         F = fidelity(rho1, rho2)
         assert 1 - F <= np.sqrt(1 - F*F) + tol
 
@@ -82,10 +83,11 @@ class Test_fidelity:
             right = right.proj()
         assert fidelity(left, right) == pytest.approx(0, abs=1e-6)
 
-    def test_invariant_under_unitary_transformation(self, dimension):
-        rho1 = rand_dm(dimension, density=0.25)
-        rho2 = rand_dm(dimension, density=0.25)
-        U = rand_unitary(dimension)
+    def test_invariant_under_unitary_transformation(self, dimension, fixture_random_seed):
+        seeds = fixture_random_seed.spawn(3)
+        rho1 = rand_dm(dimension, density=0.25, seed=seeds[0])
+        rho2 = rand_dm(dimension, density=0.25, seed=seeds[1])
+        U = rand_unitary(dimension, seed=seeds[2])
         F = fidelity(rho1, rho2)
         FU = fidelity(U*rho1*U.dag(), U*rho2*U.dag())
         assert F == pytest.approx(FU, rel=1e-5, abs=1e-7)
@@ -98,10 +100,11 @@ class Test_fidelity:
         tol = 1e-7
         assert -tol <= fidelity(left, right) <= 1 + tol
 
-    def test_pure_state_equivalent_to_overlap(self, dimension):
+    def test_pure_state_equivalent_to_overlap(self, dimension, fixture_random_seed):
         """Check fidelity against pure-state overlap, see gh-361."""
-        psi = rand_ket(dimension)
-        phi = rand_ket(dimension)
+        seeds = fixture_random_seed.spawn(2)
+        psi = rand_ket(dimension, seed=seeds[0])
+        phi = rand_ket(dimension, seed=seeds[1])
         overlap = np.abs(psi.overlap(phi))
         assert fidelity(psi, phi) == pytest.approx(overlap, abs=1e-7)
 
@@ -141,10 +144,11 @@ class Test_tracedist:
             right = right.proj()
         assert tracedist(left, right) == pytest.approx(1, abs=1e-6)
 
-    def test_invariant_under_unitary_transformation(self, dimension):
-        rho1 = rand_dm(dimension, density=0.25)
-        rho2 = rand_dm(dimension, density=0.25)
-        U = rand_unitary(dimension)
+    def test_invariant_under_unitary_transformation(self, dimension, fixture_random_seed):
+        seeds = fixture_random_seed.spawn(3)
+        rho1 = rand_dm(dimension, density=0.25, seed=seeds[0])
+        rho2 = rand_dm(dimension, density=0.25, seed=seeds[1])
+        U = rand_unitary(dimension, seed=seeds[2])
         D = tracedist(rho1, rho2)
         DU = tracedist(U*rho1*U.dag(), U*rho2*U.dag())
         assert D == pytest.approx(DU, rel=1e-5)
@@ -170,14 +174,15 @@ class Test_hellinger_dist:
     def test_state_with_itself(self, state):
         assert hellinger_dist(state, state) == pytest.approx(0, abs=1e-6)
 
-    def test_known_cases_pure_states(self, dimension):
-        left = rand_ket(dimension)
-        right = rand_ket(dimension)
+    def test_known_cases_pure_states(self, dimension, fixture_random_seed):
+        seeds = fixture_random_seed.spawn(2)
+        left = rand_ket(dimension, seed=seeds[0])
+        right = rand_ket(dimension, seed=seeds[1])
         expected = np.sqrt(2 * (1 - np.abs(left.overlap(right))**2))
         assert hellinger_dist(left, right) == pytest.approx(expected, abs=1e-7)
 
     @pytest.mark.parametrize('dimension', [2, 5, 10, 25])
-    def test_monotonicity(self, dimension):
+    def test_monotonicity(self, dimension, fixture_random_seed):
         """
         Check monotonicity w.r.t. tensor product, see. Eq. (45) in
         arXiv:1611.03449v2:
@@ -186,7 +191,10 @@ class Test_hellinger_dist:
         with equality iff sigmaB = rhoB where '&' is the tensor product.
         """
         tol = 1e-5
-        rhoA, rhoB, sigmaA, sigmaB = [rand_dm(dimension) for _ in [None]*4]
+        seeds = fixture_random_seed.spawn(4)
+        rhoA, rhoB, sigmaA, sigmaB = [
+            rand_dm(dimension, seed=seed) for seed in seeds
+        ]
         rho = tensor(rhoA, rhoB)
         rho_sim = tensor(rhoA, sigmaB)
         sigma = tensor(sigmaA, sigmaB)
@@ -201,20 +209,22 @@ class Test_average_gate_fidelity:
         assert average_gate_fidelity(id) == pytest.approx(1, abs=1e-12)
 
     @pytest.mark.parametrize('dimension', [2, 5, 10, 20])
-    def test_bounded(self, dimension):
+    def test_bounded(self, dimension, fixture_random_seed):
         tol = 1e-7
-        channel = rand_super_bcsz(dimension)
+        channel = rand_super_bcsz(dimension, seed=fixture_random_seed)
         assert -tol <= average_gate_fidelity(channel) <= 1 + tol
 
     @pytest.mark.parametrize('dimension', [2, 5, 10, 20])
-    def test_unitaries_equal_1(self, dimension):
+    def test_unitaries_equal_1(self, dimension, fixture_random_seed):
         """Tests that for random unitaries U, AGF(U, U) = 1."""
         tol = 1e-7
-        U = rand_unitary(dimension)
+        U = rand_unitary(dimension, seed=fixture_random_seed)
         SU = to_super(U)
         assert average_gate_fidelity(SU, target=U) == pytest.approx(1, abs=tol)
 
-    def test_average_gate_fidelity_against_legacy_implementation(self):
+    def test_average_gate_fidelity_against_legacy_implementation(
+        self, fixture_random_seed
+    ):
         """
         Metrics: Test that AGF coincides with pre-5.0 implementation
         """
@@ -238,8 +248,9 @@ class Test_average_gate_fidelity:
                 ])) / (d * d + d)
             )
 
-        oper = rand_super_bcsz(16)
-        target = rand_unitary(16)
+        seeds = fixture_random_seed.spawn(2)
+        oper = rand_super_bcsz(16, seed=seeds[0])
+        target = rand_unitary(16, seed=seeds[1])
         np.testing.assert_almost_equal(
             average_gate_fidelity(oper, target),
             agf_pre_50(oper, target)
@@ -267,9 +278,9 @@ class Test_unitarity:
         assert unitarity(operator) == pytest.approx(expected, abs=1e-7)
 
     @pytest.mark.parametrize('n_qubits', [1, 2, 3, 4, 5])
-    def test_bounded(self, n_qubits):
+    def test_bounded(self, n_qubits, fixture_random_seed):
         tol = 1e-7
-        operator = rand_super_bcsz(2**n_qubits)
+        operator = rand_super_bcsz(2**n_qubits, seed=fixture_random_seed)
         assert -tol <= unitarity(operator) <= 1 + tol
 
 
@@ -366,19 +377,21 @@ class Test_dnorm:
         assert dense == pytest.approx(sparse, abs=1e-7)
 
     @pytest.mark.repeat(3)
-    def test_sparse_against_dense_random(self, dimension):
+    def test_sparse_against_dense_random(self, dimension, fixture_random_seed):
         """
         Test sparse versus dense dnorm calculation for random superoperators.
         """
-        A = rand_super_bcsz(dimension)
+        A = rand_super_bcsz(dimension, seed=fixture_random_seed)
         dense_run_result = dnorm(A, force_solve=True, sparse=False)
         sparse_run_result = dnorm(A, force_solve=True, sparse=True)
         assert dense_run_result == pytest.approx(sparse_run_result, abs=1e-7)
 
-    def test_bounded(self, dimension, sparse):
+    def test_bounded(self, dimension, sparse, fixture_random_seed):
         """dnorm(A - B) in [0, 2] for random superops A, B."""
         tol = 1e-7
-        A, B = rand_super_bcsz(dimension), rand_super_bcsz(dimension)
+        seeds = fixture_random_seed.spawn(2)
+        A = rand_super_bcsz(dimension, seed=seeds[0])
+        B = rand_super_bcsz(dimension, seed=seeds[1])
         assert -tol <= dnorm(A, B, sparse=sparse) <= 2 + tol
 
     def test_qubit_simple_known_cases(self, sparse):
@@ -440,41 +453,45 @@ class Test_dnorm:
             == pytest.approx(expected, abs=1e-7)
         )
 
-    def test_qubit_scalar(self, dimension, fixture_generator):
+    def test_qubit_scalar(self, dimension, fixture_generator, fixture_random_seed):
         """dnorm(a * A) == a * dnorm(A) for scalar a, qobj A."""
         a = fixture_generator.random()
-        A = rand_super_bcsz(dimension)
-        B = rand_super_bcsz(dimension)
+        seeds = fixture_random_seed.spawn(2)
+        A = rand_super_bcsz(dimension, seed=seeds[0])
+        B = rand_super_bcsz(dimension, seed=seeds[1])
         assert dnorm(a*A, a*B) == pytest.approx(a*dnorm(A, B), abs=1e-7)
 
-    def test_qubit_triangle(self, dimension):
+    def test_qubit_triangle(self, dimension, fixture_random_seed):
         """Check that dnorm(A + B) <= dnorm(A) + dnorm(B)."""
-        A = rand_super_bcsz(dimension)
-        B = rand_super_bcsz(dimension)
+        seeds = fixture_random_seed.spawn(2)
+        A = rand_super_bcsz(dimension, seed=seeds[0])
+        B = rand_super_bcsz(dimension, seed=seeds[1])
         assert dnorm(A + B) <= dnorm(A) + dnorm(B) + 1e-7
 
     @pytest.mark.repeat(3)
-    def test_unitary_case(self, dimension):
+    def test_unitary_case(self, dimension, fixture_random_seed):
         """Check that the diamond norm is one for unitary maps."""
-        A, B = rand_unitary(dimension), rand_unitary(dimension)
+        seeds = fixture_random_seed.spawn(2)
+        A = rand_unitary(dimension, seed=seeds[0])
+        B = rand_unitary(dimension, seed=seeds[1])
         assert (
             dnorm(A, B)
             == pytest.approx(dnorm(A, B, force_solve=True), abs=1e-5)
         )
 
     @pytest.mark.repeat(3)
-    def test_cp_case(self, dimension):
+    def test_cp_case(self, dimension, fixture_random_seed):
         """Check that the diamond norm is one for unitary maps."""
-        A = rand_super_bcsz(dimension, enforce_tp=False)
+        A = rand_super_bcsz(dimension, enforce_tp=False, seed=fixture_random_seed)
         assert (
             dnorm(A)
             == pytest.approx(dnorm(A, force_solve=True), abs=1e-5)
         )
 
     @pytest.mark.repeat(3)
-    def test_cptp_case(self, dimension, sparse):
+    def test_cptp_case(self, dimension, sparse, fixture_random_seed):
         """Check that the diamond norm is one for CPTP maps."""
-        A = rand_super_bcsz(dimension)
+        A = rand_super_bcsz(dimension, seed=fixture_random_seed)
         assert A.iscptp
         assert dnorm(A, sparse=sparse) == pytest.approx(1, abs=1e-7)
 
@@ -494,39 +511,39 @@ def test_process_fidelity_of_identity(superrep_conversion):
 
 @pytest.mark.parametrize('superrep_conversion',
                          [to_super, to_choi, to_chi, to_kraus])
-def test_process_fidelity_identical_channels(superrep_conversion):
+def test_process_fidelity_identical_channels(superrep_conversion, fixture_random_seed):
     """
     Metrics: process fidelity of a map to itself is 1
     """
     num_qubits = 2
-    for k in range(10):
-        oper = rand_super_bcsz(num_qubits*[2])
+    for seed in fixture_random_seed.spawn(10):
+        oper = rand_super_bcsz(num_qubits*[2], seed=seed)
         oper = superrep_conversion(oper)
         f = process_fidelity(oper, oper)
         assert f == pytest.approx(1)
 
 
-def test_process_fidelity_identical_unitaries():
+def test_process_fidelity_identical_unitaries(fixture_random_seed):
     """
     Metrics: process fidelity of a unitary to itself is 1
     """
     num_qubits = 3
-    for k in range(10):
-        oper = rand_unitary(num_qubits * [2])
+    for seed in fixture_random_seed.spawn(10):
+        oper = rand_unitary(num_qubits * [2], seed=seed)
         f = process_fidelity(oper, oper)
         assert f == pytest.approx(1)
 
 
-def test_process_fidelity_consistency():
+def test_process_fidelity_consistency(fixture_random_seed):
     """
     Metrics: process fidelity independent of how channels are represented
     """
     num_qubits = 2
-    for k in range(10):
+    for seeds in zip(*[fixture_random_seed.spawn(2) for _ in range(10)]):
         fidelities_u_to_u = []
         fidelities_u_to_id = []
-        u1 = rand_unitary(num_qubits * [2])
-        u2 = rand_unitary(num_qubits * [2])
+        u1 = rand_unitary(num_qubits * [2], seed=seeds[0])
+        u2 = rand_unitary(num_qubits * [2], seed=seeds[1])
         for map1 in [lambda x:x, to_super, to_choi, to_chi, to_kraus]:
             fidelities_u_to_id.append(process_fidelity(map1(u1)))
             for map2 in [lambda x:x, to_super, to_choi, to_chi, to_kraus]:
@@ -535,14 +552,14 @@ def test_process_fidelity_consistency():
         assert all(abs(fidelities_u_to_u - fidelities_u_to_u[0]) < 1e-6)
 
 
-def test_process_fidelity_unitary_invariance():
+def test_process_fidelity_unitary_invariance(fixture_random_seed):
     """
     Metrics: process fidelity, invariance under unitary trans.
     """
-    for k in range(10):
-        op1 = rand_super_bcsz(10)
-        op2 = rand_super_bcsz(10)
-        u = to_super(rand_unitary(10))
+    for seeds in zip(*[fixture_random_seed.spawn(3) for _ in range(10)]):
+        op1 = rand_super_bcsz(10, seed=seeds[0])
+        op2 = rand_super_bcsz(10, seed=seeds[1])
+        u = to_super(rand_unitary(10, seed=seeds[2]))
         assert abs(
             process_fidelity(op1, op2)
             - process_fidelity(u*op1, u*op2)

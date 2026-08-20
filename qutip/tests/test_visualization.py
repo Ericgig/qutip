@@ -6,9 +6,9 @@ from qutip.wigner import sph_harm_y
 mpl = pytest.importorskip("matplotlib")
 plt = pytest.importorskip("matplotlib.pyplot")
 
-def test_cyclic():
+def test_cyclic(fixture_random_seed):
     qutip.settings.colorblind_safe = True
-    rho = qutip.rand_dm(5)
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
 
     fig, ax = qutip.hinton(rho, color_style='phase')
     plt.close()
@@ -19,9 +19,9 @@ def test_cyclic():
     assert isinstance(ax, mpl.axes.Axes)
 
 
-def test_diverging():
+def test_diverging(fixture_random_seed):
     qutip.settings.colorblind_safe = True
-    rho = qutip.rand_dm(5)
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
 
     fig, ax = qutip.hinton(rho)
     plt.close()
@@ -57,8 +57,8 @@ def test_sequential():
     (False, False, '2d'),
     (False, False, '3d'),
 ])
-def test_is_fig_and_ax(f, a, projection):
-    rho = qutip.rand_dm(5)
+def test_is_fig_and_ax(f, a, projection, fixture_random_seed):
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
 
     fig = plt.figure()
     ax = None
@@ -78,8 +78,8 @@ def test_is_fig_and_ax(f, a, projection):
     assert isinstance(ax, mpl.axes.Axes)
 
 
-def test_set_ticklabels():
-    rho = qutip.rand_dm(5)
+def test_set_ticklabels(fixture_random_seed):
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
     text = "got 1 ticklabels but needed 5"
 
     with pytest.raises(Exception) as exc_info:
@@ -88,8 +88,9 @@ def test_set_ticklabels():
     plt.close()
 
 
-def test_equal_shape():
-    rhos = [qutip.rand_dm(5)]*2 + [qutip.rand_dm(4)]
+def test_equal_shape(fixture_random_seed):
+    seeds = fixture_random_seed.spawn(2)
+    rhos = [qutip.rand_dm(5, seed=seeds[0])]*2 + [qutip.rand_dm(4, seed=seeds[1])]
     text = "All inputs should have the same shape."
 
     with pytest.raises(Exception) as exc_info:
@@ -103,8 +104,8 @@ def test_equal_shape():
     ({'cmap': mpl.cm.cividis}),
     ({'colorbar': False}),
 ])
-def test_plot_wigner_sphere(args):
-    psi = qutip.rand_ket(5)
+def test_plot_wigner_sphere(args, fixture_random_seed):
+    psi = qutip.rand_ket(5, seed=fixture_random_seed)
     wigner = qutip.wigner_transform(psi, 2, False, 50, ["x"])
 
     fig, ax = qutip.plot_wigner_sphere(wigner, **args)
@@ -114,8 +115,8 @@ def test_plot_wigner_sphere(args):
     assert isinstance(ax, mpl.axes.Axes)
 
 
-def test_plot_wigner_sphere_anim():
-    psi = qutip.rand_ket(5)
+def test_plot_wigner_sphere_anim(fixture_random_seed):
+    psi = qutip.rand_ket(5, seed=fixture_random_seed)
     wigner = qutip.wigner_transform(psi, 2, False, 50, ["x"])
 
     fig, ani = qutip.plot_wigner_sphere([wigner]*2)
@@ -144,8 +145,8 @@ def to_oper(oper):
     (to_oper, {'color_style': 'phase'}),
     (to_oper, {'colorbar': False}),
 ])
-def test_hinton(transform, args):
-    rho = transform(qutip.rand_dm(4))
+def test_hinton(transform, args, fixture_random_seed):
+    rho = transform(qutip.rand_dm(4, seed=fixture_random_seed))
 
     fig, ax = qutip.hinton(rho, **args)
     plt.close()
@@ -162,8 +163,8 @@ def test_hinton1():
     assert isinstance(ax, mpl.axes.Axes)
 
 
-def test_hinton_anim():
-    rho = qutip.rand_dm(5)
+def test_hinton_anim(fixture_random_seed):
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
     rhos = [rho]*2
 
     fig, ani = qutip.hinton(rhos)
@@ -189,8 +190,8 @@ def test_hinton_ValueError0():
     (qutip.spre, {},
      "Hinton plots of superoperators are currently only supported for qubits.")
 ])
-def test_hinton_ValueError1(transform, args, error_message):
-    rho = transform(qutip.rand_dm(5))
+def test_hinton_ValueError1(transform, args, error_message, fixture_random_seed):
+    rho = transform(qutip.rand_dm(5, seed=fixture_random_seed))
 
     with pytest.raises(ValueError) as exc_info:
         fig, ax = qutip.hinton(rho, **args)
@@ -241,7 +242,8 @@ def test_update_yaxis(response):
         text = "got 1 ylabels but needed 5"
 
         with pytest.raises(ValueError) as exc_info:
-            fig, ax = qutip.matrix_histogram(qutip.rand_dm(5),
+            fig, ax = qutip.matrix_histogram(
+                                             qutip.rand_dm(5, seed=fixture_random_seed),
                                              y_basis=[1])
 
         assert str(exc_info.value) == text
@@ -263,7 +265,8 @@ def test_update_xaxis(response):
         text = "got 1 xlabels but needed 5"
 
         with pytest.raises(ValueError) as exc_info:
-            fig, ax = qutip.matrix_histogram(qutip.rand_dm(5),
+            fig, ax = qutip.matrix_histogram(
+                                             qutip.rand_dm(5, seed=fixture_random_seed),
                                              x_basis=[1])
         assert str(exc_info.value) == text
         plt.close()
@@ -273,7 +276,8 @@ def test_get_matrix_components():
     text = "got an unexpected argument, error for bar_style"
 
     with pytest.raises(ValueError) as exc_info:
-        fig, ax = qutip.matrix_histogram(qutip.rand_dm(5),
+        fig, ax = qutip.matrix_histogram(
+                         qutip.rand_dm(5, seed=fixture_random_seed),
                                          bar_style='error')
     assert str(exc_info.value) == text
 
@@ -284,8 +288,8 @@ def test_get_matrix_components():
     ({'options': {'stick': True, 'azim': 225}}),
     ({'options': {'stick': True, 'azim': 315}}),
 ])
-def test_stick_to_planes(args):
-    rho = qutip.rand_dm(5)
+def test_stick_to_planes(args, fixture_random_seed):
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
 
     fig, ax = qutip.matrix_histogram(rho, **args)
     plt.close()
@@ -309,8 +313,8 @@ def test_stick_to_planes(args):
     ({'color_style': 'phase', 'colorbar': True}),
     ({'color_limits': [0, 1], 'color_style': 'phase', 'colorbar': True})
 ])
-def test_matrix_histogram(args):
-    rho = qutip.rand_dm(5)
+def test_matrix_histogram(args, fixture_random_seed):
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
 
     fig, ax = qutip.matrix_histogram(rho, **args)
     plt.close()
@@ -329,8 +333,8 @@ def test_matrix_histogram_zeros():
     assert isinstance(ax, mpl.axes.Axes)
 
 
-def test_matrix_histogram_anim():
-    rho = qutip.rand_dm(5)
+def test_matrix_histogram_anim(fixture_random_seed):
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
     rhos = [rho]*2
 
     fig, ani = qutip.matrix_histogram(rhos)
@@ -346,10 +350,11 @@ def test_matrix_histogram_anim():
      ("invalid key(s) found in options: e1, e2",
       "invalid key(s) found in options: e2, e1")),
 ])
-def test_matrix_histogram_ValueError(args, expected):
+def test_matrix_histogram_ValueError(args, expected, fixture_random_seed):
 
     with pytest.raises(ValueError) as exc_info:
-        fig, ax = qutip.matrix_histogram(qutip.rand_dm(5),
+        fig, ax = qutip.matrix_histogram(
+                         qutip.rand_dm(5, seed=fixture_random_seed),
                                          **args)
     assert str(exc_info.value) in expected
     plt.close()
@@ -384,9 +389,9 @@ def test_plot_energy_levels_ValueError():
     ('oper', {'fock_numbers': [0, 1, 2, 3]}),
     ('oper', {'unit_y_range': False}),
 ])
-def test_plot_fock_distribution(rho_type, args):
+def test_plot_fock_distribution(rho_type, args, fixture_random_seed):
     if rho_type == 'oper':
-        rho = qutip.rand_dm(4)
+        rho = qutip.rand_dm(4, seed=fixture_random_seed)
     else:
         rho = qutip.basis(2, 0)
 
@@ -397,8 +402,8 @@ def test_plot_fock_distribution(rho_type, args):
     assert isinstance(ax, mpl.axes.Axes)
 
 
-def test_plot_fock_distribution_anim():
-    rho = qutip.rand_dm(5)
+def test_plot_fock_distribution_anim(fixture_random_seed):
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
     rhos = [rho]*2
 
     fig, ani = qutip.plot_fock_distribution(rhos)
@@ -416,9 +421,9 @@ def test_plot_fock_distribution_anim():
     ('oper', {'projection': '3d'}),
     ('oper', {'colorbar': True})
 ])
-def test_plot_qfunc(rho_type, args):
+def test_plot_qfunc(rho_type, args, fixture_random_seed):
     if rho_type == 'oper':
-        rho = qutip.rand_dm(4)
+        rho = qutip.rand_dm(4, seed=fixture_random_seed)
     else:
         rho = qutip.basis(2, 0)
 
@@ -438,9 +443,9 @@ def test_plot_qfunc(rho_type, args):
     ('oper', {'projection': '3d'}),
     ('oper', {'colorbar': True})
 ])
-def test_plot_wigner(rho_type, args):
+def test_plot_wigner(rho_type, args, fixture_random_seed):
     if rho_type == 'oper':
-        rho = qutip.rand_dm(4)
+        rho = qutip.rand_dm(4, seed=fixture_random_seed)
     else:
         rho = qutip.basis(2, 0)
 
@@ -451,8 +456,8 @@ def test_plot_wigner(rho_type, args):
     assert isinstance(ax, mpl.axes.Axes)
 
 
-def test_plot_wigner_anim():
-    rho = qutip.rand_dm(5)
+def test_plot_wigner_anim(fixture_random_seed):
+    rho = qutip.rand_dm(5, seed=fixture_random_seed)
     rhos = [rho]*2
 
     fig, ani = qutip.plot_wigner(rhos)
@@ -462,10 +467,10 @@ def test_plot_wigner_anim():
     assert isinstance(ani, mpl.animation.ArtistAnimation)
 
 
-def test_plot_wigner_ValueError():
+def test_plot_wigner_ValueError(fixture_random_seed):
     text = "Unexpected value of projection keyword argument"
     with pytest.raises(ValueError) as exc_info:
-        rho = qutip.rand_dm(4)
+        rho = qutip.rand_dm(4, seed=fixture_random_seed)
 
         fig, ax = qutip.plot_wigner(rho, projection=1)
     assert str(exc_info.value) == text

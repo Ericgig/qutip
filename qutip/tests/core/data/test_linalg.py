@@ -18,11 +18,11 @@ class TestSolve():
     def op_numpy(self, A, b):
         return np.linalg.solve(A, b)
 
-    def _gen_op(self, N, dtype):
-        return qutip.rand_unitary(N, dtype=dtype).data
+    def _gen_op(self, N, dtype, fixture_random_seed):
+        return qutip.rand_unitary(N, dtype=dtype, seed=fixture_random_seed).data
 
-    def _gen_ket(self, N, dtype):
-        return qutip.rand_ket(N, dtype=dtype).data
+    def _gen_ket(self, N, dtype, fixture_random_seed):
+        return qutip.rand_ket(N, dtype=dtype, seed=fixture_random_seed).data
 
     @pytest.mark.parametrize(['method', "opt"], [
         ("spsolve", {}),
@@ -38,15 +38,18 @@ class TestSolve():
         ]
     )
     @pytest.mark.parametrize('dtype', [CSR, Dia])
-    def test_mathematically_correct_sparse(self, method, opt, dtype):
+    def test_mathematically_correct_sparse(
+        self, method, opt, dtype, fixture_random_seed
+    ):
         """
         Test that the binary operation is mathematically correct for all the
         known type specialisations.
         """
         if dtype is Dia and method == "mkl_spsolve":
             pytest.skip("mkl is not supported for dia matrix")
-        A = self._gen_op(10, dtype)
-        b = self._gen_ket(10, Dense)
+        seeds = fixture_random_seed.spawn(2)
+        A = self._gen_op(10, dtype, seeds[0])
+        b = self._gen_ket(10, Dense, seeds[1])
         expected = self.op_numpy(A.to_array(), b.to_array())
         test = _data.solve_csr_dense(A, b, method, opt)
         test1 = _data.solve(A, b, method, opt)
@@ -61,9 +64,10 @@ class TestSolve():
         ("solve", {}),
         ("lstsq", {}),
     ])
-    def test_mathematically_correct_Dense(self, method, opt):
-        A = self._gen_op(10, Dense)
-        b = self._gen_ket(10, Dense)
+    def test_mathematically_correct_Dense(self, method, opt, fixture_random_seed):
+        seeds = fixture_random_seed.spawn(2)
+        A = self._gen_op(10, Dense, seeds[0])
+        b = self._gen_ket(10, Dense, seeds[1])
         expected = self.op_numpy(A.to_array(), b.to_array())
         test = _data.solve_dense(A, b, method, opt)
         test1 = _data.solve(A, b, method, opt)
@@ -101,8 +105,10 @@ class TestSVD():
     def op_numpy(self, A):
         return scipy.linalg.svd(A)
 
-    def _gen_dm(self, N, rank, dtype):
-        return qutip.rand_dm(N, rank=rank, dtype=dtype).data
+    def _gen_dm(self, N, rank, dtype, fixture_random_seed):
+        return qutip.rand_dm(
+            N, rank=rank, dtype=dtype, seed=fixture_random_seed
+        ).data
 
     def _gen_non_square(self, N, fixture_generator):
         mat = fixture_generator.standard_normal((N, N//2))
@@ -112,9 +118,11 @@ class TestSVD():
         return _data.Dense(mat)
 
     @pytest.mark.parametrize("shape", ["square", "non-square"])
-    def test_mathematically_correct_svd(self, shape, fixture_generator):
+    def test_mathematically_correct_svd(
+        self, shape, fixture_generator, fixture_random_seed
+    ):
         if shape == "square":
-            matrix = self._gen_dm(10, 6, Dense)
+            matrix = self._gen_dm(10, 6, Dense, fixture_random_seed)
         else:
             matrix = self._gen_non_square(12, fixture_generator)
         u, s, v = self.op_numpy(matrix.to_array())

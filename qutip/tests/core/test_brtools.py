@@ -174,7 +174,7 @@ def test_br_term(cutoff, spectra):
 
 
 @pytest.mark.parametrize('cutoff', [0, 0.1, 1, 3, -1])
-def test_brterm(cutoff):
+def test_brterm(cutoff, fixture_random_seed):
     N = 5
     H = qutip.num(N)
     a = qutip.destroy(N)
@@ -185,7 +185,7 @@ def test_brterm(cutoff):
     assert isinstance(R, qutip.Qobj)
     assert isinstance(R_eigs, qutip.Qobj)
     assert isinstance(evecs, qutip.Qobj)
-    state = qutip.operator_to_vector(qutip.rand_dm(N))
+    state = qutip.operator_to_vector(qutip.rand_dm(N, seed=fixture_random_seed))
     fock_computed = R @ state
     eig_computed = R_eigs @ qutip.sprepost(evecs.dag(), evecs) @ state
     eig_computed = qutip.sprepost(evecs, evecs.dag()) @ eig_computed
@@ -194,7 +194,7 @@ def test_brterm(cutoff):
 
 
 @pytest.mark.parametrize('cutoff', [0, 0.1, 1, 3, -1])
-def test_td_brterm(cutoff):
+def test_td_brterm(cutoff, fixture_random_seed):
     N = 5
     H = qutip.QobjEvo([qutip.num(N), "0.5+t**2"])
     a = qutip.destroy(N)
@@ -205,7 +205,7 @@ def test_td_brterm(cutoff):
     assert isinstance(R, qutip.QobjEvo)
     assert isinstance(R_eigs, qutip.QobjEvo)
     assert isinstance(evecs, qutip.QobjEvo)
-    state = qutip.operator_to_vector(qutip.rand_dm(N))
+    state = qutip.operator_to_vector(qutip.rand_dm(N, seed=fixture_random_seed))
     fock_computed = R @ state
     eig_computed = R_eigs @ qutip.sprepost(evecs.dag(), evecs) @ state
     eig_computed = qutip.sprepost(evecs, evecs.dag()) @ eig_computed
@@ -297,7 +297,7 @@ def test_bloch_redfield_tensor_fermionbath():
 
 
 @pytest.mark.parametrize('cutoff', [0, 0.1, 1, 3, -1])
-def test_bloch_redfield_tensor_basis(cutoff):
+def test_bloch_redfield_tensor_basis(cutoff, fixture_random_seed):
     N = 5
     H = qutip.num(N)
     a = qutip.destroy(N)
@@ -320,7 +320,7 @@ def test_bloch_redfield_tensor_basis(cutoff):
     assert isinstance(R, qutip.Qobj)
     assert isinstance(R_eigs, qutip.Qobj)
     assert isinstance(evecs, qutip.Qobj)
-    state = qutip.operator_to_vector(qutip.rand_dm(N))
+    state = qutip.operator_to_vector(qutip.rand_dm(N, seed=fixture_random_seed))
     fock_computed = R @ state
     eig_computed = R_eigs @ qutip.sprepost(evecs.dag(), evecs) @ state
     eig_computed = qutip.sprepost(evecs, evecs.dag()) @ eig_computed

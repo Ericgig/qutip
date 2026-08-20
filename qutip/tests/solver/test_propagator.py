@@ -39,7 +39,7 @@ def func(t):
     return np.cos(t)
 
 
-def testPropHOTd():
+def testPropHOTd(fixture_random_seed):
     "Propagator: func td format"
     a = destroy(5)
     H = a.dag()*a
@@ -57,7 +57,7 @@ def testPropHOTd():
     ts = np.linspace(-0.01, 1.01, 103)
     coeffs = np.cos(ts)
     Htd = [H, [H, coeffs]]
-    rho_0 = rand_dm(5)
+    rho_0 = rand_dm(5, seed=fixture_random_seed)
     rho_1_prop = propagator(Htd, 1, c_ops=[a], tlist=ts)(rho_0)
     rho_1_me = mesolve(QobjEvo(Htd, tlist=ts), rho_0, [0, 1], [a]).final_state
 

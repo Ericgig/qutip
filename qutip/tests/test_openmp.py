@@ -9,11 +9,12 @@ from qutip.settings import settings as qset
 
 # @unittest.skipIf(qset.has_openmp == False, 'OPENMP not available.')
 @pytest.mark.skipif(True, reason='OPENMP disabled.')
-def test_openmp_spmv():
+def test_openmp_spmv(fixture_random_seed):
     "OPENMP : spmvpy_openmp == spmvpy"
+    seeds = fixture_random_seed.spawn(200)
     for k in range(100):
-        L = rand_herm(10,0.25).data
-        vec = rand_ket(L.shape[0],0.25).full().ravel()
+        L = rand_herm(10, 0.25, seed=seeds[2*k]).data
+        vec = rand_ket(L.shape[0], 0.25, seed=seeds[2*k + 1]).full().ravel()
         out = np.zeros_like(vec)
         out_openmp = np.zeros_like(vec)
         _spmvpy(L.data, L.indices, L.indptr, vec, 1, out)

@@ -13,8 +13,8 @@ from qutip import (
 @pytest.mark.parametrize("dtype", ["csr", "dense", "dia"])
 @pytest.mark.parametrize("trans", [True, False])
 @pytest.mark.parametrize("conj", [True, False])
-def test_target_mode_matmul_transformed(dtype, trans, conj):
-    state = rand_ket([2] * 3, dtype="dense")
+def test_target_mode_matmul_transformed(dtype, trans, conj, fixture_random_seed):
+    state = rand_ket([2] * 3, dtype="dense", seed=fixture_random_seed)
     oper = destroy(2, dtype=dtype) * 1j
 
     out = target_mode_matmul(
@@ -32,8 +32,10 @@ def test_target_mode_matmul_transformed(dtype, trans, conj):
 @pytest.mark.parametrize("dtype", ["csr", "dense", "dia"])
 @pytest.mark.parametrize("trans", [True, False])
 @pytest.mark.parametrize("conj", [True, False])
-def test_target_mode_matmul_transformed_dual(dtype, trans, conj):
-    state = rand_dm([2] * 3, dtype="dense")
+def test_target_mode_matmul_transformed_dual(
+    dtype, trans, conj, fixture_random_seed
+):
+    state = rand_dm([2] * 3, dtype="dense", seed=fixture_random_seed)
     oper = destroy(2, dtype=dtype) * 1j
 
     out = target_mode_matmul(

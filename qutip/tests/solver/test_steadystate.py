@@ -166,12 +166,13 @@ def test_driven_cavity(method, kwargs):
     assert rho_ss.trace() == pytest.approx(1, abs=1e-10)
 
 
-def test_prop_ss_degen():
+def test_prop_ss_degen(fixture_random_seed):
     N = 5
     H = qutip.qeye(2) & qutip.num(N)
     a = qutip.qeye(2) & qutip.destroy(N)
-    rho_l = qutip.rand_dm(2)
-    rho_r = qutip.rand_dm(N)
+    seeds = fixture_random_seed.spawn(2)
+    rho_l = qutip.rand_dm(2, seed=seeds[0])
+    rho_r = qutip.rand_dm(N, seed=seeds[1])
     rho_ss = qutip.steadystate(H, [a], method="propagator", rho=rho_l & rho_r)
     with qutip.CoreOptions(atol=1e-5):
         assert rho_ss.ptrace([0]) == rho_l

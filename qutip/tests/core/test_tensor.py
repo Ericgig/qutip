@@ -93,10 +93,10 @@ def case_tensor_swap(qobj, pairs, expected_dims, expected_data=None):
     assert_equal(sqobj.full(), expected_data.full())
 
 
-def test_tensor_swap_other():
+def test_tensor_swap_other(fixture_random_seed):
     dims = (2, 3, 4, 5, 7)
-    for dim in dims:
-        S = to_super(rand_super_bcsz(dim))
+    for dim, seed in zip(dims, fixture_random_seed.spawn(len(dims))):
+        S = to_super(rand_super_bcsz(dim, seed=seed))
         # Swapping the inner indices on a superoperator should give a Choi
         # matrix.
         J = to_choi(S)
@@ -220,17 +220,20 @@ class Test_expand_operator:
             itertools.permutations(range(k)) for k in [2, 3, 4]
         ])),
         ids=_permutation_id)
-    def test_permutation_without_expansion(self, permutation):
-        base = qutip.tensor([qutip.rand_unitary(2) for _ in permutation])
+    def test_permutation_without_expansion(self, permutation, fixture_random_seed):
+        base = qutip.tensor([
+            qutip.rand_unitary(2, seed=seed)
+            for seed in fixture_random_seed.spawn(len(permutation))
+        ])
         test = expand_operator(base, [2] * len(permutation), permutation)
         expected = base.permute(_apply_permutation(permutation))
         np.testing.assert_allclose(test.full(), expected.full(), atol=1e-15)
 
     @pytest.mark.parametrize('n_targets', range(1, 5))
-    def test_general_qubit_expansion(self, n_targets):
+    def test_general_qubit_expansion(self, n_targets, fixture_random_seed):
         # Test all permutations with the given number of targets.
         n_qubits = 5
-        operation = qutip.rand_unitary([2]*n_targets)
+        operation = qutip.rand_unitary([2]*n_targets, seed=fixture_random_seed)
         for targets in itertools.permutations(range(n_qubits), n_targets):
             expected = _tensor_with_entanglement([qutip.qeye(2)] * n_qubits,
                                                  operation, targets)
@@ -255,10 +258,11 @@ class Test_expand_operator:
         pytest.param([3, 3, 4, 4, 2], id="standard"),
         pytest.param([1, 2, 3], id="1D space"),
     ])
-    def test_non_qubit_systems(self, dimensions):
+    def test_non_qubit_systems(self, dimensions, fixture_random_seed):
         n_qubits = len(dimensions)
         for targets in itertools.permutations(range(n_qubits), 2):
-            operators = [qutip.rand_unitary(dimension) if n in targets
+            seeds = fixture_random_seed.spawn(2)
+            operators = [qutip.rand_unitary(dimension, seed=seeds.pop(0)) if n in targets
                          else qutip.qeye(dimension)
                          for n, dimension in enumerate(dimensions)]
             expected = qutip.tensor(*operators)

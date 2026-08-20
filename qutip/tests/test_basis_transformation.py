@@ -18,8 +18,8 @@ def complex_hermitian(n_levels, fixture_generator):
             + imaginary_hermitian(n_levels, fixture_generator))
 
 
-def rand_bra(n_levels):
-    return qutip.rand_ket(n_levels).dag()
+def rand_bra(n_levels, fixture_random_seed):
+    return qutip.rand_ket(n_levels, seed=fixture_random_seed).dag()
 
 
 @pytest.mark.parametrize("hermitian_constructor", [real_hermitian,
@@ -37,11 +37,14 @@ def test_transformation_to_eigenbasis_is_reversible(hermitian_constructor,
 
 
 @pytest.mark.parametrize("n_levels", [4])
-def test_ket_and_dm_transformations_equivalent(n_levels):
+def test_ket_and_dm_transformations_equivalent(n_levels, fixture_random_seed):
     """Consistency between transformations of kets and density matrices."""
-    psi0 = qutip.rand_ket(n_levels)
+    seeds = fixture_random_seed.spawn(2)
+    psi0 = qutip.rand_ket(n_levels, seed=seeds[0])
     # Generate a random basis
-    _, rand_basis = qutip.rand_dm(n_levels, density=1).eigenstates()
+    _, rand_basis = qutip.rand_dm(
+        n_levels, density=1, seed=seeds[1]
+    ).eigenstates()
     rho1 = qutip.ket2dm(psi0).transform(rand_basis, True)
     rho2 = qutip.ket2dm(psi0.transform(rand_basis, True))
     assert (rho1 - rho2).norm() < 1e-6

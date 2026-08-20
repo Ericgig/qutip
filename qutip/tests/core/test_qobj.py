@@ -567,7 +567,7 @@ def test_QobjGetItem():
     assert q[-1, 2] == data[-1, 2]
 
 
-def test_CheckMulType():
+def test_CheckMulType(fixture_random_seed):
     "qutip.Qobj multiplication type"
     # ket-bra and bra-ket multiplication
     psi = qutip.basis(5, 0)
@@ -580,8 +580,9 @@ def test_CheckMulType():
     assert abs(nrm) == 1
 
     # operator-operator multiplication
-    H1 = qutip.rand_herm(3)
-    H2 = qutip.rand_herm(3)
+    seeds = fixture_random_seed.spawn(3)
+    H1 = qutip.rand_herm(3, seed=seeds[0])
+    H2 = qutip.rand_herm(3, seed=seeds[1])
     out = H1 * H2
     assert out.isoper
     out = H1 * H1
@@ -591,7 +592,7 @@ def test_CheckMulType():
     assert out.isoper
     assert out.isherm
 
-    U = qutip.rand_unitary(5)
+    U = qutip.rand_unitary(5, seed=seeds[2])
     out = U.dag() * U
     assert out.isoper
     assert out.isherm
@@ -710,8 +711,8 @@ def test_QobjEigenStates(space):
         assert c[k] == kets[k]
 
 
-def test_QobjEigenStatesOutputType():
-    op = qutip.rand_herm(5)
+def test_QobjEigenStatesOutputType(fixture_random_seed):
+    op = qutip.rand_herm(5, seed=fixture_random_seed)
 
     _, kets = op.eigenstates(output_type='kets', phase_fix=0)
     _, oper = op.eigenstates(output_type='oper', phase_fix=0)
@@ -801,7 +802,7 @@ def test_QobjFull():
     assert np.all(b == data)
 
 
-def test_QobjNorm(fixture_generator):
+def test_QobjNorm(fixture_generator, fixture_random_seed):
     "qutip.Qobj norm"
     # vector L2-norm test
     N = 20
@@ -818,9 +819,9 @@ def test_QobjNorm(fixture_generator):
     np.testing.assert_allclose(A.norm('fro'), scipy.linalg.norm(x, 'fro'),
                                atol=1e-12)
     # operator trace norm
-    a = qutip.rand_herm(10, density=0.25)
+    a = qutip.rand_herm(10, density=0.25, seed=fixture_random_seed)
     np.testing.assert_allclose(a.norm(), (a*a.dag()).sqrtm().tr().real)
-    b = qutip.rand_herm(10, density=0.25) - 1j*qutip.rand_herm(10, density=0.25)
+    b = qutip.rand_herm(10, density=0.25, seed=fixture_random_seed) - 1j*qutip.rand_herm(10, density=0.25, seed=fixture_random_seed.spawn(1)[0])
     np.testing.assert_allclose(b.norm(), (b*b.dag()).sqrtm().tr().real)
 
 
@@ -840,7 +841,7 @@ def test_QobjPurity():
     np.testing.assert_allclose(rho_mixed.purity(), 0.5)
 
 
-def test_QobjPermute(datatype):
+def test_QobjPermute(datatype, fixture_random_seed):
     "qutip.Qobj permute"
     A = qutip.basis(3, 0, dtype=datatype)
     B = qutip.basis(5, 4, dtype=datatype)
@@ -861,9 +862,10 @@ def test_QobjPermute(datatype):
     assert rho2 == qutip.tensor(C, A, B)
 
     for _ in range(3):
-        A = qutip.rand_ket(3, dtype=datatype)
-        B = qutip.rand_ket(4, dtype=datatype)
-        C = qutip.rand_ket(5, dtype=datatype)
+        seeds = fixture_random_seed.spawn(6)
+        A = qutip.rand_ket(3, dtype=datatype, seed=seeds[0])
+        B = qutip.rand_ket(4, dtype=datatype, seed=seeds[1])
+        C = qutip.rand_ket(5, dtype=datatype, seed=seeds[2])
         psi = qutip.tensor(A, B, C)
         psi2 = psi.permute([1, 0, 2])
         assert psi2 == qutip.tensor(B, A, C)
@@ -873,9 +875,9 @@ def test_QobjPermute(datatype):
         assert psi2_bra == qutip.tensor(B, A, C).dag()
 
     for _ in range(3):
-        A = qutip.rand_dm(3, dtype=datatype)
-        B = qutip.rand_dm(4, dtype=datatype)
-        C = qutip.rand_dm(5, dtype=datatype)
+        A = qutip.rand_dm(3, dtype=datatype, seed=seeds[3])
+        B = qutip.rand_dm(4, dtype=datatype, seed=seeds[4])
+        C = qutip.rand_dm(5, dtype=datatype, seed=seeds[5])
         rho = qutip.tensor(A, B, C)
         rho2 = rho.permute([1, 0, 2])
         assert rho2 == qutip.tensor(B, A, C)
@@ -891,7 +893,7 @@ def test_QobjPermute(datatype):
 
     for _ in range(3):
         super_dims = [3, 5, 4]
-        U = qutip.rand_unitary(super_dims, dtype=datatype)
+        U = qutip.rand_unitary(super_dims, dtype=datatype, seed=seeds[0])
         Unew = U.permute([2, 1, 0])
         S_tens = qutip.to_super(U)
         S_tens_new = qutip.to_super(Unew)
@@ -971,11 +973,11 @@ def test_SuperType():
     pytest.param(qutip.to_choi, id='to_choi'),
     pytest.param(qutip.to_chi, id='to_chi'),
 ])
-def test_dag_preserves_superrep(dimension, conversion):
+def test_dag_preserves_superrep(dimension, conversion, fixture_random_seed):
     """
     Checks that dag() preserves superrep.
     """
-    qobj = conversion(qutip.rand_super_bcsz(dimension))
+    qobj = conversion(qutip.rand_super_bcsz(dimension, seed=fixture_random_seed))
     assert qobj.superrep == qobj.dag().superrep
 
 
@@ -1020,31 +1022,34 @@ def test_arithmetic_preserves_superrep(superrep,
         assert S.superrep == superrep
 
 
-def test_isherm_skew():
+def test_isherm_skew(fixture_random_seed):
     """
     mul and tensor of skew-Hermitian operators report ``isherm = True``.
     """
-    iH = 1j * qutip.rand_herm(5)
+    iH = 1j * qutip.rand_herm(5, seed=fixture_random_seed)
     assert_hermicity(iH, False)
     assert_hermicity(iH * iH, True)
     assert_hermicity(qutip.tensor(iH, iH), True)
 
 
-def test_super_tensor_operket():
+def test_super_tensor_operket(fixture_random_seed):
     """
     Tensor: Checks that super_tensor respects states.
     """
-    rho1, rho2 = qutip.rand_dm(5), qutip.rand_dm(7)
+    seeds = fixture_random_seed.spawn(2)
+    rho1 = qutip.rand_dm(5, seed=seeds[0])
+    rho2 = qutip.rand_dm(7, seed=seeds[1])
     qutip.operator_to_vector(rho1)
     qutip.operator_to_vector(rho2)
 
 
-def test_super_tensor_property():
+def test_super_tensor_property(fixture_random_seed):
     """
     Tensor: Super_tensor correctly tensors on underlying spaces.
     """
-    U1 = qutip.rand_unitary(3)
-    U2 = qutip.rand_unitary(5)
+    seeds = fixture_random_seed.spawn(2)
+    U1 = qutip.rand_unitary(3, seed=seeds[0])
+    U2 = qutip.rand_unitary(5, seed=seeds[1])
     U = qutip.tensor(U1, U2)
     S_tens = qutip.to_super(U)
     S_supertens = qutip.super_tensor(qutip.to_super(U1), qutip.to_super(U2))
@@ -1052,16 +1057,17 @@ def test_super_tensor_property():
     assert S_supertens.superrep == 'super'
 
 
-def test_composite_oper():
+def test_composite_oper(fixture_random_seed):
     """
     Composite: Tests compositing unitaries and superoperators.
     """
-    U1 = qutip.rand_unitary(3)
-    U2 = qutip.rand_unitary(5)
+    seeds = fixture_random_seed.spawn(4)
+    U1 = qutip.rand_unitary(3, seed=seeds[0])
+    U2 = qutip.rand_unitary(5, seed=seeds[1])
     S1 = qutip.to_super(U1)
     S2 = qutip.to_super(U2)
-    S3 = qutip.rand_super(4)
-    S4 = qutip.rand_super(7)
+    S3 = qutip.rand_super(4, seed=seeds[2])
+    S4 = qutip.rand_super(7, seed=seeds[3])
 
     assert qutip.composite(U1, U2) == qutip.tensor(U1, U2)
     assert qutip.composite(S3, S4) == qutip.super_tensor(S3, S4)
@@ -1069,17 +1075,18 @@ def test_composite_oper():
     assert qutip.composite(S3, U2) == qutip.super_tensor(S3, S2)
 
 
-def test_composite_vec():
+def test_composite_vec(fixture_random_seed):
     """
     Composite: Tests compositing states and density operators.
     """
-    k1 = qutip.rand_ket(5)
-    k2 = qutip.rand_ket(7)
+    seeds = fixture_random_seed.spawn(4)
+    k1 = qutip.rand_ket(5, seed=seeds[0])
+    k2 = qutip.rand_ket(7, seed=seeds[1])
     r1 = qutip.operator_to_vector(qutip.ket2dm(k1))
     r2 = qutip.operator_to_vector(qutip.ket2dm(k2))
 
-    r3 = qutip.operator_to_vector(qutip.rand_dm(3))
-    r4 = qutip.operator_to_vector(qutip.rand_dm(4))
+    r3 = qutip.operator_to_vector(qutip.rand_dm(3, seed=seeds[2]))
+    r4 = qutip.operator_to_vector(qutip.rand_dm(4, seed=seeds[3]))
 
     assert qutip.composite(k1, k2) == qutip.tensor(k1, k2)
     assert qutip.composite(r3, r4) == qutip.super_tensor(r3, r4)
@@ -1101,9 +1108,10 @@ def trunc_neg_case(qobj, method, expected=None):
 
 class TestTruncNeg:
     """Test qutip.Qobj.trunc_neg for several different cases."""
-    def test_positive_operator(self):
-        trunc_neg_case(qutip.rand_dm(5), 'clip')
-        trunc_neg_case(qutip.rand_dm(5), 'sgs')
+    def test_positive_operator(self, fixture_random_seed):
+        seeds = fixture_random_seed.spawn(2)
+        trunc_neg_case(qutip.rand_dm(5, seed=seeds[0]), 'clip')
+        trunc_neg_case(qutip.rand_dm(5, seed=seeds[1]), 'sgs')
 
     def test_diagonal_operator(self):
         to_test = qutip.Qobj(np.diag([1.1, 0, -0.1]))
@@ -1111,8 +1119,8 @@ class TestTruncNeg:
         trunc_neg_case(to_test, 'clip', expected)
         trunc_neg_case(to_test, 'sgs', expected)
 
-    def test_nondiagonal_operator(self):
-        U = qutip.rand_unitary(3)
+    def test_nondiagonal_operator(self, fixture_random_seed):
+        U = qutip.rand_unitary(3, seed=fixture_random_seed)
         to_test = U * qutip.Qobj(np.diag([1.1, 0, -0.1])) * U.dag()
         expected = U * qutip.Qobj(np.diag([1.0, 0.0, 0.0])) * U.dag()
         trunc_neg_case(to_test, 'clip', expected)
@@ -1124,32 +1132,33 @@ class TestTruncNeg:
                        qutip.Qobj(np.diag([9./20, 7./20, 1./5, 0, 0])))
 
 
-def test_cosm():
+def test_cosm(fixture_random_seed):
     """
     Test qutip.Qobj: cosm
     """
-    A = qutip.rand_herm(5)
+    A = qutip.rand_herm(5, seed=fixture_random_seed)
     B = A.cosm().full()
     C = scipy.linalg.cosm(A.full())
     np.testing.assert_allclose(B, C, atol=1e-14)
 
 
-def test_sinm():
+def test_sinm(fixture_random_seed):
     """
     Test qutip.Qobj: sinm
     """
-    A = qutip.rand_herm(5)
+    A = qutip.rand_herm(5, seed=fixture_random_seed)
     B = A.sinm().full()
     C = scipy.linalg.sinm(A.full())
     np.testing.assert_allclose(B, C, atol=1e-14)
 
 
 @pytest.mark.parametrize("sub_dimensions", ([2], [2, 2], [2, 3], [3, 5, 2]))
-def test_dual_channel(sub_dimensions, n_trials=50):
+def test_dual_channel(sub_dimensions, n_trials=50, fixture_random_seed=None):
     """
     qutip.Qobj: dual_chan() preserves inner products with arbitrary density ops.
     """
-    S = qutip.rand_super_bcsz(np.prod(sub_dimensions))
+    seeds = fixture_random_seed.spawn(2 * n_trials + 1)
+    S = qutip.rand_super_bcsz(np.prod(sub_dimensions), seed=seeds[0])
     S.dims = [[sub_dimensions, sub_dimensions],
               [sub_dimensions, sub_dimensions]]
     S = qutip.to_super(S)
@@ -1165,11 +1174,11 @@ def test_dual_channel(sub_dimensions, n_trials=50):
     primals = []
     duals = []
 
-    for _ in [None]*n_trials:
-        X = qutip.rand_dm(out_dim)
+    for trial in range(n_trials):
+        X = qutip.rand_dm(out_dim, seed=seeds[2 * trial + 1])
         X.dims = left_dims
         X = qutip.operator_to_vector(X)
-        Y = qutip.rand_dm(in_dim)
+        Y = qutip.rand_dm(in_dim, seed=seeds[2 * trial + 2])
         Y.dims = right_dims
         Y = qutip.operator_to_vector(Y)
 
@@ -1179,15 +1188,16 @@ def test_dual_channel(sub_dimensions, n_trials=50):
     np.testing.assert_allclose(primals, duals)
 
 
-def test_call():
+def test_call(fixture_random_seed):
     """
     Test qutip.Qobj: Call
     """
     # Make test objects.
-    psi = qutip.rand_ket(3)
-    rho = qutip.rand_dm(3)
-    U = qutip.rand_unitary(3)
-    S = qutip.rand_super_bcsz(3)
+    seeds = fixture_random_seed.spawn(4)
+    psi = qutip.rand_ket(3, seed=seeds[0])
+    rho = qutip.rand_dm(3, seed=seeds[1])
+    U = qutip.rand_unitary(3, seed=seeds[2])
+    S = qutip.rand_super_bcsz(3, seed=seeds[3])
 
     # Case 0: oper(ket).
     assert U(psi) == U * psi
@@ -1205,16 +1215,16 @@ def test_call():
         S(S)
 
 
-def test_mat_elem():
+def test_mat_elem(fixture_random_seed):
     """
     Test qutip.Qobj: Compute matrix elements
     """
-    for _ in range(10):
+    for seed in fixture_random_seed.spawn(30):
         N = 20
-        H = qutip.rand_herm(N, density=0.2)
-        L = qutip.rand_ket(N, density=0.3)
+        H = qutip.rand_herm(N, density=0.2, seed=seed)
+        L = qutip.rand_ket(N, density=0.3, seed=fixture_random_seed.spawn(1)[0])
         Ld = L.dag()
-        R = qutip.rand_ket(N, density=0.3)
+        R = qutip.rand_ket(N, density=0.3, seed=fixture_random_seed.spawn(1)[0])
         ans = Ld * H * R
         # bra-ket
         out1 = H.matrix_element(Ld, R)
@@ -1224,13 +1234,13 @@ def test_mat_elem():
         assert abs(ans - out2) < 1e-14
 
 
-def test_projection():
+def test_projection(fixture_random_seed):
     """
     Test qutip.Qobj: Projection operator
     """
-    for _ in range(10):
+    for seed in fixture_random_seed.spawn(10):
         N = 5
-        K = qutip.rand_ket([N, N], density=0.75)
+        K = qutip.rand_ket([N, N], density=0.75, seed=seed)
         B = K.dag()
         ans = K * K.dag()
         out1 = K.proj()
@@ -1239,15 +1249,15 @@ def test_projection():
         assert out2 == ans
 
 
-def test_overlap():
+def test_overlap(fixture_random_seed):
     """
     Test qutip.Qobj: Overlap (inner product)
     """
-    for _ in range(10):
+    for seed in fixture_random_seed.spawn(10):
         N = 10
-        A = qutip.rand_ket(N, density=0.75)
+        A = qutip.rand_ket(N, density=0.75, seed=seed)
         Ad = A.dag()
-        B = qutip.rand_ket(N, density=0.75)
+        B = qutip.rand_ket(N, density=0.75, seed=fixture_random_seed.spawn(1)[0])
         Bd = B.dag()
         ans = A.dag() * B
         np.testing.assert_allclose(A.overlap(B), ans)
@@ -1396,10 +1406,13 @@ def test_sum_buildin(shape, fixture_generator):
     assert sum([qobj, 2 * qobj, -qobj]) == 2 * qobj
 
 
-def test_groundstate(fixture_generator):
+def test_groundstate(fixture_generator, fixture_random_seed):
     eigenvals = np.sort(fixture_generator.random(10))
     eigenvals[1:] += 0.1  # Ensure no degenerate groundstate
-    qobj = qutip.rand_herm(10, distribution="eigen", eigenvalues=eigenvals)
+    qobj = qutip.rand_herm(
+        10, distribution="eigen", eigenvalues=eigenvals,
+        seed=fixture_random_seed,
+    )
     groundenergy, groundstate = qobj.groundstate()
     assert groundenergy == pytest.approx(eigenvals[0])
     assert qutip.expect(qobj, groundstate) == pytest.approx(eigenvals[0])
