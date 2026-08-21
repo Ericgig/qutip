@@ -136,3 +136,9 @@ def random_diag(shape, density, sort=False, gen=None):
     If not provided one will be created.
     """
     return qutip.core.data.Dia(random_scipy_dia(shape, density, sort, gen))
+
+
+def random_data(shape, density=None, gen=None):
+    if gen is None:
+        gen = np.random.default_rng()
+    dtype = gen.choice([""])
