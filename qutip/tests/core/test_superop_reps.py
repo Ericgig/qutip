@@ -75,24 +75,24 @@ class TestSuperopReps:
 
         assert np.allclose(ptm.full(), expected_ptm, atol=1e-12)
 
-    def test_SuperPauliRoundTrip(self):
+    def test_SuperPauliRoundTrip(self, fixture_random_seed):
         """
         Superoperator: Check that converting to Pauli basis and back
         is an identity: superpauli_to_super(to_superpauli(S)) == S.
         """
-        superop = rand_super(2)
+        superop = rand_super(2, seed=fixture_random_seed)
 
         pauli_rep = to_superpauli(superop)
         back_to_super = superpauli_to_super(pauli_rep)
 
         assert (back_to_super - superop).norm() < 1e-12
 
-    def test_SuperPauliInvalidArgs(self):
+    def test_SuperPauliInvalidArgs(self, fixture_random_seed):
         """
         Superoperator: Ensure to_superpauli and superpauli_to_super
         raises ValueError for invalid arguments
         """
-        qutrit_super = rand_super(3)
+        qutrit_super = rand_super(3, seed=fixture_random_seed)
         invalid_type = np.eye(4)
         wrong_superrep = Qobj(np.eye(9))
         non_square = to_super(Qobj(np.ones((3, 4))))
@@ -137,13 +137,14 @@ class TestSuperopReps:
         assert test_supe.type == "super" and test_supe.superrep == "super"
 
     @pytest.mark.parametrize('dimension', [2, 4])
-    def test_SuperChoiChiSuper(self, dimension):
+    def test_SuperChoiChiSuper(self, dimension, fixture_random_seed):
         """
         Superoperator: Converting two-qubit superoperator through
         Choi and chi representations goes back to right superoperator.
         """
         superoperator = super_tensor(
-            rand_super(dimension), rand_super(dimension),
+            rand_super(dimension, seed=fixture_random_seed.spawn(1)[0]),
+            rand_super(dimension, seed=fixture_random_seed.spawn(1)[0]),
         )
 
         choi_matrix = to_choi(superoperator)
@@ -306,24 +307,25 @@ class TestSuperopReps:
             N = dimension
         assert abs(to_choi(identity(dimension)).tr() - N) <= tol
 
-    def test_stinespring_cp(self, dimension):
+    def test_stinespring_cp(self, dimension, fixture_random_seed):
         """
         Stinespring: A and B match for CP maps.
         """
-        superop = rand_super_bcsz(dimension)
+        superop = rand_super_bcsz(dimension, seed=fixture_random_seed)
         A, B = to_stinespring(superop)
 
         assert (A - B).norm() < tol
 
     @pytest.mark.repeat(3)
     @pytest.mark.parametrize('dimension', [2, 3, 7])
-    def test_stinespring_agrees(self, dimension):
+    def test_stinespring_agrees(self, dimension, fixture_random_seed):
         """
         Stinespring: Partial Tr over pair agrees w/ supermatrix.
         """
 
-        map = rand_super_bcsz(dimension)
-        state = rand_dm(dimension)
+        seeds = fixture_random_seed.spawn(2)
+        map = rand_super_bcsz(dimension, seed=seeds[0])
+        state = rand_dm(dimension, seed=seeds[1])
 
         S = to_super(map)
         A, B = to_stinespring(map)
@@ -348,9 +350,9 @@ class TestSuperopReps:
         assert B.dims == [[2, dimension, 1], [2, dimension]]
 
     @pytest.mark.parametrize('dimension', [2, 4, 8])
-    def test_chi_choi_roundtrip(self, dimension):
+    def test_chi_choi_roundtrip(self, dimension, fixture_random_seed):
 
-        superop = rand_super_bcsz(dimension)
+        superop = rand_super_bcsz(dimension, seed=fixture_random_seed)
         superop = to_chi(superop)
         rt_superop = to_chi(to_choi(superop))
         dif = (rt_superop - superop).norm()

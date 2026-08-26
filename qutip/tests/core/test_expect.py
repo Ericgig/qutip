@@ -118,12 +118,14 @@ class TestKnownExpectation:
 @pytest.mark.parametrize("hermitian", [False, True], ids=['complex', 'real'])
 @pytest.mark.parametrize("op_type", [CSR, Dense], ids=['csr', 'dense'])
 @pytest.mark.parametrize("state_type", [CSR, Dense], ids=['csr', 'dense'])
-def test_equivalent_to_matrix_element(hermitian, op_type, state_type):
+def test_equivalent_to_matrix_element(hermitian, op_type, state_type,
+                                     fixture_random_seed):
     dimension = 20
-    state = qutip.rand_ket(dimension, 0.3).to(op_type)
-    op = qutip.rand_herm(dimension, 0.2).to(state_type)
+    seeds = fixture_random_seed.spawn(3)
+    state = qutip.rand_ket(dimension, 0.3, seed=seeds[0]).to(op_type)
+    op = qutip.rand_herm(dimension, 0.2, seed=seeds[1]).to(state_type)
     if not hermitian:
-        op = op + 1j*qutip.rand_herm(dimension, 0.1).to(state_type)
+        op = op + 1j*qutip.rand_herm(dimension, 0.1, seed=seeds[2]).to(state_type)
     expected = state.dag() * op * state
     assert abs(qutip.expect(op, state) - expected) < 1e-14
 

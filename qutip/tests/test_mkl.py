@@ -14,20 +14,20 @@ pytestmark = [
 
 
 class Test_spsolve:
-    def test_single_rhs_vector_real(self):
+    def test_single_rhs_vector_real(self, fixture_generator):
         Adense = np.array([[0, 1, 1],
                            [1, 0, 1],
                            [0, 0, 1]])
         As = scipy.sparse.csr_matrix(Adense)
-        rng = np.random.default_rng(seed=1234)
-        x = rng.standard_normal(3)
+        x = fixture_generator.standard_normal(3)
         b = As * x
         x2 = mkl_spsolve(As, b, verbose=True)
         np.testing.assert_allclose(x, x2)
 
-    def test_single_rhs_vector_complex(self):
-        A = qutip.rand_herm(10, density=0.8, dtype='csr')
-        x = qutip.rand_ket(10).full()
+    def test_single_rhs_vector_complex(self, fixture_random_seed):
+        seeds = fixture_random_seed.spawn(2)
+        A = qutip.rand_herm(10, density=0.8, dtype='csr', seed=seeds[0])
+        x = qutip.rand_ket(10, seed=seeds[1]).full()
         b = A.full() @ x
         y = mkl_spsolve(A.data.as_scipy(), b, verbose=True)
         np.testing.assert_allclose(x, y)

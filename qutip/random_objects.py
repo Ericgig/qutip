@@ -23,9 +23,9 @@ from . import Qobj, create, destroy, jmat, basis, to_super, to_choi, to_chi
 from .core import data as _data
 from .core.dimensions import Dimensions, Space, SuperSpace
 from .typing import SpaceLike, LayerType
+from ._random import get_rng
 
 
-_RAND = default_rng()
 _UNITS = np.array([1, 1j])
 
 
@@ -75,7 +75,7 @@ def _get_generator(seed):
         When ``None`` is suplied, a default generator is provided.
     """
     if seed is None:
-        gen = _RAND
+        gen = get_rng()
     elif isinstance(seed, Generator):
         gen = seed
     else:

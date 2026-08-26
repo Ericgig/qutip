@@ -130,13 +130,15 @@ class TestClassMethods:
     @pytest.mark.parametrize('r_type', _dtype_int + _dtype_uint)
     # uint on macos raise a RuntimeWarning
     @pytest.mark.filterwarnings("ignore::RuntimeWarning")
-    def test_init_from_tuple_allowed_dtypes(self, d_type, c_type, r_type):
+    def test_init_from_tuple_allowed_dtypes(self, d_type, c_type, r_type, fixture_generator):
         """
         Test that initialisation can use a variety of dtypes and converts into
         the correct type.
         """
         sci = _valid_scipy()
-        data_nz = np.random.randn(sci.nnz).astype(d_type, casting='unsafe')
+        data_nz = fixture_generator.standard_normal(sci.nnz).astype(
+            d_type, casting='unsafe'
+        )
         col_index = sci.indices.astype(c_type, casting='unsafe')
         row_index = sci.indptr.astype(r_type, casting='unsafe')
         scipy_csr = scipy.sparse.csr_matrix((data_nz, col_index, row_index),

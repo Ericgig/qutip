@@ -1,4 +1,6 @@
 import numpy as np
+from qutip._random import get_rng
+
 
 __all__ = ["Wiener", "PreSetWiener"]
 
@@ -100,7 +102,7 @@ class _Noise:
         self.T = T
         self.dt = dt
         self.num = num
-        self.noise = np.random.randn(N, num) * dt**0.5
+        self.noise = get_rng().standard_normal((N, num)) * dt**0.5
 
     def dw(self, dt):
         """
